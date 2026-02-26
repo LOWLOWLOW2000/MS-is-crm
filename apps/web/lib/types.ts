@@ -88,8 +88,13 @@ export interface CallingHelpRequest {
   id: string;
   tenantId: string;
   requestedBy: string;
+  requestedByEmail: string;
   companyName: string;
   scriptTab: string;
   requestedAt: string;
   queueNumber: number;
+  status: 'waiting' | 'joined' | 'closed';
+  joinedBy: string | null;
+  joinedAt: string | null;
+  resolvedAt: string | null;
 }

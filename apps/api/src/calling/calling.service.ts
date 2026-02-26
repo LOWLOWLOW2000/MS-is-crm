@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { CreateCallingApprovalDto } from './dto/create-calling-approval.dto';
 import { CreateHelpRequestDto } from './dto/create-help-request.dto';
@@ -15,6 +15,47 @@ export class CallingService {
   private readonly records: CallingRecord[] = [];
   private readonly approvals: CallingApproval[] = [];
   private readonly helpRequests: CallingHelpRequest[] = [];
+
+  /** 完了から24時間経過した呼出を自動削除（メモリ節約） */
+  private cleanupOldClosedRequests = (): void => {
+    const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+    for (let i = this.helpRequests.length - 1; i >= 0; i--) {
+      const r = this.helpRequests[i];
+      if (r.status === 'closed' && r.resolvedAt) {
+        if (new Date(r.resolvedAt).getTime() < cutoffMs) {
+          this.helpRequests.splice(i, 1);
+        }
+      }
+    }
+  };
+
+  private listHelpRequestsByTenant = (tenantId: string): CallingHelpRequest[] => {
+    return this.helpRequests
+      .filter((request) => request.tenantId === tenantId)
+      .sort((a, b) => {
+        // 表示順: waiting → joined → closed、同状態内は新しい順
+        const order = { waiting: 0, joined: 1, closed: 2 };
+        const oa = order[a.status] ?? 2;
+        const ob = order[b.status] ?? 2;
+        if (oa !== ob) return oa - ob;
+        const timeA = a.resolvedAt ?? a.joinedAt ?? a.requestedAt;
+        const timeB = b.resolvedAt ?? b.joinedAt ?? b.requestedAt;
+        return timeB.localeCompare(timeA);
+      });
+  };
+
+  private reindexWaitingQueue = (tenantId: string): void => {
+    let queueNumber = 1;
+    this.listHelpRequestsByTenant(tenantId).forEach((request) => {
+      if (request.status === 'waiting') {
+        request.queueNumber = queueNumber;
+        queueNumber += 1;
+        return;
+      }
+
+      request.queueNumber = 0;
+    });
+  };
 
   createApproval = (user: JwtPayload, dto: CreateCallingApprovalDto): CallingApproval => {
     const approval: CallingApproval = {
@@ -52,28 +93,82 @@ export class CallingService {
   };
 
   createHelpRequest = (user: JwtPayload, dto: CreateHelpRequestDto): CallingHelpRequest => {
-    const queueNumber =
-      this.helpRequests.filter((request) => request.tenantId === user.tenantId).length + 1;
+    const queueNumber = this.helpRequests.filter(
+      (request) => request.tenantId === user.tenantId && request.status === 'waiting',
+    ).length + 1;
 
     const request: CallingHelpRequest = {
       id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       tenantId: user.tenantId,
       requestedBy: user.sub,
+      requestedByEmail: user.email,
       companyName: dto.companyName,
       scriptTab: dto.scriptTab,
       requestedAt: new Date().toISOString(),
       queueNumber,
+      status: 'waiting',
+      joinedBy: null,
+      joinedAt: null,
+      resolvedAt: null,
     };
 
     this.helpRequests.push(request);
+    this.reindexWaitingQueue(user.tenantId);
     return request;
   };
 
   getRecentHelpRequests = (user: JwtPayload): CallingHelpRequest[] => {
-    return this.helpRequests
-      .filter((request) => request.tenantId === user.tenantId)
-      .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))
-      .slice(0, 20);
+    this.cleanupOldClosedRequests();
+    const tenant = this.listHelpRequestsByTenant(user.tenantId);
+    const waiting = tenant.filter((r) => r.status === 'waiting').sort((a, b) => a.queueNumber - b.queueNumber);
+    const joined = tenant.filter((r) => r.status === 'joined').sort((a, b) => (b.joinedAt ?? '').localeCompare(a.joinedAt ?? ''));
+    const closed = tenant
+      .filter((r) => r.status === 'closed')
+      .sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''));
+    return [...waiting, ...joined, ...closed];
+  };
+
+  joinHelpRequest = (user: JwtPayload, requestId: string): CallingHelpRequest => {
+    const request = this.helpRequests.find(
+      (candidate) => candidate.id === requestId && candidate.tenantId === user.tenantId,
+    );
+
+    if (!request) {
+      throw new NotFoundException('呼出リクエストが見つかりません');
+    }
+
+    if (request.status === 'closed') {
+      throw new NotFoundException('すでに対応完了した呼出リクエストです');
+    }
+
+    request.status = 'joined';
+    request.joinedBy = user.sub;
+    request.joinedAt = new Date().toISOString();
+    request.queueNumber = 0;
+    this.reindexWaitingQueue(user.tenantId);
+
+    return request;
+  };
+
+  closeHelpRequest = (user: JwtPayload, requestId: string): CallingHelpRequest => {
+    const request = this.helpRequests.find(
+      (candidate) => candidate.id === requestId && candidate.tenantId === user.tenantId,
+    );
+
+    if (!request) {
+      throw new NotFoundException('呼出リクエストが見つかりません');
+    }
+
+    request.status = 'closed';
+    request.queueNumber = 0;
+    request.resolvedAt = new Date().toISOString();
+    this.reindexWaitingQueue(user.tenantId);
+    this.cleanupOldClosedRequests();
+    return request;
+  };
+
+  getWaitingQueue = (user: JwtPayload): CallingHelpRequest[] => {
+    return this.listHelpRequestsByTenant(user.tenantId).filter((request) => request.status === 'waiting');
   };
 
   saveRecord = (user: JwtPayload, dto: CreateCallingRecordDto): CallingRecord => {

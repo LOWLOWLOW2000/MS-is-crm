@@ -4,9 +4,11 @@ import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } f
 import { signOut, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Group, type Layout, Panel, Separator } from 'react-resizable-panels';
+import { io } from 'socket.io-client';
 import {
   createCallingApproval,
   createHelpRequest,
+  getApiBaseUrl,
   saveCallingRecord,
   validateDialPermission,
 } from '@/lib/calling-api';
@@ -107,6 +109,7 @@ const CallingPage = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState('待機中');
+  const [lastHelpRequestId, setLastHelpRequestId] = useState<string | null>(null);
   const [rightPanelLayout, setRightPanelLayout] = useState<Layout | undefined>(undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -168,7 +171,42 @@ const CallingPage = () => {
     setIsApproved(false);
     setApprovalId(null);
     setApprovedAt(null);
+    setLastHelpRequestId(null);
   }, [displayUrl]);
+
+  useEffect(() => {
+    if (status !== 'authenticated' || !session?.user?.tenantId) {
+      return;
+    }
+
+    const socket = io(getApiBaseUrl(), {
+      transports: ['websocket'],
+    });
+
+    socket.on('director:joined', (event: { requestId: string; tenantId: string; requestedBy: string }) => {
+      if (event.tenantId !== session.user.tenantId || event.requestedBy !== session.user.id) {
+        return;
+      }
+      if (lastHelpRequestId && event.requestId !== lastHelpRequestId) {
+        return;
+      }
+      setStatusMessage('ディレクターが参加しました。');
+    });
+
+    socket.on('call:ended', (event: { requestId: string; tenantId: string }) => {
+      if (event.tenantId !== session.user.tenantId) {
+        return;
+      }
+      if (lastHelpRequestId && event.requestId !== lastHelpRequestId) {
+        return;
+      }
+      setStatusMessage('ディレクター対応が完了しました。');
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [status, session?.user?.id, session?.user?.tenantId, lastHelpRequestId]);
 
   useEffect(() => {
     if (iframeLoaded) {
@@ -351,6 +389,7 @@ const CallingPage = () => {
         scriptTab: activeTab.name,
       });
 
+      setLastHelpRequestId(request.id);
       setStatusMessage(
         `ディレクター呼出を送信しました。キュー番号: ${request.queueNumber}（${request.scriptTab}）`,
       );

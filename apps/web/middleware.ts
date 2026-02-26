@@ -6,9 +6,14 @@ import type { UserRole } from '@/lib/types';
 const LOGIN_PATH = '/login';
 const DASHBOARD_PATH = '/dashboard';
 const CALLING_PATH = '/calling';
+const DIRECTOR_PATH = '/director';
 
 const isProtectedPath = (pathname: string): boolean => {
-  return pathname.startsWith(DASHBOARD_PATH) || pathname.startsWith(CALLING_PATH);
+  return (
+    pathname.startsWith(DASHBOARD_PATH) ||
+    pathname.startsWith(CALLING_PATH) ||
+    pathname.startsWith(DIRECTOR_PATH)
+  );
 };
 
 const getRedirectPathByRole = (role: UserRole | undefined): string => {
@@ -46,9 +51,14 @@ export const middleware = async (request: NextRequest) => {
     return NextResponse.redirect(url);
   }
 
+  if (isAuthenticated && pathname.startsWith(DIRECTOR_PATH) && userRole === 'is_member') {
+    const url = new URL(CALLING_PATH, request.url);
+    return NextResponse.redirect(url);
+  }
+
   return NextResponse.next();
 };
 
 export const config = {
-  matcher: ['/login', '/dashboard/:path*', '/calling/:path*'],
+  matcher: ['/login', '/dashboard/:path*', '/calling/:path*', '/director/:path*'],
 };

@@ -28,6 +28,7 @@ const DashboardPage = () => {
   const [summary, setSummary] = useState<CallingSummary>(initialSummary);
   const [isLoadingSummary, setIsLoadingSummary] = useState(true);
   const [helpRequests, setHelpRequests] = useState<CallingHelpRequest[]>([]);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -61,6 +62,13 @@ const DashboardPage = () => {
   }, [status, session?.accessToken]);
 
   useEffect(() => {
+    if (!('Notification' in window)) {
+      return;
+    }
+    setNotificationPermission(window.Notification.permission);
+  }, []);
+
+  useEffect(() => {
     if (status !== 'authenticated' || !session?.user?.tenantId) {
       return;
     }
@@ -74,12 +82,26 @@ const DashboardPage = () => {
         return;
       }
       setHelpRequests((current) => upsertHelpRequest(current, event));
+
+      if (notificationPermission === 'granted') {
+        new Notification('ディレクター呼出', {
+          body: `${event.companyName} / ${event.scriptTab}`,
+        });
+      }
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [status, session?.user?.tenantId]);
+  }, [status, session?.user?.tenantId, notificationPermission]);
+
+  const handleEnableNotification = async (): Promise<void> => {
+    if (!('Notification' in window)) {
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+  };
 
   if (status !== 'authenticated' || !session.user) {
     return <main className="p-6">読み込み中...</main>;
@@ -96,6 +118,17 @@ const DashboardPage = () => {
           <div className="mt-4 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
             <p>メール: {session.user.email}</p>
             <p>tenantId: {session.user.tenantId}</p>
+          </div>
+          <div className="mt-3">
+            <button
+              type="button"
+              className="rounded border border-slate-300 px-3 py-1 text-xs"
+              onClick={() => {
+                void handleEnableNotification();
+              }}
+            >
+              呼出通知: {notificationPermission}
+            </button>
           </div>
         </header>
 
@@ -130,6 +163,9 @@ const DashboardPage = () => {
               <Link href="/calling" className="rounded bg-blue-600 px-3 py-2 text-sm text-white">
                 架電画面を開く
               </Link>
+              <Link href="/director" className="rounded bg-rose-600 px-3 py-2 text-sm text-white">
+                ディレクター画面
+              </Link>
               <Link
                 href="/dashboard"
                 className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700"
@@ -141,20 +177,26 @@ const DashboardPage = () => {
           <article className="rounded border border-slate-200 bg-white p-4">
             <h2 className="text-base font-semibold">ディレクター呼出（リアルタイム）</h2>
             <div className="mt-3 space-y-2">
-              {helpRequests.length === 0 ? (
+              {helpRequests.filter((request) => request.status !== 'closed').length === 0 ? (
                 <p className="text-sm text-slate-500">現在呼出はありません。</p>
               ) : (
-                helpRequests.map((request) => (
+                helpRequests
+                  .filter((request) => request.status !== 'closed')
+                  .map((request) => (
                   <div key={request.id} className="rounded border border-rose-200 bg-rose-50 p-2 text-xs">
                     <p className="font-semibold text-rose-700">
-                      キュー#{request.queueNumber} {request.companyName}
+                      {request.status === 'waiting'
+                        ? `キュー#${request.queueNumber}`
+                        : '対応中'}{' '}
+                      {request.companyName}
                     </p>
+                    <p className="text-slate-700">IS: {request.requestedByEmail}</p>
                     <p className="text-slate-700">スクリプト: {request.scriptTab}</p>
                     <p className="text-slate-500">
                       {new Date(request.requestedAt).toLocaleString('ja-JP')}
                     </p>
                   </div>
-                ))
+                  ))
               )}
             </div>
           </article>

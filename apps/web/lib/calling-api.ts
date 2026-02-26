@@ -120,3 +120,37 @@ export const fetchRecentHelpRequests = async (accessToken: string): Promise<Call
   return (await response.json()) as CallingHelpRequest[];
 };
 
+export const joinHelpRequest = async (
+  accessToken: string,
+  requestId: string,
+): Promise<CallingHelpRequest> => {
+  const response = await fetch(`${apiBaseUrl}/calling/help-requests/${requestId}/join`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('ディレクター参加処理に失敗しました');
+  }
+
+  return (await response.json()) as CallingHelpRequest;
+};
+
+export const closeHelpRequest = async (
+  accessToken: string,
+  requestId: string,
+): Promise<CallingHelpRequest> => {
+  const response = await fetch(`${apiBaseUrl}/calling/help-requests/${requestId}/close`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('呼出対応完了処理に失敗しました');
+  }
+
+  return (await response.json()) as CallingHelpRequest;
+};
+

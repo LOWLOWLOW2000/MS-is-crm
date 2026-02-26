@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   InternalServerErrorException,
+  NotFoundException,
+  Param,
   Post,
   Req,
   UseGuards,
@@ -78,6 +80,10 @@ export class CallingController {
     try {
       const request = this.callingService.createHelpRequest(req.user, dto);
       this.notificationsGateway.emitHelpRequested(request);
+      this.notificationsGateway.emitQueueUpdated({
+        tenantId: req.user.tenantId,
+        requests: this.callingService.getWaitingQueue(req.user),
+      });
       return request;
     } catch (error) {
       throw new InternalServerErrorException('ディレクター呼出の送信に失敗しました');
@@ -90,6 +96,58 @@ export class CallingController {
       return this.callingService.getRecentHelpRequests(req.user);
     } catch (error) {
       throw new InternalServerErrorException('呼出履歴の取得に失敗しました');
+    }
+  }
+
+  @Post('help-requests/:requestId/join')
+  joinHelpRequest(
+    @Req() req: JwtRequest,
+    @Param('requestId') requestId: string,
+  ): CallingHelpRequest {
+    try {
+      const request = this.callingService.joinHelpRequest(req.user, requestId);
+      this.notificationsGateway.emitDirectorJoined({
+        requestId: request.id,
+        tenantId: request.tenantId,
+        requestedBy: request.requestedBy,
+        joinedBy: request.joinedBy ?? req.user.sub,
+        joinedAt: request.joinedAt ?? new Date().toISOString(),
+      });
+      this.notificationsGateway.emitQueueUpdated({
+        tenantId: req.user.tenantId,
+        requests: this.callingService.getWaitingQueue(req.user),
+      });
+      return request;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('ディレクター参加処理に失敗しました');
+    }
+  }
+
+  @Post('help-requests/:requestId/close')
+  closeHelpRequest(
+    @Req() req: JwtRequest,
+    @Param('requestId') requestId: string,
+  ): CallingHelpRequest {
+    try {
+      const request = this.callingService.closeHelpRequest(req.user, requestId);
+      this.notificationsGateway.emitCallEnded({
+        requestId: request.id,
+        tenantId: request.tenantId,
+        resolvedAt: request.resolvedAt ?? new Date().toISOString(),
+      });
+      this.notificationsGateway.emitQueueUpdated({
+        tenantId: req.user.tenantId,
+        requests: this.callingService.getWaitingQueue(req.user),
+      });
+      return request;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('呼出対応完了処理に失敗しました');
     }
   }
 }
