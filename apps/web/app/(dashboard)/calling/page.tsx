@@ -410,13 +410,17 @@ const CallingPage = () => {
         return;
       }
 
-      setAssignedListsForMe((current) => current.filter((list) => list.id !== event.listId));
-      if (listId === event.listId) {
-        setListId(null);
-        setSelectedAssignedListId('');
-        setListItems([]);
-        setCurrentItemIndex(0);
-      }
+      setAssignedListsForMe((current) => {
+        const nextLists = current.filter((list) => list.id !== event.listId);
+        if (listId === event.listId) {
+          const fallbackListId = nextLists[0]?.id ?? null;
+          setListId(fallbackListId);
+          setSelectedAssignedListId(fallbackListId ?? '');
+          setListItems([]);
+          setCurrentItemIndex(0);
+        }
+        return nextLists;
+      });
       setStatusMessage(`配布解除: ${event.listName}（解除者: ${event.unassignedBy}）`);
     });
 
