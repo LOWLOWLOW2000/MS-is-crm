@@ -15,6 +15,7 @@ import {
   validateDialPermission,
 } from '@/lib/calling-api';
 import type { CallingResultType, ListItem, RecallReminderEvent } from '@/lib/types';
+import { useCallingSessionStore } from '@/lib/stores/calling-session-store';
 
 type ScriptTab = {
   id: string;
@@ -112,14 +113,19 @@ const CallingPage = () => {
       content: '顧客に合わせて自由にトークを記載してください。',
     },
   ]);
-  const [selectedResult, setSelectedResult] = useState<CallingResultType>('不在');
-  const [memo, setMemo] = useState('');
-  const [nextCallAt, setNextCallAt] = useState('');
+  const selectedResult = useCallingSessionStore((state) => state.selectedResult);
+  const memo = useCallingSessionStore((state) => state.memo);
+  const nextCallAt = useCallingSessionStore((state) => state.nextCallAt);
+  const setSelectedResult = useCallingSessionStore((state) => state.setSelectedResult);
+  const setMemo = useCallingSessionStore((state) => state.setMemo);
+  const setNextCallAt = useCallingSessionStore((state) => state.setNextCallAt);
   const [isApproved, setIsApproved] = useState(false);
   const [approvalId, setApprovalId] = useState<string | null>(null);
   const [approvedAt, setApprovedAt] = useState<string | null>(null);
-  const [urlInput, setUrlInput] = useState(BASE_COMPANY_URL);
-  const [displayUrl, setDisplayUrl] = useState(getInfoPageUrl(BASE_COMPANY_URL));
+  const urlInput = useCallingSessionStore((state) => state.urlInput);
+  const displayUrl = useCallingSessionStore((state) => state.displayUrl);
+  const setUrlInput = useCallingSessionStore((state) => state.setUrlInput);
+  const setDisplayUrl = useCallingSessionStore((state) => state.setDisplayUrl);
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [volume, setVolume] = useState(0.2);
   const [isMuted, setIsMuted] = useState(false);
