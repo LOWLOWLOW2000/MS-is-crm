@@ -305,6 +305,13 @@ const DashboardPage = () => {
                   <Link href="/scripts" className="rounded bg-indigo-600 px-3 py-2 text-sm text-white">
                     スクリプト管理
                   </Link>
+                  <Link
+                    href="/ai-score"
+                    className="rounded border-2 border-dashed border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                    title="Phase2で実装予定"
+                  >
+                    AIスコア（準備中）
+                  </Link>
                 </>
               )}
               <Link

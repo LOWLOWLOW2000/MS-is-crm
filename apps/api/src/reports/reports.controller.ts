@@ -9,6 +9,7 @@ import {
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { AiScorecardEntryDto } from './dto/ai-scorecard.dto';
 import { ReportSummaryDto } from './dto/report-summary.dto';
 import { ReportsService } from './reports.service';
 
@@ -30,6 +31,18 @@ export class ReportsController {
       return this.reportsService.getSummary(req.user, period);
     } catch {
       throw new InternalServerErrorException('レポート集計の取得に失敗しました');
+    }
+  }
+
+  /**
+   * AIスコアカード一覧（Phase2で実装予定。現時点では空配列）
+   */
+  @Get('ai-scorecard')
+  getAiScorecard(@Req() req: JwtRequest): AiScorecardEntryDto[] {
+    try {
+      return this.reportsService.getAiScorecard(req.user);
+    } catch {
+      throw new InternalServerErrorException('AIスコアカードの取得に失敗しました');
     }
   }
 }

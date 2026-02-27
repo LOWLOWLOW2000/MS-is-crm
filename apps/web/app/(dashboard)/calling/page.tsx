@@ -46,6 +46,41 @@ const RESULT_OPTIONS: CallingResultType[] = [
   '留守電',
 ];
 
+/** 結果種別ごとの次回架電デフォルト（datetime-local 用文字列） */
+const getDefaultNextCallAt = (result: CallingResultType): string => {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const toLocal = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  switch (result) {
+    case '不在':
+      now.setDate(now.getDate() + 1);
+      return toLocal(now);
+    case '折り返し依頼':
+      now.setHours(now.getHours() + 2);
+      return toLocal(now);
+    case '留守電':
+      now.setDate(now.getDate() + 3);
+      return toLocal(now);
+    case '担当者あり興味':
+      now.setDate(now.getDate() + 7);
+      return toLocal(now);
+    default:
+      return '';
+  }
+};
+
+/** 結果種別ごとのメモひな型（空のときのみ適用） */
+const MEMO_TEMPLATES: Record<CallingResultType, string> = {
+  担当者あり興味: '担当者名: \n検討時期: \n',
+  担当者あり不要: '理由: \n',
+  不在: '次回連絡希望: \n',
+  番号違い: '正しい番号: \n',
+  断り: '理由: \n',
+  折り返し依頼: '折り返し予定: \n',
+  留守電: '伝言内容: \n',
+};
+
 const fixedTabs: ScriptTab[] = [
   {
     id: 'reception',
@@ -330,6 +365,40 @@ const CallingPage = () => {
     setLastHelpRequestId(null);
   }, [displayUrl]);
 
+  // 結果選択のキーボードショートカット（1〜7）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      const target = e.target as HTMLElement;
+      const tag = target?.tagName?.toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        return;
+      }
+      const key = e.key;
+      if (key >= '1' && key <= '7') {
+        const index = parseInt(key, 10) - 1;
+        if (RESULT_OPTIONS[index]) {
+          e.preventDefault();
+          setSelectedResult(RESULT_OPTIONS[index]);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setSelectedResult]);
+
+  // 結果変更時に次回架電デフォルトとメモひな型を適用（ユーザー操作時のみ。初回はスキップ）
+  const prevResultRef = useRef<CallingResultType | null>(null);
+  useEffect(() => {
+    if (prevResultRef.current !== null && prevResultRef.current !== selectedResult) {
+      setNextCallAt(getDefaultNextCallAt(selectedResult));
+      const currentMemo = useCallingSessionStore.getState().memo;
+      if (currentMemo === '') {
+        setMemo(MEMO_TEMPLATES[selectedResult]);
+      }
+    }
+    prevResultRef.current = selectedResult;
+  }, [selectedResult, setNextCallAt, setMemo]);
+
   useEffect(() => {
     if (status !== 'authenticated' || !session?.user?.tenantId) {
       return;
@@ -613,13 +682,11 @@ const CallingPage = () => {
     }
   };
 
-  const handleSaveRecord = async (): Promise<void> => {
+  const performSave = async (): Promise<boolean> => {
     if (!session?.accessToken) {
       setStatusMessage('アクセストークンが見つからないため保存できません。');
-      return;
+      return false;
     }
-
-    setIsSaving(true);
     try {
       const saved = await saveCallingRecord(session.accessToken, {
         companyName: companyProfile.companyName,
@@ -632,10 +699,30 @@ const CallingPage = () => {
         memo: memo || undefined,
         nextCallAt: nextCallAt ? new Date(nextCallAt).toISOString() : undefined,
       });
-
       setStatusMessage(`保存完了: ${saved.id}`);
+      return true;
     } catch {
       setStatusMessage('保存に失敗しました。API接続を確認してください。');
+      return false;
+    }
+  };
+
+  const handleSaveRecord = async (): Promise<void> => {
+    setIsSaving(true);
+    try {
+      await performSave();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveAndNext = async (): Promise<void> => {
+    setIsSaving(true);
+    try {
+      const ok = await performSave();
+      if (ok) {
+        handleNextCompany();
+      }
     } finally {
       setIsSaving(false);
     }
@@ -860,18 +947,27 @@ const CallingPage = () => {
             >
               🆘 ディレクター呼出
             </button>
-            <div className="mt-3 flex gap-2">
+            <p className="mt-1 text-xs text-slate-500">結果は 1〜7 キーで選択できます</p>
+            <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm"
-                onClick={handleSaveRecord}
+                className="flex-1 min-w-[100px] rounded border border-slate-300 px-3 py-2 text-sm"
+                onClick={() => void handleSaveRecord()}
                 disabled={isSaving}
               >
                 {isSaving ? '保存中...' : '上書き保存'}
               </button>
               <button
                 type="button"
-                className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm"
+                className="flex-1 min-w-[100px] rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white"
+                onClick={() => void handleSaveAndNext()}
+                disabled={isSaving}
+              >
+                {isSaving ? '保存中...' : '保存して次へ'}
+              </button>
+              <button
+                type="button"
+                className="flex-1 min-w-[80px] rounded border border-slate-300 px-3 py-2 text-sm"
                 onClick={handleNextCompany}
               >
                 次へ
