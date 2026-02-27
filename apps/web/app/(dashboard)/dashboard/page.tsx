@@ -13,6 +13,7 @@ import {
   getApiBaseUrl,
 } from '@/lib/calling-api';
 import type {
+  CallStartedEvent,
   CallingHelpRequest,
   CallingSummary,
   ListAssignedEvent,
@@ -56,6 +57,7 @@ const DashboardPage = () => {
   const [summary, setSummary] = useState<CallingSummary>(initialSummary);
   const [isLoadingSummary, setIsLoadingSummary] = useState(true);
   const [helpRequests, setHelpRequests] = useState<CallingHelpRequest[]>([]);
+  const [startedCalls, setStartedCalls] = useState<CallStartedEvent[]>([]);
   const [myAssignedListSnapshots, setMyAssignedListSnapshots] = useState<ListAssignedEvent[]>([]);
   const [distributedLists, setDistributedLists] = useState<ListDistributedEvent[]>([]);
   const [assignedLists, setAssignedLists] = useState<ListAssignedEvent[]>([]);
@@ -154,6 +156,13 @@ const DashboardPage = () => {
           body: `${event.companyName} / ${new Date(event.nextCallAt).toLocaleString('ja-JP')}`,
         });
       }
+    });
+
+    socket.on('call:started', (event: CallStartedEvent) => {
+      if (event.tenantId !== session.user.tenantId) {
+        return;
+      }
+      setStartedCalls((current) => [event, ...current].slice(0, 10));
     });
 
     socket.on('list:distributed', (event: ListDistributedEvent) => {
@@ -358,6 +367,23 @@ const DashboardPage = () => {
                   <p className="text-slate-700">
                     予定時刻: {new Date(event.nextCallAt).toLocaleString('ja-JP')}
                   </p>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded border border-slate-200 bg-white p-4">
+          <h2 className="text-base font-semibold">架電開始（リアルタイム）</h2>
+          <div className="mt-3 space-y-2">
+            {startedCalls.length === 0 ? (
+              <p className="text-sm text-slate-500">まだ通知はありません。</p>
+            ) : (
+              startedCalls.map((event) => (
+                <div key={`${event.meetingId}-${event.startedAt}`} className="rounded border border-blue-200 bg-blue-50 p-2 text-xs">
+                  <p className="font-semibold text-blue-700">{event.companyName}</p>
+                  <p className="text-slate-600">startedBy: {event.startedBy}</p>
+                  <p className="text-slate-600">meetingId: {event.meetingId}</p>
                 </div>
               ))
             )}

@@ -33,6 +33,14 @@ export interface CallEndedEvent {
   resolvedAt: string;
 }
 
+export interface CallStartedEvent {
+  tenantId: string;
+  startedBy: string;
+  companyName: string;
+  meetingId: string;
+  startedAt: string;
+}
+
 export interface RecallReminderEvent {
   tenantId: string;
   recordId: string;
@@ -92,6 +100,10 @@ export class NotificationsGateway implements OnModuleDestroy {
 
   emitCallEnded = (event: CallEndedEvent): void => {
     this.server.emit('call:ended', event);
+  };
+
+  emitCallStarted = (event: CallStartedEvent): void => {
+    this.server.emit('call:started', event);
   };
 
   emitRecallReminder = (event: RecallReminderEvent): void => {

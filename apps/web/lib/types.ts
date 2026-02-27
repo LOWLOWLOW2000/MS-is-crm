@@ -99,6 +99,14 @@ export interface CallingHelpRequest {
   resolvedAt: string | null;
 }
 
+export interface CallStartedEvent {
+  tenantId: string;
+  startedBy: string;
+  companyName: string;
+  meetingId: string;
+  startedAt: string;
+}
+
 export interface ListDistributedEvent {
   tenantId: string;
   listId: string;

@@ -12,6 +12,7 @@ import {
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import {
   CreateZoomDialSessionDto,
   ZoomDialSessionResultDto,
@@ -26,7 +27,10 @@ interface JwtRequest extends Request {
 
 @Controller('zoom')
 export class ZoomController {
-  constructor(private readonly zoomService: ZoomService) {}
+  constructor(
+    private readonly zoomService: ZoomService,
+    private readonly notificationsGateway: NotificationsGateway,
+  ) {}
 
   @Post('webhook')
   handleWebhook(
@@ -71,7 +75,15 @@ export class ZoomController {
     @Body() dto: CreateZoomDialSessionDto,
   ): Promise<ZoomDialSessionResultDto> {
     try {
-      return await this.zoomService.createDialSession(req.user, dto);
+      const dialSession = await this.zoomService.createDialSession(req.user, dto);
+      this.notificationsGateway.emitCallStarted({
+        tenantId: req.user.tenantId,
+        startedBy: req.user.email,
+        companyName: dto.companyName,
+        meetingId: dialSession.meetingId,
+        startedAt: dialSession.scheduledAt,
+      });
+      return dialSession;
     } catch {
       throw new InternalServerErrorException('ZOOM発信セッションの作成に失敗しました');
     }
