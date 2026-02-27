@@ -8,6 +8,7 @@ import { assignCallingList, fetchCallingLists, fetchListItems, importCsvList } f
 import type { CallingList, ListItem } from '@/lib/types';
 
 const csvTemplate = `companyName,phone,address,targetUrl,industry\n株式会社サンプル,03-1111-2222,東京都渋谷区1-1-1,https://example.com,製造`;
+const isValidEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 const ListsPage = () => {
   const router = useRouter();
@@ -136,6 +137,10 @@ const ListsPage = () => {
       setStatusMessage('配布先メールアドレスを入力してください');
       return;
     }
+    if (!isValidEmail(assigneeEmail.trim())) {
+      setStatusMessage('配布先メールアドレスの形式が不正です');
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -244,7 +249,7 @@ const ListsPage = () => {
                 onClick={() => {
                   void handleAssign();
                 }}
-                disabled={!selectedListId || isLoading}
+                disabled={!selectedListId || isLoading || !isValidEmail(assigneeEmail.trim())}
                 className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-60"
               >
                 {isLoading ? '配布中...' : 'このリストを配布'}
