@@ -77,6 +77,15 @@ export class CallingController {
     }
   }
 
+  @Get('recall')
+  getRecallList(@Req() req: JwtRequest): CallingRecord[] {
+    try {
+      return this.callingService.getRecallList(req.user);
+    } catch (error) {
+      throw new InternalServerErrorException('再架電一覧の取得に失敗しました');
+    }
+  }
+
   @Post('help-requests')
   createHelpRequest(@Req() req: JwtRequest, @Body() dto: CreateHelpRequestDto): CallingHelpRequest {
     try {

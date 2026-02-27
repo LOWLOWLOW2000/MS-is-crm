@@ -229,5 +229,15 @@ export class CallingService {
   getTenantRecords = (tenantId: string): CallingRecord[] => {
     return this.records.filter((record) => record.tenantId === tenantId);
   };
+
+  getRecallList = (user: JwtPayload): CallingRecord[] => {
+    return this.records
+      .filter((record) => record.tenantId === user.tenantId && Boolean(record.nextCallAt))
+      .sort((a, b) => {
+        const aTime = new Date(a.nextCallAt ?? '').getTime();
+        const bTime = new Date(b.nextCallAt ?? '').getTime();
+        return aTime - bTime;
+      });
+  };
 }
 

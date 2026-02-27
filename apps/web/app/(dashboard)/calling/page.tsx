@@ -131,6 +131,7 @@ const CallingPage = () => {
   const [listItems, setListItems] = useState<ListItem[]>([]);
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [listId, setListId] = useState<string | null>(null);
+  const [manualCompany, setManualCompany] = useState<CompanyProfile>(DEFAULT_COMPANY);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const selectedItem = listItems[currentItemIndex] ?? null;
@@ -141,11 +142,26 @@ const CallingPage = () => {
         companyAddress: selectedItem.address,
         targetUrl: selectedItem.targetUrl,
       }
-    : DEFAULT_COMPANY;
+    : manualCompany;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setListId(params.get('listId'));
+    const nextListId = params.get('listId');
+    const companyName = params.get('company');
+    const companyUrl = params.get('url');
+    setListId(nextListId);
+
+    if (!nextListId && companyName && companyUrl) {
+      setManualCompany({
+        companyName,
+        companyPhone: DEFAULT_COMPANY.companyPhone,
+        companyAddress: DEFAULT_COMPANY.companyAddress,
+        targetUrl: companyUrl,
+      });
+      setUrlInput(companyUrl);
+      setDisplayUrl(getInfoPageUrl(companyUrl));
+      setStatusMessage(`再架電対象を読み込みました: ${companyName}`);
+    }
   }, []);
 
   useEffect(() => {

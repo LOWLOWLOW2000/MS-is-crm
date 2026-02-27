@@ -59,6 +59,20 @@ export const fetchCallingSummary = async (accessToken: string): Promise<CallingS
   return (await response.json()) as CallingSummary;
 };
 
+export const fetchRecallList = async (accessToken: string): Promise<CallingRecord[]> => {
+  const response = await fetch(`${apiBaseUrl}/calling/recall`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('再架電一覧の取得に失敗しました');
+  }
+
+  return (await response.json()) as CallingRecord[];
+};
+
 export const createCallingApproval = async (
   accessToken: string,
   input: { companyName: string; targetUrl: string },
