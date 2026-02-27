@@ -15,7 +15,7 @@ import {
   saveCallingRecord,
   validateDialPermission,
 } from '@/lib/calling-api';
-import type { CallingList, CallingResultType, ListItem, RecallReminderEvent } from '@/lib/types';
+import type { CallingList, CallingResultType, ListAssignedEvent, ListItem, RecallReminderEvent } from '@/lib/types';
 import { useCallingSessionStore } from '@/lib/stores/calling-session-store';
 
 type ScriptTab = {
@@ -357,10 +357,35 @@ const CallingPage = () => {
       );
     });
 
+    socket.on('list:assigned', (event: ListAssignedEvent) => {
+      if (event.tenantId !== session.user.tenantId || event.assigneeEmail !== session.user.email) {
+        return;
+      }
+
+      setAssignedListsForMe((current) => {
+        const withoutSame = current.filter((list) => list.id !== event.listId);
+        const next: CallingList = {
+          id: event.listId,
+          tenantId: event.tenantId,
+          name: event.listName,
+          sourceType: 'csv',
+          createdBy: '',
+          createdAt: event.assignedAt,
+          itemCount: 0,
+          assigneeEmail: event.assigneeEmail,
+          assignedBy: event.assignedBy,
+          assignedAt: event.assignedAt,
+        };
+        return [next, ...withoutSame].slice(0, 20);
+      });
+
+      setStatusMessage(`新しい配布リストを受信: ${event.listName}（配布者: ${event.assignedBy}）`);
+    });
+
     return () => {
       socket.disconnect();
     };
-  }, [status, session?.user?.id, session?.user?.tenantId, lastHelpRequestId]);
+  }, [status, session?.user?.id, session?.user?.tenantId, session?.user?.email, lastHelpRequestId]);
 
   useEffect(() => {
     if (iframeLoaded) {

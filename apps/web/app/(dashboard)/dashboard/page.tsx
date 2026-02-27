@@ -180,7 +180,7 @@ const DashboardPage = () => {
       setAssignedLists((current) => [event, ...current].slice(0, 10));
       if (notificationPermission === 'granted') {
         new Notification('リスト配布', {
-          body: `${event.listName} があなたに配布されました`,
+          body: `${event.listName} / 配布者: ${event.assignedBy}`,
         });
       }
     });
