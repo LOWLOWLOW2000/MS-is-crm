@@ -86,7 +86,9 @@ export class ListsController {
   @Get(':listId/items')
   getListItems(@Req() req: JwtRequest, @Param('listId') listId: string): ListItem[] {
     try {
-      this.assertListManageRole(req.user);
+      if (req.user.role === UserRole.IsMember) {
+        return this.listsService.getAssignedListItems(req.user, listId);
+      }
       return this.listsService.getListItems(req.user, listId);
     } catch (error) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException) {

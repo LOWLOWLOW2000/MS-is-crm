@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ImportListCsvDto } from './dto/import-list-csv.dto';
 import { ImportListResultDto } from './dto/import-list-result.dto';
@@ -164,6 +164,20 @@ export class ListsService {
 
     if (!list) {
       throw new NotFoundException('対象リストが見つかりません');
+    }
+
+    return this.items
+      .filter((item) => item.tenantId === user.tenantId && item.listId === listId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  };
+
+  getAssignedListItems = (user: JwtPayload, listId: string): ListItem[] => {
+    const list = this.lists.find((candidate) => candidate.id === listId && candidate.tenantId === user.tenantId);
+    if (!list) {
+      throw new NotFoundException('対象リストが見つかりません');
+    }
+    if (!list.assigneeEmail || list.assigneeEmail.toLowerCase() !== user.email.toLowerCase()) {
+      throw new ForbiddenException('配布対象外のリストです');
     }
 
     return this.items

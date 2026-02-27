@@ -183,6 +183,7 @@ const DashboardPage = () => {
   if (status !== 'authenticated' || !session.user) {
     return <main className="p-6">読み込み中...</main>;
   }
+  const isMember = session.user.role === 'is_member';
 
   return (
     <main className="min-h-screen bg-slate-100 p-6">
@@ -240,24 +241,28 @@ const DashboardPage = () => {
               <Link href="/calling" className="rounded bg-blue-600 px-3 py-2 text-sm text-white">
                 架電画面を開く
               </Link>
-              <Link href="/director" className="rounded bg-rose-600 px-3 py-2 text-sm text-white">
-                ディレクター画面
-              </Link>
-              <Link href="/lists" className="rounded bg-emerald-600 px-3 py-2 text-sm text-white">
-                URLリスト管理
-              </Link>
-              <Link href="/reports" className="rounded bg-violet-600 px-3 py-2 text-sm text-white">
-                基本レポート
-              </Link>
-              <Link href="/settings" className="rounded bg-amber-600 px-3 py-2 text-sm text-white">
-                設定
-              </Link>
-              <Link href="/recall" className="rounded bg-cyan-600 px-3 py-2 text-sm text-white">
-                再架電一覧
-              </Link>
-              <Link href="/scripts" className="rounded bg-indigo-600 px-3 py-2 text-sm text-white">
-                スクリプト管理
-              </Link>
+              {!isMember && (
+                <>
+                  <Link href="/director" className="rounded bg-rose-600 px-3 py-2 text-sm text-white">
+                    ディレクター画面
+                  </Link>
+                  <Link href="/lists" className="rounded bg-emerald-600 px-3 py-2 text-sm text-white">
+                    URLリスト管理
+                  </Link>
+                  <Link href="/reports" className="rounded bg-violet-600 px-3 py-2 text-sm text-white">
+                    基本レポート
+                  </Link>
+                  <Link href="/settings" className="rounded bg-amber-600 px-3 py-2 text-sm text-white">
+                    設定
+                  </Link>
+                  <Link href="/recall" className="rounded bg-cyan-600 px-3 py-2 text-sm text-white">
+                    再架電一覧
+                  </Link>
+                  <Link href="/scripts" className="rounded bg-indigo-600 px-3 py-2 text-sm text-white">
+                    スクリプト管理
+                  </Link>
+                </>
+              )}
               <Link
                 href="/dashboard"
                 className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700"
