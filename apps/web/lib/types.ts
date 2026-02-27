@@ -98,3 +98,31 @@ export interface CallingHelpRequest {
   joinedAt: string | null;
   resolvedAt: string | null;
 }
+
+export interface CallingList {
+  id: string;
+  tenantId: string;
+  name: string;
+  sourceType: 'csv';
+  createdBy: string;
+  createdAt: string;
+  itemCount: number;
+}
+
+export interface ListItem {
+  id: string;
+  tenantId: string;
+  listId: string;
+  companyName: string;
+  phone: string;
+  address: string;
+  targetUrl: string;
+  industryTag: string | null;
+  createdAt: string;
+}
+
+export interface ImportListResult {
+  list: CallingList;
+  importedCount: number;
+  skippedCount: number;
+}

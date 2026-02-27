@@ -1,9 +1,12 @@
 import {
+  CallingList,
   CallingApproval,
   CallingHelpRequest,
   CallingRecord,
   CallingSummary,
   DialValidationResult,
+  ImportListResult,
+  ListItem,
   SaveCallingRecordInput,
 } from './types';
 
@@ -152,5 +155,51 @@ export const closeHelpRequest = async (
   }
 
   return (await response.json()) as CallingHelpRequest;
+};
+
+export const importCsvList = async (
+  accessToken: string,
+  input: { csvText: string; name?: string },
+): Promise<ImportListResult> => {
+  const response = await fetch(`${apiBaseUrl}/lists/import-csv`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('CSVインポートに失敗しました');
+  }
+
+  return (await response.json()) as ImportListResult;
+};
+
+export const fetchCallingLists = async (accessToken: string): Promise<CallingList[]> => {
+  const response = await fetch(`${apiBaseUrl}/lists`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('リスト一覧の取得に失敗しました');
+  }
+
+  return (await response.json()) as CallingList[];
+};
+
+export const fetchListItems = async (accessToken: string, listId: string): Promise<ListItem[]> => {
+  const response = await fetch(`${apiBaseUrl}/lists/${listId}/items`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('リスト明細の取得に失敗しました');
+  }
+
+  return (await response.json()) as ListItem[];
 };
 
