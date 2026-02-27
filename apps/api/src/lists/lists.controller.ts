@@ -17,6 +17,7 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ImportListCsvDto } from './dto/import-list-csv.dto';
 import { ImportListResultDto } from './dto/import-list-result.dto';
+import { AssignListDto } from './dto/assign-list.dto';
 import { CallingList } from './entities/calling-list.entity';
 import { ListItem } from './entities/list-item.entity';
 import { ListsService } from './lists.service';
@@ -83,6 +84,31 @@ export class ListsController {
         throw error;
       }
       throw new InternalServerErrorException('リスト明細の取得に失敗しました');
+    }
+  }
+
+  @Post(':listId/assign')
+  assignList(
+    @Req() req: JwtRequest,
+    @Param('listId') listId: string,
+    @Body() dto: AssignListDto,
+  ): CallingList {
+    try {
+      this.assertListManageRole(req.user);
+      const assigned = this.listsService.assignList(req.user, listId, dto.assigneeEmail);
+      this.notificationsGateway.emitListAssigned({
+        tenantId: req.user.tenantId,
+        listId: assigned.id,
+        listName: assigned.name,
+        assigneeEmail: dto.assigneeEmail,
+        assignedAt: assigned.assignedAt ?? new Date().toISOString(),
+      });
+      return assigned;
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('リスト配布に失敗しました');
     }
   }
 }

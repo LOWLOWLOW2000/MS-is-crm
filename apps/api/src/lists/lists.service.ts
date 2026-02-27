@@ -101,6 +101,8 @@ export class ListsService {
       createdBy: user.sub,
       createdAt: nowIso,
       itemCount: 0,
+      assigneeEmail: null,
+      assignedAt: null,
     };
 
     const existingUrls = new Set(
@@ -167,5 +169,17 @@ export class ListsService {
     return this.items
       .filter((item) => item.tenantId === user.tenantId && item.listId === listId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  };
+
+  assignList = (user: JwtPayload, listId: string, assigneeEmail: string): CallingList => {
+    const list = this.lists.find((candidate) => candidate.id === listId && candidate.tenantId === user.tenantId);
+
+    if (!list) {
+      throw new NotFoundException('対象リストが見つかりません');
+    }
+
+    list.assigneeEmail = assigneeEmail;
+    list.assignedAt = new Date().toISOString();
+    return list;
   };
 }

@@ -14,6 +14,7 @@ import {
 import type {
   CallingHelpRequest,
   CallingSummary,
+  ListAssignedEvent,
   ListDistributedEvent,
   RecallReminderEvent,
   ZoomCallLog,
@@ -40,6 +41,7 @@ const DashboardPage = () => {
   const [isLoadingSummary, setIsLoadingSummary] = useState(true);
   const [helpRequests, setHelpRequests] = useState<CallingHelpRequest[]>([]);
   const [distributedLists, setDistributedLists] = useState<ListDistributedEvent[]>([]);
+  const [assignedLists, setAssignedLists] = useState<ListAssignedEvent[]>([]);
   const [recallReminders, setRecallReminders] = useState<RecallReminderEvent[]>([]);
   const [zoomCalls, setZoomCalls] = useState<ZoomCallLog[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
@@ -132,6 +134,22 @@ const DashboardPage = () => {
       if (notificationPermission === 'granted') {
         new Notification('リスト配布通知', {
           body: `${event.listName} / ${event.itemCount}件`,
+        });
+      }
+    });
+
+    socket.on('list:assigned', (event: ListAssignedEvent) => {
+      if (event.tenantId !== session.user.tenantId) {
+        return;
+      }
+      if (event.assigneeEmail !== session.user.email) {
+        return;
+      }
+
+      setAssignedLists((current) => [event, ...current].slice(0, 10));
+      if (notificationPermission === 'granted') {
+        new Notification('リスト配布', {
+          body: `${event.listName} があなたに配布されました`,
         });
       }
     });
@@ -331,6 +349,27 @@ const DashboardPage = () => {
                   </p>
                   <p className="text-slate-600">
                     {new Date(event.distributedAt).toLocaleString('ja-JP')}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded border border-slate-200 bg-white p-4">
+          <h2 className="text-base font-semibold">自分への配布</h2>
+          <div className="mt-3 space-y-2">
+            {assignedLists.length === 0 ? (
+              <p className="text-sm text-slate-500">あなた宛ての配布はありません。</p>
+            ) : (
+              assignedLists.map((event) => (
+                <div
+                  key={`${event.listId}-${event.assignedAt}`}
+                  className="rounded border border-cyan-200 bg-cyan-50 p-2 text-xs"
+                >
+                  <p className="font-semibold text-cyan-700">{event.listName} が配布されました</p>
+                  <p className="text-slate-600">
+                    {new Date(event.assignedAt).toLocaleString('ja-JP')}
                   </p>
                 </div>
               ))

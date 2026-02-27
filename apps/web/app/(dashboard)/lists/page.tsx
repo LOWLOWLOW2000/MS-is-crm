@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { ChangeEvent, useEffect, useState } from 'react';
-import { fetchCallingLists, fetchListItems, importCsvList } from '@/lib/calling-api';
+import { assignCallingList, fetchCallingLists, fetchListItems, importCsvList } from '@/lib/calling-api';
 import type { CallingList, ListItem } from '@/lib/types';
 
 const csvTemplate = `companyName,phone,address,targetUrl,industry\n株式会社サンプル,03-1111-2222,東京都渋谷区1-1-1,https://example.com,製造`;
@@ -16,6 +16,7 @@ const ListsPage = () => {
   const [csvText, setCsvText] = useState(csvTemplate);
   const [lists, setLists] = useState<CallingList[]>([]);
   const [selectedListId, setSelectedListId] = useState<string>('');
+  const [assigneeEmail, setAssigneeEmail] = useState('');
   const [items, setItems] = useState<ListItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('待機中');
@@ -126,6 +127,30 @@ const ListsPage = () => {
     setStatusMessage(`CSVを読み込みました: ${file.name}`);
   };
 
+  const handleAssign = async (): Promise<void> => {
+    if (!session?.accessToken || !selectedListId) {
+      setStatusMessage('配布対象リストが選択されていません');
+      return;
+    }
+    if (!assigneeEmail.trim()) {
+      setStatusMessage('配布先メールアドレスを入力してください');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const assigned = await assignCallingList(session.accessToken, selectedListId, {
+        assigneeEmail: assigneeEmail.trim(),
+      });
+      setStatusMessage(`配布完了: ${assigned.name} → ${assigned.assigneeEmail}`);
+      await loadLists(session.accessToken);
+    } catch {
+      setStatusMessage('リスト配布に失敗しました');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (status !== 'authenticated' || !session?.user) {
     return <main className="p-6">読み込み中...</main>;
   }
@@ -205,6 +230,26 @@ const ListsPage = () => {
               </select>
             </div>
             <p className="mt-2 text-xs text-slate-500">登録済み: {lists.length} リスト</p>
+            <div className="mt-3 space-y-2 rounded border border-slate-200 p-3">
+              <p className="text-xs font-medium text-slate-700">ISへ配布</p>
+              <input
+                type="email"
+                value={assigneeEmail}
+                onChange={(event) => setAssigneeEmail(event.target.value)}
+                placeholder="member@example.com"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  void handleAssign();
+                }}
+                disabled={!selectedListId || isLoading}
+                className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-60"
+              >
+                {isLoading ? '配布中...' : 'このリストを配布'}
+              </button>
+            </div>
             {selectedListId && (
               <Link
                 href={`/calling/${selectedListId}`}

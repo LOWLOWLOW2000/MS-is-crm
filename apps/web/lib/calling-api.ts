@@ -223,6 +223,25 @@ export const fetchListItems = async (accessToken: string, listId: string): Promi
   return (await response.json()) as ListItem[];
 };
 
+export const assignCallingList = async (
+  accessToken: string,
+  listId: string,
+  input: { assigneeEmail: string },
+): Promise<CallingList> => {
+  const response = await fetch(`${apiBaseUrl}/lists/${listId}/assign`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('リスト配布に失敗しました');
+  }
+
+  return (await response.json()) as CallingList;
+};
+
 export const fetchRecentZoomCalls = async (accessToken: string): Promise<ZoomCallLog[]> => {
   const response = await fetch(`${apiBaseUrl}/zoom/calls`, {
     method: 'GET',

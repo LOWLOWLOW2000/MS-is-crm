@@ -123,6 +123,8 @@ export interface CallingList {
   createdBy: string;
   createdAt: string;
   itemCount: number;
+  assigneeEmail: string | null;
+  assignedAt: string | null;
 }
 
 export interface ListItem {
@@ -195,4 +197,12 @@ export interface ScriptTemplate {
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ListAssignedEvent {
+  tenantId: string;
+  listId: string;
+  listName: string;
+  assigneeEmail: string;
+  assignedAt: string;
 }
