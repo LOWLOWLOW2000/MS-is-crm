@@ -568,9 +568,27 @@ const CallingPage = () => {
       return;
     }
 
+    const startZoomDialSession = async (): Promise<void> => {
+      const zoomSession = await createZoomDialSession(session.accessToken, {
+        companyName: companyProfile.companyName,
+        targetUrl: displayUrl,
+      });
+      window.open(zoomSession.startUrl, '_blank', 'noopener,noreferrer');
+      setStatusMessage(
+        `ZOOM発信セッションを開始しました: ${zoomSession.meetingId}${
+          zoomSession.isFallback ? '（フォールバックURL）' : ''
+        }`,
+      );
+    };
+
     if (!humanApprovalEnabled) {
-      setStatusMessage('ZOOM発信を開始しました。（承認フローOFF / MVPダミー挙動）');
-      return;
+      try {
+        await startZoomDialSession();
+        return;
+      } catch {
+        setStatusMessage('ZOOM発信処理に失敗しました。');
+        return;
+      }
     }
 
     if (!approvalId) {
@@ -589,16 +607,7 @@ const CallingPage = () => {
         return;
       }
 
-      const zoomSession = await createZoomDialSession(session.accessToken, {
-        companyName: companyProfile.companyName,
-        targetUrl: displayUrl,
-      });
-      window.open(zoomSession.startUrl, '_blank', 'noopener,noreferrer');
-      setStatusMessage(
-        `ZOOM発信セッションを開始しました: ${zoomSession.meetingId}${
-          zoomSession.isFallback ? '（フォールバックURL）' : ''
-        }`,
-      );
+      await startZoomDialSession();
     } catch {
       setStatusMessage('ZOOM発信処理に失敗しました。');
     }
