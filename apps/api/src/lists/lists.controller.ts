@@ -111,7 +111,7 @@ export class ListsController {
         tenantId: req.user.tenantId,
         listId: assigned.id,
         listName: assigned.name,
-        assigneeEmail: dto.assigneeEmail,
+        assigneeEmail: assigned.assigneeEmail ?? dto.assigneeEmail,
         assignedBy: req.user.email,
         assignedAt: assigned.assignedAt ?? new Date().toISOString(),
       });

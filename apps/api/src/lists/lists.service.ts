@@ -204,7 +204,7 @@ export class ListsService {
       throw new NotFoundException('対象リストが見つかりません');
     }
 
-    list.assigneeEmail = assigneeEmail;
+    list.assigneeEmail = assigneeEmail.trim().toLowerCase();
     list.assignedBy = user.email;
     list.assignedAt = new Date().toISOString();
     return list;
