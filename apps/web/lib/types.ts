@@ -162,3 +162,10 @@ export interface ReportSummary {
     count: number;
   }[];
 }
+
+export interface CallingSettings {
+  tenantId: string;
+  humanApprovalEnabled: boolean;
+  updatedBy: string;
+  updatedAt: string;
+}

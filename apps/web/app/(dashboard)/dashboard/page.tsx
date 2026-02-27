@@ -202,6 +202,9 @@ const DashboardPage = () => {
               <Link href="/reports" className="rounded bg-violet-600 px-3 py-2 text-sm text-white">
                 基本レポート
               </Link>
+              <Link href="/settings" className="rounded bg-amber-600 px-3 py-2 text-sm text-white">
+                設定
+              </Link>
               <Link
                 href="/dashboard"
                 className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700"

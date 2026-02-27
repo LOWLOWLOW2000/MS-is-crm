@@ -8,6 +8,7 @@ import { io } from 'socket.io-client';
 import {
   createCallingApproval,
   createHelpRequest,
+  fetchCallingSettings,
   getApiBaseUrl,
   saveCallingRecord,
   validateDialPermission,
@@ -111,6 +112,7 @@ const CallingPage = () => {
   const [statusMessage, setStatusMessage] = useState('待機中');
   const [lastHelpRequestId, setLastHelpRequestId] = useState<string | null>(null);
   const [rightPanelLayout, setRightPanelLayout] = useState<Layout | undefined>(undefined);
+  const [humanApprovalEnabled, setHumanApprovalEnabled] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -165,6 +167,24 @@ const CallingPage = () => {
     audioRef.current.volume = isMuted ? 0 : volume;
     window.localStorage.setItem(BGM_VOLUME_KEY, String(volume));
   }, [isMuted, volume]);
+
+  useEffect(() => {
+    if (status !== 'authenticated' || !session?.accessToken) {
+      return;
+    }
+
+    const loadCallingSettings = async (): Promise<void> => {
+      try {
+        const settings = await fetchCallingSettings(session.accessToken);
+        setHumanApprovalEnabled(settings.humanApprovalEnabled);
+      } catch {
+        setStatusMessage('架電設定の取得に失敗しました。承認必須モードで継続します。');
+        setHumanApprovalEnabled(true);
+      }
+    };
+
+    void loadCallingSettings();
+  }, [status, session?.accessToken]);
 
   useEffect(() => {
     setIframeLoaded(false);
@@ -338,7 +358,17 @@ const CallingPage = () => {
   };
 
   const handleDial = async (): Promise<void> => {
-    if (!session?.accessToken || !approvalId) {
+    if (!session?.accessToken) {
+      setStatusMessage('アクセストークンが見つからないため発信できません。');
+      return;
+    }
+
+    if (!humanApprovalEnabled) {
+      setStatusMessage('ZOOM発信を開始しました。（承認フローOFF / MVPダミー挙動）');
+      return;
+    }
+
+    if (!approvalId) {
       setStatusMessage('承認が未完了のため発信できません。');
       return;
     }
@@ -373,7 +403,7 @@ const CallingPage = () => {
         companyPhone: '03-1234-5678',
         companyAddress: '東京都千代田区1-1-1',
         targetUrl: displayUrl,
-        approved: isApproved,
+        approved: humanApprovalEnabled ? isApproved : true,
         approvedAt: approvedAt ?? undefined,
         result: selectedResult,
         memo: memo || undefined,
@@ -459,11 +489,14 @@ const CallingPage = () => {
           <div className="rounded border border-slate-200 p-3">
             <h2 className="text-sm font-semibold text-slate-700">人間承認フロー</h2>
             <p className="mt-1 text-xs text-slate-500">
-              HPを目視確認後に承認してください。承認前は発信できません。
+              {humanApprovalEnabled
+                ? 'HPを目視確認後に承認してください。承認前は発信できません。'
+                : '設定により承認フローはOFFです（developerテスト設定）。'}
             </p>
             <button
               type="button"
-              className="mt-3 w-full rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white"
+              disabled={!humanApprovalEnabled}
+              className="mt-3 w-full rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-400"
               onClick={() => {
                 void handleApprove();
               }}
@@ -473,14 +506,16 @@ const CallingPage = () => {
             <p className="mt-2 text-xs text-slate-600">
               {isApproved && approvedAt
                 ? `承認日時: ${new Date(approvedAt).toLocaleString('ja-JP')}`
-                : '未承認'}
+                : humanApprovalEnabled
+                  ? '未承認'
+                  : '承認不要（OFF）'}
             </p>
           </div>
 
           <div className="rounded border border-slate-200 p-3">
             <button
               type="button"
-              disabled={!isApproved || !approvalId}
+              disabled={humanApprovalEnabled ? !isApproved || !approvalId : false}
               className="w-full rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
               onClick={() => {
                 void handleDial();

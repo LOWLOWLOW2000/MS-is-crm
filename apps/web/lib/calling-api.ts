@@ -1,5 +1,6 @@
 import {
   CallingList,
+  CallingSettings,
   CallingApproval,
   CallingHelpRequest,
   CallingRecord,
@@ -236,5 +237,37 @@ export const fetchReportSummary = async (
   }
 
   return (await response.json()) as ReportSummary;
+};
+
+export const fetchCallingSettings = async (accessToken: string): Promise<CallingSettings> => {
+  const response = await fetch(`${apiBaseUrl}/settings/calling`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('架電設定の取得に失敗しました');
+  }
+
+  return (await response.json()) as CallingSettings;
+};
+
+export const updateCallingSettings = async (
+  accessToken: string,
+  input: { humanApprovalEnabled: boolean },
+): Promise<CallingSettings> => {
+  const response = await fetch(`${apiBaseUrl}/settings/calling`, {
+    method: 'PATCH',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('架電設定の更新に失敗しました');
+  }
+
+  return (await response.json()) as CallingSettings;
 };
 

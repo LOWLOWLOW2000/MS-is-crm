@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { CallingModule } from './calling/calling.module';
 import { ListsModule } from './lists/lists.module';
 import { ReportsModule } from './reports/reports.module';
+import { SettingsModule } from './settings/settings.module';
 import { ZoomModule } from './zoom/zoom.module';
 
 @Module({
@@ -14,6 +15,7 @@ import { ZoomModule } from './zoom/zoom.module';
     CallingModule,
     ListsModule,
     ReportsModule,
+    SettingsModule,
     ZoomModule,
   ],
   controllers: [AppController],
