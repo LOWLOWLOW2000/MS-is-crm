@@ -256,6 +256,23 @@ export const assignCallingList = async (
   return (await response.json()) as CallingList;
 };
 
+export const unassignCallingList = async (
+  accessToken: string,
+  listId: string,
+): Promise<CallingList> => {
+  const response = await fetch(`${apiBaseUrl}/lists/${listId}/unassign`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('リスト配布解除に失敗しました');
+  }
+
+  return (await response.json()) as CallingList;
+};
+
 export const fetchRecentZoomCalls = async (accessToken: string): Promise<ZoomCallLog[]> => {
   const response = await fetch(`${apiBaseUrl}/zoom/calls`, {
     method: 'GET',

@@ -4,7 +4,13 @@ import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { ChangeEvent, useEffect, useState } from 'react';
-import { assignCallingList, fetchCallingLists, fetchListItems, importCsvList } from '@/lib/calling-api';
+import {
+  assignCallingList,
+  fetchCallingLists,
+  fetchListItems,
+  importCsvList,
+  unassignCallingList,
+} from '@/lib/calling-api';
 import type { CallingList, ListItem } from '@/lib/types';
 
 const csvTemplate = `companyName,phone,address,targetUrl,industry\n株式会社サンプル,03-1111-2222,東京都渋谷区1-1-1,https://example.com,製造`;
@@ -156,6 +162,24 @@ const ListsPage = () => {
     }
   };
 
+  const handleUnassign = async (): Promise<void> => {
+    if (!session?.accessToken || !selectedListId) {
+      setStatusMessage('配布対象リストが選択されていません');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const unassigned = await unassignCallingList(session.accessToken, selectedListId);
+      setStatusMessage(`配布解除: ${unassigned.name}`);
+      await loadLists(session.accessToken);
+    } catch {
+      setStatusMessage('リスト配布解除に失敗しました');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (status !== 'authenticated' || !session?.user) {
     return <main className="p-6">読み込み中...</main>;
   }
@@ -253,6 +277,16 @@ const ListsPage = () => {
                 className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-60"
               >
                 {isLoading ? '配布中...' : 'このリストを配布'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleUnassign();
+                }}
+                disabled={!selectedListId || isLoading}
+                className="rounded bg-slate-500 px-2 py-1 text-xs text-white disabled:opacity-60"
+              >
+                配布解除
               </button>
               {selectedListId &&
                 (() => {

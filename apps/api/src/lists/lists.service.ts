@@ -209,4 +209,17 @@ export class ListsService {
     list.assignedAt = new Date().toISOString();
     return list;
   };
+
+  unassignList = (user: JwtPayload, listId: string): CallingList => {
+    const list = this.lists.find((candidate) => candidate.id === listId && candidate.tenantId === user.tenantId);
+
+    if (!list) {
+      throw new NotFoundException('対象リストが見つかりません');
+    }
+
+    list.assigneeEmail = null;
+    list.assignedBy = null;
+    list.assignedAt = null;
+    return list;
+  };
 }

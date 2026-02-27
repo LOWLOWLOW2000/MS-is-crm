@@ -123,4 +123,17 @@ export class ListsController {
       throw new InternalServerErrorException('リスト配布に失敗しました');
     }
   }
+
+  @Post(':listId/unassign')
+  unassignList(@Req() req: JwtRequest, @Param('listId') listId: string): CallingList {
+    try {
+      this.assertListManageRole(req.user);
+      return this.listsService.unassignList(req.user, listId);
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('リスト配布解除に失敗しました');
+    }
+  }
 }
