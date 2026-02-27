@@ -148,3 +148,17 @@ export interface ZoomCallLog {
   eventType: string;
   receivedAt: string;
 }
+
+export type ReportPeriod = 'daily' | 'weekly' | 'monthly';
+
+export interface ReportSummary {
+  period: ReportPeriod;
+  startAt: string;
+  endAt: string;
+  totalCalls: number;
+  connectedRate: number;
+  resultBreakdown: {
+    result: string;
+    count: number;
+  }[];
+}

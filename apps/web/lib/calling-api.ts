@@ -7,6 +7,8 @@ import {
   DialValidationResult,
   ImportListResult,
   ListItem,
+  ReportPeriod,
+  ReportSummary,
   SaveCallingRecordInput,
   ZoomCallLog,
 } from './types';
@@ -216,5 +218,23 @@ export const fetchRecentZoomCalls = async (accessToken: string): Promise<ZoomCal
   }
 
   return (await response.json()) as ZoomCallLog[];
+};
+
+export const fetchReportSummary = async (
+  accessToken: string,
+  period: ReportPeriod,
+): Promise<ReportSummary> => {
+  const query = new URLSearchParams({ period }).toString();
+  const response = await fetch(`${apiBaseUrl}/reports/summary?${query}`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('レポート集計の取得に失敗しました');
+  }
+
+  return (await response.json()) as ReportSummary;
 };
 

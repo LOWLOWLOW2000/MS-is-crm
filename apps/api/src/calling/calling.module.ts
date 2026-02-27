@@ -7,6 +7,7 @@ import { CallingService } from './calling.service';
   imports: [NotificationsModule],
   controllers: [CallingController],
   providers: [CallingService],
+  exports: [CallingService],
 })
 export class CallingModule {}
 

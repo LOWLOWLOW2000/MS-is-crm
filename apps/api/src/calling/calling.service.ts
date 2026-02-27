@@ -225,5 +225,9 @@ export class CallingService {
       recallScheduledCount,
     };
   };
+
+  getTenantRecords = (tenantId: string): CallingRecord[] => {
+    return this.records.filter((record) => record.tenantId === tenantId);
+  };
 }
 

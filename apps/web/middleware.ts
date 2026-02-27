@@ -8,13 +8,15 @@ const DASHBOARD_PATH = '/dashboard';
 const CALLING_PATH = '/calling';
 const DIRECTOR_PATH = '/director';
 const LISTS_PATH = '/lists';
+const REPORTS_PATH = '/reports';
 
 const isProtectedPath = (pathname: string): boolean => {
   return (
     pathname.startsWith(DASHBOARD_PATH) ||
     pathname.startsWith(CALLING_PATH) ||
     pathname.startsWith(DIRECTOR_PATH) ||
-    pathname.startsWith(LISTS_PATH)
+    pathname.startsWith(LISTS_PATH) ||
+    pathname.startsWith(REPORTS_PATH)
   );
 };
 
@@ -63,9 +65,21 @@ export const middleware = async (request: NextRequest) => {
     return NextResponse.redirect(url);
   }
 
+  if (isAuthenticated && pathname.startsWith(REPORTS_PATH) && userRole === 'is_member') {
+    const url = new URL(CALLING_PATH, request.url);
+    return NextResponse.redirect(url);
+  }
+
   return NextResponse.next();
 };
 
 export const config = {
-  matcher: ['/login', '/dashboard/:path*', '/calling/:path*', '/director/:path*', '/lists/:path*'],
+  matcher: [
+    '/login',
+    '/dashboard/:path*',
+    '/calling/:path*',
+    '/director/:path*',
+    '/lists/:path*',
+    '/reports/:path*',
+  ],
 };
