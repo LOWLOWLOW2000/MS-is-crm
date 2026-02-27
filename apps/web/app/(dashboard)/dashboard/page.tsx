@@ -174,7 +174,8 @@ const DashboardPage = () => {
       if (event.tenantId !== session.user.tenantId) {
         return;
       }
-      if (event.assigneeEmail !== session.user.email) {
+      const sessionEmail = session.user.email?.toLowerCase() ?? '';
+      if (event.assigneeEmail.toLowerCase() !== sessionEmail) {
         return;
       }
 
@@ -190,7 +191,11 @@ const DashboardPage = () => {
       if (event.tenantId !== session.user.tenantId) {
         return;
       }
-      if (event.previousAssigneeEmail && event.previousAssigneeEmail !== session.user.email) {
+      if (!event.previousAssigneeEmail) {
+        return;
+      }
+      const sessionEmail = session.user.email?.toLowerCase() ?? '';
+      if (event.previousAssigneeEmail.toLowerCase() !== sessionEmail) {
         return;
       }
       setAssignedLists((current) => current.filter((item) => item.listId !== event.listId));

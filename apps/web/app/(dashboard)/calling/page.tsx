@@ -370,7 +370,11 @@ const CallingPage = () => {
     });
 
     socket.on('list:assigned', (event: ListAssignedEvent) => {
-      if (event.tenantId !== session.user.tenantId || event.assigneeEmail !== session.user.email) {
+      if (event.tenantId !== session.user.tenantId) {
+        return;
+      }
+      const sessionEmail = session.user.email?.toLowerCase() ?? '';
+      if (event.assigneeEmail.toLowerCase() !== sessionEmail) {
         return;
       }
 
@@ -397,7 +401,11 @@ const CallingPage = () => {
       if (event.tenantId !== session.user.tenantId) {
         return;
       }
-      if (event.previousAssigneeEmail && event.previousAssigneeEmail !== session.user.email) {
+      if (!event.previousAssigneeEmail) {
+        return;
+      }
+      const sessionEmail = session.user.email?.toLowerCase() ?? '';
+      if (event.previousAssigneeEmail.toLowerCase() !== sessionEmail) {
         return;
       }
 
