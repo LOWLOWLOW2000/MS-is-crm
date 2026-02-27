@@ -7,5 +7,6 @@ export interface CallingList {
   createdAt: string;
   itemCount: number;
   assigneeEmail: string | null;
+  assignedBy: string | null;
   assignedAt: string | null;
 }

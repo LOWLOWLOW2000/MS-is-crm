@@ -102,6 +102,7 @@ export class ListsService {
       createdAt: nowIso,
       itemCount: 0,
       assigneeEmail: null,
+      assignedBy: null,
       assignedAt: null,
     };
 
@@ -204,6 +205,7 @@ export class ListsService {
     }
 
     list.assigneeEmail = assigneeEmail;
+    list.assignedBy = user.email;
     list.assignedAt = new Date().toISOString();
     return list;
   };

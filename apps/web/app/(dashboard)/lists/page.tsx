@@ -249,6 +249,19 @@ const ListsPage = () => {
               >
                 {isLoading ? '配布中...' : 'このリストを配布'}
               </button>
+              {selectedListId &&
+                (() => {
+                  const selectedList = lists.find((list) => list.id === selectedListId);
+                  if (!selectedList?.assigneeEmail || !selectedList.assignedAt) {
+                    return null;
+                  }
+                  return (
+                    <p className="text-[11px] text-slate-600">
+                      配布先: {selectedList.assigneeEmail} / 配布者: {selectedList.assignedBy ?? '-'} / 配布日時:{' '}
+                      {new Date(selectedList.assignedAt).toLocaleString('ja-JP')}
+                    </p>
+                  );
+                })()}
             </div>
             {selectedListId && (
               <Link

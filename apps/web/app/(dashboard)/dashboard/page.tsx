@@ -94,6 +94,7 @@ const DashboardPage = () => {
             listId: list.id,
             listName: list.name,
             assigneeEmail: list.assigneeEmail ?? session.user.email ?? '',
+            assignedBy: list.assignedBy ?? '-',
             assignedAt: list.assignedAt ?? list.createdAt,
           })),
         );
@@ -403,6 +404,7 @@ const DashboardPage = () => {
                   className="rounded border border-cyan-200 bg-cyan-50 p-2 text-xs"
                 >
                   <p className="font-semibold text-cyan-700">{event.listName} が配布されました</p>
+                  <p className="text-slate-600">配布者: {event.assignedBy}</p>
                   <p className="text-slate-600">
                     {new Date(event.assignedAt).toLocaleString('ja-JP')}
                   </p>

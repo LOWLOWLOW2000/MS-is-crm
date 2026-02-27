@@ -636,17 +636,34 @@ const CallingPage = () => {
               {assignedListsForMe.length === 0 ? (
                 <p className="mt-2 text-xs text-slate-500">配布リストはありません。</p>
               ) : (
-                <select
-                  className="mt-2 w-full rounded border border-slate-300 px-2 py-2 text-sm"
-                  value={selectedAssignedListId}
-                  onChange={handleAssignedListChange}
-                >
-                  {assignedListsForMe.map((list) => (
-                    <option key={list.id} value={list.id}>
-                      {list.name}（{list.itemCount}件）
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <select
+                    className="mt-2 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+                    value={selectedAssignedListId}
+                    onChange={handleAssignedListChange}
+                  >
+                    {assignedListsForMe.map((list) => (
+                      <option key={list.id} value={list.id}>
+                        {list.name}（{list.itemCount}件）
+                      </option>
+                    ))}
+                  </select>
+                  {selectedAssignedListId &&
+                    (() => {
+                      const selectedList = assignedListsForMe.find((list) => list.id === selectedAssignedListId);
+                      if (!selectedList) {
+                        return null;
+                      }
+                      return (
+                        <p className="mt-1 text-xs text-slate-500">
+                          配布者: {selectedList.assignedBy ?? '-'} / 配布日時:{' '}
+                          {selectedList.assignedAt
+                            ? new Date(selectedList.assignedAt).toLocaleString('ja-JP')
+                            : '-'}
+                        </p>
+                      );
+                    })()}
+                </>
               )}
             </div>
           )}

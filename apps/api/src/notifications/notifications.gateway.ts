@@ -54,6 +54,7 @@ export interface ListAssignedEvent {
   listId: string;
   listName: string;
   assigneeEmail: string;
+  assignedBy: string;
   assignedAt: string;
 }
 

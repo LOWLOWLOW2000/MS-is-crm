@@ -124,6 +124,7 @@ export interface CallingList {
   createdAt: string;
   itemCount: number;
   assigneeEmail: string | null;
+  assignedBy: string | null;
   assignedAt: string | null;
 }
 
@@ -204,5 +205,6 @@ export interface ListAssignedEvent {
   listId: string;
   listName: string;
   assigneeEmail: string;
+  assignedBy: string;
   assignedAt: string;
 }

@@ -112,6 +112,7 @@ export class ListsController {
         listId: assigned.id,
         listName: assigned.name,
         assigneeEmail: dto.assigneeEmail,
+        assignedBy: req.user.email,
         assignedAt: assigned.assignedAt ?? new Date().toISOString(),
       });
       return assigned;
