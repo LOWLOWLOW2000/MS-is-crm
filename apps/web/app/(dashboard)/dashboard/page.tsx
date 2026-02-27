@@ -5,8 +5,18 @@ import { signOut, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
-import { fetchCallingSummary, fetchRecentHelpRequests, getApiBaseUrl } from '@/lib/calling-api';
-import type { CallingHelpRequest, CallingSummary, RecallReminderEvent } from '@/lib/types';
+import {
+  fetchCallingSummary,
+  fetchRecentHelpRequests,
+  fetchRecentZoomCalls,
+  getApiBaseUrl,
+} from '@/lib/calling-api';
+import type {
+  CallingHelpRequest,
+  CallingSummary,
+  RecallReminderEvent,
+  ZoomCallLog,
+} from '@/lib/types';
 
 const initialSummary: CallingSummary = {
   totalCallsToday: 0,
@@ -29,6 +39,7 @@ const DashboardPage = () => {
   const [isLoadingSummary, setIsLoadingSummary] = useState(true);
   const [helpRequests, setHelpRequests] = useState<CallingHelpRequest[]>([]);
   const [recallReminders, setRecallReminders] = useState<RecallReminderEvent[]>([]);
+  const [zoomCalls, setZoomCalls] = useState<ZoomCallLog[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
   useEffect(() => {
@@ -45,15 +56,18 @@ const DashboardPage = () => {
     const loadDashboardData = async () => {
       setIsLoadingSummary(true);
       try {
-        const [nextSummary, recentHelpRequests] = await Promise.all([
+        const [nextSummary, recentHelpRequests, recentZoomCalls] = await Promise.all([
           fetchCallingSummary(session.accessToken),
           fetchRecentHelpRequests(session.accessToken),
+          fetchRecentZoomCalls(session.accessToken),
         ]);
         setSummary(nextSummary);
         setHelpRequests(recentHelpRequests);
+        setZoomCalls(recentZoomCalls);
       } catch {
         setSummary(initialSummary);
         setHelpRequests([]);
+        setZoomCalls([]);
       } finally {
         setIsLoadingSummary(false);
       }
@@ -244,6 +258,28 @@ const DashboardPage = () => {
                   </p>
                   <p className="text-slate-700">
                     予定時刻: {new Date(event.nextCallAt).toLocaleString('ja-JP')}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded border border-slate-200 bg-white p-4">
+          <h2 className="text-base font-semibold">ZOOM通話ログ（Webhook）</h2>
+          <div className="mt-3 space-y-2">
+            {zoomCalls.length === 0 ? (
+              <p className="text-sm text-slate-500">まだZOOM通話ログはありません。</p>
+            ) : (
+              zoomCalls.map((log) => (
+                <div key={log.id} className="rounded border border-slate-200 bg-slate-50 p-2 text-xs">
+                  <p className="font-semibold text-slate-700">
+                    {log.status === 'started' ? '開始' : '終了'} / {log.topic ?? '(件名なし)'}
+                  </p>
+                  <p className="text-slate-600">meetingId: {log.meetingId ?? '-'}</p>
+                  <p className="text-slate-600">host: {log.hostEmail ?? '-'}</p>
+                  <p className="text-slate-500">
+                    受信: {new Date(log.receivedAt).toLocaleString('ja-JP')}
                   </p>
                 </div>
               ))

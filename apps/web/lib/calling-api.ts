@@ -8,6 +8,7 @@ import {
   ImportListResult,
   ListItem,
   SaveCallingRecordInput,
+  ZoomCallLog,
 } from './types';
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.API_BASE_URL ?? 'http://localhost:3001';
@@ -201,5 +202,19 @@ export const fetchListItems = async (accessToken: string, listId: string): Promi
   }
 
   return (await response.json()) as ListItem[];
+};
+
+export const fetchRecentZoomCalls = async (accessToken: string): Promise<ZoomCallLog[]> => {
+  const response = await fetch(`${apiBaseUrl}/zoom/calls`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('ZOOM通話ログの取得に失敗しました');
+  }
+
+  return (await response.json()) as ZoomCallLog[];
 };
 
