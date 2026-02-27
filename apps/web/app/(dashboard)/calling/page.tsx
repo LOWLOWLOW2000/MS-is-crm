@@ -367,22 +367,21 @@ const CallingPage = () => {
         return;
       }
 
-      setAssignedListsForMe((current) => {
-        const withoutSame = current.filter((list) => list.id !== event.listId);
-        const next: CallingList = {
-          id: event.listId,
-          tenantId: event.tenantId,
-          name: event.listName,
-          sourceType: 'csv',
-          createdBy: '',
-          createdAt: event.assignedAt,
-          itemCount: 0,
-          assigneeEmail: event.assigneeEmail,
-          assignedBy: event.assignedBy,
-          assignedAt: event.assignedAt,
-        };
-        return [next, ...withoutSame].slice(0, 20);
-      });
+      void (async () => {
+        if (!session.accessToken) {
+          return;
+        }
+        try {
+          const lists = await fetchAssignedCallingLists(session.accessToken);
+          setAssignedListsForMe(lists);
+          if (!listId && lists.length > 0) {
+            setListId(lists[0].id);
+            setSelectedAssignedListId(lists[0].id);
+          }
+        } catch {
+          setStatusMessage('配布リスト同期に失敗しました。');
+        }
+      })();
 
       setStatusMessage(`新しい配布リストを受信: ${event.listName}（配布者: ${event.assignedBy}）`);
     });
@@ -390,7 +389,7 @@ const CallingPage = () => {
     return () => {
       socket.disconnect();
     };
-  }, [status, session?.user?.id, session?.user?.tenantId, session?.user?.email, lastHelpRequestId]);
+  }, [status, session?.accessToken, session?.user?.id, session?.user?.tenantId, session?.user?.email, listId, lastHelpRequestId]);
 
   useEffect(() => {
     if (iframeLoaded) {
