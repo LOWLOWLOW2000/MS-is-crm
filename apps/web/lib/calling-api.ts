@@ -11,6 +11,8 @@ import {
   ReportPeriod,
   ReportSummary,
   SaveCallingRecordInput,
+  ScriptTab,
+  ScriptTemplate,
   ZoomCallLog,
 } from './types';
 
@@ -283,5 +285,71 @@ export const updateCallingSettings = async (
   }
 
   return (await response.json()) as CallingSettings;
+};
+
+export const fetchScriptTemplates = async (accessToken: string): Promise<ScriptTemplate[]> => {
+  const response = await fetch(`${apiBaseUrl}/scripts`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('スクリプト一覧の取得に失敗しました');
+  }
+
+  return (await response.json()) as ScriptTemplate[];
+};
+
+export const createScriptTemplate = async (
+  accessToken: string,
+  input: { name: string; industryTag?: string; tabs: ScriptTab[] },
+): Promise<ScriptTemplate> => {
+  const response = await fetch(`${apiBaseUrl}/scripts`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('スクリプト作成に失敗しました');
+  }
+
+  return (await response.json()) as ScriptTemplate;
+};
+
+export const updateScriptTemplate = async (
+  accessToken: string,
+  templateId: string,
+  input: { name: string; industryTag?: string; tabs: ScriptTab[] },
+): Promise<ScriptTemplate> => {
+  const response = await fetch(`${apiBaseUrl}/scripts/${templateId}`, {
+    method: 'PATCH',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('スクリプト更新に失敗しました');
+  }
+
+  return (await response.json()) as ScriptTemplate;
+};
+
+export const deleteScriptTemplate = async (
+  accessToken: string,
+  templateId: string,
+): Promise<void> => {
+  const response = await fetch(`${apiBaseUrl}/scripts/${templateId}`, {
+    method: 'DELETE',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('スクリプト削除に失敗しました');
+  }
 };
 

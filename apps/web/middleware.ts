@@ -11,6 +11,7 @@ const LISTS_PATH = '/lists';
 const REPORTS_PATH = '/reports';
 const SETTINGS_PATH = '/settings';
 const RECALL_PATH = '/recall';
+const SCRIPTS_PATH = '/scripts';
 
 const isProtectedPath = (pathname: string): boolean => {
   return (
@@ -20,7 +21,8 @@ const isProtectedPath = (pathname: string): boolean => {
     pathname.startsWith(LISTS_PATH) ||
     pathname.startsWith(REPORTS_PATH) ||
     pathname.startsWith(SETTINGS_PATH) ||
-    pathname.startsWith(RECALL_PATH)
+    pathname.startsWith(RECALL_PATH) ||
+    pathname.startsWith(SCRIPTS_PATH)
   );
 };
 
@@ -84,6 +86,11 @@ export const middleware = async (request: NextRequest) => {
     return NextResponse.redirect(url);
   }
 
+  if (isAuthenticated && pathname.startsWith(SCRIPTS_PATH) && userRole === 'is_member') {
+    const url = new URL(CALLING_PATH, request.url);
+    return NextResponse.redirect(url);
+  }
+
   return NextResponse.next();
 };
 
@@ -97,5 +104,6 @@ export const config = {
     '/reports/:path*',
     '/settings/:path*',
     '/recall/:path*',
+    '/scripts/:path*',
   ],
 };

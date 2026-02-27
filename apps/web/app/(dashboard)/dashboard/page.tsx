@@ -208,6 +208,9 @@ const DashboardPage = () => {
               <Link href="/recall" className="rounded bg-cyan-600 px-3 py-2 text-sm text-white">
                 再架電一覧
               </Link>
+              <Link href="/scripts" className="rounded bg-indigo-600 px-3 py-2 text-sm text-white">
+                スクリプト管理
+              </Link>
               <Link
                 href="/dashboard"
                 className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700"
