@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
 import {
   fetchAssignedCallingLists,
@@ -35,6 +35,20 @@ const upsertHelpRequest = (
   return [incoming, ...filtered].slice(0, 20);
 };
 
+const mergeAssignedEvents = (
+  realtime: ListAssignedEvent[],
+  snapshots: ListAssignedEvent[],
+): ListAssignedEvent[] => {
+  const merged = [...realtime, ...snapshots].sort((a, b) => b.assignedAt.localeCompare(a.assignedAt));
+  const uniqueByList = new Map<string, ListAssignedEvent>();
+  merged.forEach((event) => {
+    if (!uniqueByList.has(event.listId)) {
+      uniqueByList.set(event.listId, event);
+    }
+  });
+  return Array.from(uniqueByList.values()).slice(0, 10);
+};
+
 const DashboardPage = () => {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -47,6 +61,9 @@ const DashboardPage = () => {
   const [recallReminders, setRecallReminders] = useState<RecallReminderEvent[]>([]);
   const [zoomCalls, setZoomCalls] = useState<ZoomCallLog[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const visibleAssignedLists = useMemo(() => {
+    return mergeAssignedEvents(assignedLists, myAssignedListSnapshots);
+  }, [assignedLists, myAssignedListSnapshots]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -377,10 +394,10 @@ const DashboardPage = () => {
         <section className="rounded border border-slate-200 bg-white p-4">
           <h2 className="text-base font-semibold">自分への配布</h2>
           <div className="mt-3 space-y-2">
-            {assignedLists.length === 0 && myAssignedListSnapshots.length === 0 ? (
+            {visibleAssignedLists.length === 0 ? (
               <p className="text-sm text-slate-500">あなた宛ての配布はありません。</p>
             ) : (
-              [...assignedLists, ...myAssignedListSnapshots].slice(0, 10).map((event) => (
+              visibleAssignedLists.map((event) => (
                 <div
                   key={`${event.listId}-${event.assignedAt}`}
                   className="rounded border border-cyan-200 bg-cyan-50 p-2 text-xs"
