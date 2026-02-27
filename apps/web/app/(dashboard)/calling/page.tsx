@@ -8,13 +8,14 @@ import { io } from 'socket.io-client';
 import {
   createCallingApproval,
   createHelpRequest,
+  fetchAssignedCallingLists,
   fetchListItems,
   fetchCallingSettings,
   getApiBaseUrl,
   saveCallingRecord,
   validateDialPermission,
 } from '@/lib/calling-api';
-import type { CallingResultType, ListItem, RecallReminderEvent } from '@/lib/types';
+import type { CallingList, CallingResultType, ListItem, RecallReminderEvent } from '@/lib/types';
 import { useCallingSessionStore } from '@/lib/stores/calling-session-store';
 
 type ScriptTab = {
@@ -137,6 +138,8 @@ const CallingPage = () => {
   const [listItems, setListItems] = useState<ListItem[]>([]);
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [listId, setListId] = useState<string | null>(null);
+  const [assignedListsForMe, setAssignedListsForMe] = useState<CallingList[]>([]);
+  const [selectedAssignedListId, setSelectedAssignedListId] = useState('');
   const [manualCompany, setManualCompany] = useState<CompanyProfile>(DEFAULT_COMPANY);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -156,6 +159,7 @@ const CallingPage = () => {
     const companyName = params.get('company');
     const companyUrl = params.get('url');
     setListId(nextListId);
+    setSelectedAssignedListId(nextListId ?? '');
 
     if (!nextListId && companyName && companyUrl) {
       setManualCompany({
@@ -242,6 +246,32 @@ const CallingPage = () => {
   }, [status, session?.accessToken]);
 
   useEffect(() => {
+    if (status !== 'authenticated' || !session?.accessToken || !session?.user?.role) {
+      return;
+    }
+    if (session.user.role !== 'is_member') {
+      setAssignedListsForMe([]);
+      return;
+    }
+
+    const loadAssignedLists = async (): Promise<void> => {
+      try {
+        const lists = await fetchAssignedCallingLists(session.accessToken);
+        setAssignedListsForMe(lists);
+        if (!listId && lists.length > 0) {
+          setListId(lists[0].id);
+          setSelectedAssignedListId(lists[0].id);
+        }
+      } catch {
+        setAssignedListsForMe([]);
+        setStatusMessage('自分への配布リスト取得に失敗しました。');
+      }
+    };
+
+    void loadAssignedLists();
+  }, [status, session?.accessToken, session?.user?.role, listId]);
+
+  useEffect(() => {
     if (status !== 'authenticated' || !session?.accessToken) {
       return;
     }
@@ -271,6 +301,13 @@ const CallingPage = () => {
 
     void loadListItems();
   }, [status, session?.accessToken, listId]);
+
+  useEffect(() => {
+    if (session?.user?.role !== 'is_member') {
+      return;
+    }
+    setSelectedAssignedListId(listId ?? '');
+  }, [session?.user?.role, listId]);
 
   useEffect(() => {
     setIframeLoaded(false);
@@ -374,6 +411,21 @@ const CallingPage = () => {
       return;
     }
     setVolume(nextVolume);
+  };
+
+  const handleAssignedListChange = (event: ChangeEvent<HTMLSelectElement>): void => {
+    const nextListId = event.target.value;
+    setSelectedAssignedListId(nextListId);
+    setListId(nextListId || null);
+
+    const nextParams = new URLSearchParams(window.location.search);
+    if (nextListId) {
+      nextParams.set('listId', nextListId);
+    } else {
+      nextParams.delete('listId');
+    }
+    const nextQuery = nextParams.toString();
+    window.history.replaceState({}, '', nextQuery ? `/calling?${nextQuery}` : '/calling');
   };
 
   const handleAddCustomTab = () => {
@@ -575,6 +627,27 @@ const CallingPage = () => {
 
       <div className="flex h-[calc(100vh-8.5rem)] gap-3">
         <section className="flex w-2/5 min-w-[360px] flex-col gap-3 overflow-y-auto rounded border border-slate-200 bg-white p-4">
+          {session.user.role === 'is_member' && (
+            <div className="rounded border border-slate-200 p-3">
+              <h2 className="text-sm font-semibold text-slate-700">自分への配布リスト</h2>
+              {assignedListsForMe.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">配布リストはありません。</p>
+              ) : (
+                <select
+                  className="mt-2 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+                  value={selectedAssignedListId}
+                  onChange={handleAssignedListChange}
+                >
+                  {assignedListsForMe.map((list) => (
+                    <option key={list.id} value={list.id}>
+                      {list.name}（{list.itemCount}件）
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
           <div className="rounded border border-slate-200 p-3">
             <h2 className="text-sm font-semibold text-slate-700">企業情報</h2>
             <dl className="mt-2 space-y-1 text-sm">
