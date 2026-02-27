@@ -74,6 +74,15 @@ export class ListsController {
     }
   }
 
+  @Get('assigned/me')
+  getMyAssignedLists(@Req() req: JwtRequest): CallingList[] {
+    try {
+      return this.listsService.getAssignedLists(req.user);
+    } catch {
+      throw new InternalServerErrorException('配布リストの取得に失敗しました');
+    }
+  }
+
   @Get(':listId/items')
   getListItems(@Req() req: JwtRequest, @Param('listId') listId: string): ListItem[] {
     try {

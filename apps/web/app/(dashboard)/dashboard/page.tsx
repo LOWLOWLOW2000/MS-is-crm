@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import {
+  fetchAssignedCallingLists,
   fetchCallingSummary,
   fetchRecentHelpRequests,
   fetchRecentZoomCalls,
@@ -40,6 +41,7 @@ const DashboardPage = () => {
   const [summary, setSummary] = useState<CallingSummary>(initialSummary);
   const [isLoadingSummary, setIsLoadingSummary] = useState(true);
   const [helpRequests, setHelpRequests] = useState<CallingHelpRequest[]>([]);
+  const [myAssignedListSnapshots, setMyAssignedListSnapshots] = useState<ListAssignedEvent[]>([]);
   const [distributedLists, setDistributedLists] = useState<ListDistributedEvent[]>([]);
   const [assignedLists, setAssignedLists] = useState<ListAssignedEvent[]>([]);
   const [recallReminders, setRecallReminders] = useState<RecallReminderEvent[]>([]);
@@ -60,18 +62,29 @@ const DashboardPage = () => {
     const loadDashboardData = async () => {
       setIsLoadingSummary(true);
       try {
-        const [nextSummary, recentHelpRequests, recentZoomCalls] = await Promise.all([
+        const [nextSummary, recentHelpRequests, recentZoomCalls, myAssignedLists] = await Promise.all([
           fetchCallingSummary(session.accessToken),
           fetchRecentHelpRequests(session.accessToken),
           fetchRecentZoomCalls(session.accessToken),
+          fetchAssignedCallingLists(session.accessToken),
         ]);
         setSummary(nextSummary);
         setHelpRequests(recentHelpRequests);
         setZoomCalls(recentZoomCalls);
+        setMyAssignedListSnapshots(
+          myAssignedLists.slice(0, 10).map((list) => ({
+            tenantId: list.tenantId,
+            listId: list.id,
+            listName: list.name,
+            assigneeEmail: list.assigneeEmail ?? session.user.email ?? '',
+            assignedAt: list.assignedAt ?? list.createdAt,
+          })),
+        );
       } catch {
         setSummary(initialSummary);
         setHelpRequests([]);
         setZoomCalls([]);
+        setMyAssignedListSnapshots([]);
       } finally {
         setIsLoadingSummary(false);
       }
@@ -157,7 +170,7 @@ const DashboardPage = () => {
     return () => {
       socket.disconnect();
     };
-  }, [status, session?.user?.tenantId, notificationPermission]);
+  }, [status, session?.user?.tenantId, session?.user?.email, notificationPermission]);
 
   const handleEnableNotification = async (): Promise<void> => {
     if (!('Notification' in window)) {
@@ -359,10 +372,10 @@ const DashboardPage = () => {
         <section className="rounded border border-slate-200 bg-white p-4">
           <h2 className="text-base font-semibold">自分への配布</h2>
           <div className="mt-3 space-y-2">
-            {assignedLists.length === 0 ? (
+            {assignedLists.length === 0 && myAssignedListSnapshots.length === 0 ? (
               <p className="text-sm text-slate-500">あなた宛ての配布はありません。</p>
             ) : (
-              assignedLists.map((event) => (
+              [...assignedLists, ...myAssignedListSnapshots].slice(0, 10).map((event) => (
                 <div
                   key={`${event.listId}-${event.assignedAt}`}
                   className="rounded border border-cyan-200 bg-cyan-50 p-2 text-xs"
@@ -371,6 +384,9 @@ const DashboardPage = () => {
                   <p className="text-slate-600">
                     {new Date(event.assignedAt).toLocaleString('ja-JP')}
                   </p>
+                  <Link href={`/calling/${event.listId}`} className="mt-1 inline-block text-cyan-700 underline">
+                    このリストで架電開始
+                  </Link>
                 </div>
               ))
             )}

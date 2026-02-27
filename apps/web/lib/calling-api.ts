@@ -209,6 +209,20 @@ export const fetchCallingLists = async (accessToken: string): Promise<CallingLis
   return (await response.json()) as CallingList[];
 };
 
+export const fetchAssignedCallingLists = async (accessToken: string): Promise<CallingList[]> => {
+  const response = await fetch(`${apiBaseUrl}/lists/assigned/me`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('配布リストの取得に失敗しました');
+  }
+
+  return (await response.json()) as CallingList[];
+};
+
 export const fetchListItems = async (accessToken: string, listId: string): Promise<ListItem[]> => {
   const response = await fetch(`${apiBaseUrl}/lists/${listId}/items`, {
     method: 'GET',

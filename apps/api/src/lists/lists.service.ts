@@ -171,6 +171,17 @@ export class ListsService {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   };
 
+  getAssignedLists = (user: JwtPayload): CallingList[] => {
+    return this.lists
+      .filter(
+        (list) =>
+          list.tenantId === user.tenantId &&
+          list.assigneeEmail !== null &&
+          list.assigneeEmail.toLowerCase() === user.email.toLowerCase(),
+      )
+      .sort((a, b) => (b.assignedAt ?? '').localeCompare(a.assignedAt ?? ''));
+  };
+
   assignList = (user: JwtPayload, listId: string, assigneeEmail: string): CallingList => {
     const list = this.lists.find((candidate) => candidate.id === listId && candidate.tenantId === user.tenantId);
 
