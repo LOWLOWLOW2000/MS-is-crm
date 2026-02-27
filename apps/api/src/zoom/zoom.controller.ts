@@ -12,6 +12,10 @@ import {
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import {
+  CreateZoomDialSessionDto,
+  ZoomDialSessionResultDto,
+} from './dto/create-zoom-dial-session.dto';
 import { ZoomUrlValidationResponseDto, ZoomWebhookDto } from './dto/zoom-webhook.dto';
 import { ZoomCallLog } from './entities/zoom-call-log.entity';
 import { ZoomService } from './zoom.service';
@@ -57,6 +61,19 @@ export class ZoomController {
       return this.zoomService.getRecentCallLogs(req.user);
     } catch {
       throw new InternalServerErrorException('ZOOM通話ログの取得に失敗しました');
+    }
+  }
+
+  @Post('dial-session')
+  @UseGuards(JwtAuthGuard)
+  async createDialSession(
+    @Req() req: JwtRequest,
+    @Body() dto: CreateZoomDialSessionDto,
+  ): Promise<ZoomDialSessionResultDto> {
+    try {
+      return await this.zoomService.createDialSession(req.user, dto);
+    } catch {
+      throw new InternalServerErrorException('ZOOM発信セッションの作成に失敗しました');
     }
   }
 }

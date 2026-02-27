@@ -13,6 +13,7 @@ import {
   SaveCallingRecordInput,
   ScriptTab,
   ScriptTemplate,
+  ZoomDialSession,
   ZoomCallLog,
 } from './types';
 
@@ -285,6 +286,24 @@ export const fetchRecentZoomCalls = async (accessToken: string): Promise<ZoomCal
   }
 
   return (await response.json()) as ZoomCallLog[];
+};
+
+export const createZoomDialSession = async (
+  accessToken: string,
+  input: { companyName: string; targetUrl: string },
+): Promise<ZoomDialSession> => {
+  const response = await fetch(`${apiBaseUrl}/zoom/dial-session`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('ZOOM発信セッションの作成に失敗しました');
+  }
+
+  return (await response.json()) as ZoomDialSession;
 };
 
 export const fetchReportSummary = async (

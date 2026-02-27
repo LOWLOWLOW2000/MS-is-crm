@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Group, type Layout, Panel, Separator } from 'react-resizable-panels';
 import { io } from 'socket.io-client';
 import {
+  createZoomDialSession,
   createCallingApproval,
   createHelpRequest,
   fetchAssignedCallingLists,
@@ -584,9 +585,18 @@ const CallingPage = () => {
         return;
       }
 
-      setStatusMessage('ZOOM発信を開始しました。（MVPダミー挙動）');
+      const zoomSession = await createZoomDialSession(session.accessToken, {
+        companyName: companyProfile.companyName,
+        targetUrl: displayUrl,
+      });
+      window.open(zoomSession.startUrl, '_blank', 'noopener,noreferrer');
+      setStatusMessage(
+        `ZOOM発信セッションを開始しました: ${zoomSession.meetingId}${
+          zoomSession.isFallback ? '（フォールバックURL）' : ''
+        }`,
+      );
     } catch {
-      setStatusMessage('発信可否の確認に失敗しました。');
+      setStatusMessage('ZOOM発信処理に失敗しました。');
     }
   };
 

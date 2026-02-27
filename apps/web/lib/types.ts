@@ -160,6 +160,16 @@ export interface ZoomCallLog {
   receivedAt: string;
 }
 
+export interface ZoomDialSession {
+  provider: 'zoom';
+  meetingId: string;
+  topic: string;
+  joinUrl: string;
+  startUrl: string;
+  scheduledAt: string;
+  isFallback: boolean;
+}
+
 export type ReportPeriod = 'daily' | 'weekly' | 'monthly';
 
 export interface ReportSummary {
