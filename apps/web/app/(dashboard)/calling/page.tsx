@@ -588,6 +588,9 @@ const CallingPage = () => {
     setCurrentItemIndex(nextIndex);
     setUrlInput(nextItem.targetUrl);
     setDisplayUrl(getInfoPageUrl(nextItem.targetUrl));
+    setSelectedResult('不在');
+    setMemo('');
+    setNextCallAt('');
     setStatusMessage(
       `次の企業へ移動: ${nextItem.companyName} (${nextIndex + 1}/${listItems.length})`,
     );
