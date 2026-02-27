@@ -12,7 +12,7 @@ import {
   saveCallingRecord,
   validateDialPermission,
 } from '@/lib/calling-api';
-import type { CallingResultType } from '@/lib/types';
+import type { CallingResultType, RecallReminderEvent } from '@/lib/types';
 
 type ScriptTab = {
   id: string;
@@ -201,6 +201,17 @@ const CallingPage = () => {
         return;
       }
       setStatusMessage('ディレクター対応が完了しました。');
+    });
+
+    socket.on('recall:reminder', (event: RecallReminderEvent) => {
+      if (event.tenantId !== session.user.tenantId) {
+        return;
+      }
+
+      const label = event.reminderType === '5min' ? '5分前' : '2分前';
+      setStatusMessage(
+        `再架電リマインド（${label}）: ${event.companyName} / ${new Date(event.nextCallAt).toLocaleString('ja-JP')}`,
+      );
     });
 
     return () => {

@@ -99,6 +99,14 @@ export interface CallingHelpRequest {
   resolvedAt: string | null;
 }
 
+export interface RecallReminderEvent {
+  tenantId: string;
+  recordId: string;
+  companyName: string;
+  nextCallAt: string;
+  reminderType: '5min' | '2min';
+}
+
 export interface CallingList {
   id: string;
   tenantId: string;

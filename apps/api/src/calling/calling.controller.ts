@@ -60,7 +60,9 @@ export class CallingController {
   @Post('records')
   createCallingRecord(@Req() req: JwtRequest, @Body() dto: CreateCallingRecordDto): CallingRecord {
     try {
-      return this.callingService.saveRecord(req.user, dto);
+      const record = this.callingService.saveRecord(req.user, dto);
+      this.notificationsGateway.scheduleRecallReminders(record);
+      return record;
     } catch (error) {
       throw new InternalServerErrorException('架電記録の保存に失敗しました');
     }

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { fetchCallingSummary, fetchRecentHelpRequests, getApiBaseUrl } from '@/lib/calling-api';
-import type { CallingHelpRequest, CallingSummary } from '@/lib/types';
+import type { CallingHelpRequest, CallingSummary, RecallReminderEvent } from '@/lib/types';
 
 const initialSummary: CallingSummary = {
   totalCallsToday: 0,
@@ -28,6 +28,7 @@ const DashboardPage = () => {
   const [summary, setSummary] = useState<CallingSummary>(initialSummary);
   const [isLoadingSummary, setIsLoadingSummary] = useState(true);
   const [helpRequests, setHelpRequests] = useState<CallingHelpRequest[]>([]);
+  const [recallReminders, setRecallReminders] = useState<RecallReminderEvent[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
   useEffect(() => {
@@ -86,6 +87,21 @@ const DashboardPage = () => {
       if (notificationPermission === 'granted') {
         new Notification('ディレクター呼出', {
           body: `${event.companyName} / ${event.scriptTab}`,
+        });
+      }
+    });
+
+    socket.on('recall:reminder', (event: RecallReminderEvent) => {
+      if (event.tenantId !== session.user.tenantId) {
+        return;
+      }
+
+      setRecallReminders((current) => [event, ...current].slice(0, 10));
+
+      if (notificationPermission === 'granted') {
+        const label = event.reminderType === '5min' ? '5分前' : '2分前';
+        new Notification(`再架電リマインド（${label}）`, {
+          body: `${event.companyName} / ${new Date(event.nextCallAt).toLocaleString('ja-JP')}`,
         });
       }
     });
@@ -213,6 +229,26 @@ const DashboardPage = () => {
               ログアウト
             </button>
           </article>
+        </section>
+
+        <section className="rounded border border-slate-200 bg-white p-4">
+          <h2 className="text-base font-semibold">再架電リマインド（5分前 / 2分前）</h2>
+          <div className="mt-3 space-y-2">
+            {recallReminders.length === 0 ? (
+              <p className="text-sm text-slate-500">まだ通知はありません。</p>
+            ) : (
+              recallReminders.map((event) => (
+                <div key={`${event.recordId}-${event.reminderType}`} className="rounded border border-blue-200 bg-blue-50 p-2 text-xs">
+                  <p className="font-semibold text-blue-700">
+                    {event.reminderType === '5min' ? '5分前' : '2分前'}: {event.companyName}
+                  </p>
+                  <p className="text-slate-700">
+                    予定時刻: {new Date(event.nextCallAt).toLocaleString('ja-JP')}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
         </section>
       </section>
     </main>
