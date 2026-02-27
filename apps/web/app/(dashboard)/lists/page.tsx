@@ -205,6 +205,14 @@ const ListsPage = () => {
               </select>
             </div>
             <p className="mt-2 text-xs text-slate-500">登録済み: {lists.length} リスト</p>
+            {selectedListId && (
+              <Link
+                href={`/calling/${selectedListId}`}
+                className="mt-3 inline-block rounded bg-blue-600 px-3 py-2 text-xs text-white"
+              >
+                このリストで架電開始
+              </Link>
+            )}
           </article>
         </section>
 

@@ -8,12 +8,13 @@ import { io } from 'socket.io-client';
 import {
   createCallingApproval,
   createHelpRequest,
+  fetchListItems,
   fetchCallingSettings,
   getApiBaseUrl,
   saveCallingRecord,
   validateDialPermission,
 } from '@/lib/calling-api';
-import type { CallingResultType, RecallReminderEvent } from '@/lib/types';
+import type { CallingResultType, ListItem, RecallReminderEvent } from '@/lib/types';
 
 type ScriptTab = {
   id: string;
@@ -85,6 +86,20 @@ const getInfoPageUrl = (baseUrl: string): string => {
   return `${normalized}/info`;
 };
 
+type CompanyProfile = {
+  companyName: string;
+  companyPhone: string;
+  companyAddress: string;
+  targetUrl: string;
+};
+
+const DEFAULT_COMPANY: CompanyProfile = {
+  companyName: '株式会社サンプル',
+  companyPhone: '03-1234-5678',
+  companyAddress: '東京都千代田区1-1-1',
+  targetUrl: BASE_COMPANY_URL,
+};
+
 const CallingPage = () => {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -113,7 +128,25 @@ const CallingPage = () => {
   const [lastHelpRequestId, setLastHelpRequestId] = useState<string | null>(null);
   const [rightPanelLayout, setRightPanelLayout] = useState<Layout | undefined>(undefined);
   const [humanApprovalEnabled, setHumanApprovalEnabled] = useState(true);
+  const [listItems, setListItems] = useState<ListItem[]>([]);
+  const [currentItemIndex, setCurrentItemIndex] = useState(0);
+  const [listId, setListId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const selectedItem = listItems[currentItemIndex] ?? null;
+  const companyProfile: CompanyProfile = selectedItem
+    ? {
+        companyName: selectedItem.companyName,
+        companyPhone: selectedItem.phone,
+        companyAddress: selectedItem.address,
+        targetUrl: selectedItem.targetUrl,
+      }
+    : DEFAULT_COMPANY;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setListId(params.get('listId'));
+  }, []);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -185,6 +218,37 @@ const CallingPage = () => {
 
     void loadCallingSettings();
   }, [status, session?.accessToken]);
+
+  useEffect(() => {
+    if (status !== 'authenticated' || !session?.accessToken) {
+      return;
+    }
+
+    if (!listId) {
+      setListItems([]);
+      setCurrentItemIndex(0);
+      return;
+    }
+
+    const loadListItems = async (): Promise<void> => {
+      try {
+        const items = await fetchListItems(session.accessToken, listId);
+        setListItems(items);
+        setCurrentItemIndex(0);
+        if (items.length > 0) {
+          setUrlInput(items[0].targetUrl);
+          setDisplayUrl(getInfoPageUrl(items[0].targetUrl));
+          setStatusMessage(`リスト連動で架電対象を読み込みました（${items.length}件）`);
+        } else {
+          setStatusMessage('リストに架電対象がありません。');
+        }
+      } catch {
+        setStatusMessage('リスト明細の取得に失敗しました。');
+      }
+    };
+
+    void loadListItems();
+  }, [status, session?.accessToken, listId]);
 
   useEffect(() => {
     setIframeLoaded(false);
@@ -341,7 +405,7 @@ const CallingPage = () => {
 
     try {
       const approval = await createCallingApproval(session.accessToken, {
-        companyName: '株式会社サンプル',
+        companyName: companyProfile.companyName,
         targetUrl: displayUrl,
       });
 
@@ -399,9 +463,9 @@ const CallingPage = () => {
     setIsSaving(true);
     try {
       const saved = await saveCallingRecord(session.accessToken, {
-        companyName: '株式会社サンプル',
-        companyPhone: '03-1234-5678',
-        companyAddress: '東京都千代田区1-1-1',
+        companyName: companyProfile.companyName,
+        companyPhone: companyProfile.companyPhone,
+        companyAddress: companyProfile.companyAddress,
         targetUrl: displayUrl,
         approved: humanApprovalEnabled ? isApproved : true,
         approvedAt: approvedAt ?? undefined,
@@ -426,7 +490,7 @@ const CallingPage = () => {
 
     try {
       const request = await createHelpRequest(session.accessToken, {
-        companyName: '株式会社サンプル',
+        companyName: companyProfile.companyName,
         scriptTab: activeTab.name,
       });
 
@@ -437,6 +501,22 @@ const CallingPage = () => {
     } catch {
       setStatusMessage('ディレクター呼出の送信に失敗しました。');
     }
+  };
+
+  const handleNextCompany = (): void => {
+    if (listItems.length === 0) {
+      setStatusMessage('次の企業へ移動しました。（MVPダミー）');
+      return;
+    }
+
+    const nextIndex = (currentItemIndex + 1) % listItems.length;
+    const nextItem = listItems[nextIndex];
+    setCurrentItemIndex(nextIndex);
+    setUrlInput(nextItem.targetUrl);
+    setDisplayUrl(getInfoPageUrl(nextItem.targetUrl));
+    setStatusMessage(
+      `次の企業へ移動: ${nextItem.companyName} (${nextIndex + 1}/${listItems.length})`,
+    );
   };
 
   const handleRightPanelLayoutChange = useCallback((layout: Layout) => {
@@ -456,6 +536,11 @@ const CallingPage = () => {
           <p className="text-sm text-slate-600">
             担当: {session.user.name} / tenant: {session.user.tenantId} / role: {session.user.role}
           </p>
+          {listId && listItems.length > 0 && (
+            <p className="text-xs text-slate-500">
+              リスト連動: {currentItemIndex + 1}/{listItems.length}
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -473,15 +558,15 @@ const CallingPage = () => {
             <dl className="mt-2 space-y-1 text-sm">
               <div className="flex justify-between">
                 <dt className="text-slate-500">会社名</dt>
-                <dd className="font-medium">株式会社サンプル</dd>
+                <dd className="font-medium">{companyProfile.companyName}</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-slate-500">電話番号</dt>
-                <dd className="font-medium">03-1234-5678</dd>
+                <dd className="font-medium">{companyProfile.companyPhone}</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-slate-500">住所</dt>
-                <dd className="font-medium">東京都千代田区1-1-1</dd>
+                <dd className="font-medium">{companyProfile.companyAddress}</dd>
               </div>
             </dl>
           </div>
@@ -585,7 +670,7 @@ const CallingPage = () => {
               <button
                 type="button"
                 className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm"
-                onClick={() => setStatusMessage('次の企業へ移動しました。（MVPダミー）')}
+                onClick={handleNextCompany}
               >
                 次へ
               </button>
