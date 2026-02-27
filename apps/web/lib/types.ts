@@ -99,6 +99,14 @@ export interface CallingHelpRequest {
   resolvedAt: string | null;
 }
 
+export interface ListDistributedEvent {
+  tenantId: string;
+  listId: string;
+  listName: string;
+  itemCount: number;
+  distributedAt: string;
+}
+
 export interface RecallReminderEvent {
   tenantId: string;
   recordId: string;

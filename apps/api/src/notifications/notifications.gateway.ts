@@ -41,6 +41,14 @@ export interface RecallReminderEvent {
   reminderType: '5min' | '2min';
 }
 
+export interface ListDistributedEvent {
+  tenantId: string;
+  listId: string;
+  listName: string;
+  itemCount: number;
+  distributedAt: string;
+}
+
 @WebSocketGateway({
   cors: {
     origin: ['http://localhost:3000'],
@@ -70,6 +78,10 @@ export class NotificationsGateway implements OnModuleDestroy {
 
   emitRecallReminder = (event: RecallReminderEvent): void => {
     this.server.emit('recall:reminder', event);
+  };
+
+  emitListDistributed = (event: ListDistributedEvent): void => {
+    this.server.emit('list:distributed', event);
   };
 
   scheduleRecallReminders = (record: CallingRecord): void => {

@@ -14,6 +14,7 @@ import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ImportListCsvDto } from './dto/import-list-csv.dto';
 import { ImportListResultDto } from './dto/import-list-result.dto';
 import { CallingList } from './entities/calling-list.entity';
@@ -27,7 +28,10 @@ interface JwtRequest extends Request {
 @Controller('lists')
 @UseGuards(JwtAuthGuard)
 export class ListsController {
-  constructor(private readonly listsService: ListsService) {}
+  constructor(
+    private readonly listsService: ListsService,
+    private readonly notificationsGateway: NotificationsGateway,
+  ) {}
 
   private assertListManageRole = (user: JwtPayload): void => {
     if (user.role === UserRole.IsMember) {
@@ -39,7 +43,15 @@ export class ListsController {
   importCsv(@Req() req: JwtRequest, @Body() dto: ImportListCsvDto): ImportListResultDto {
     try {
       this.assertListManageRole(req.user);
-      return this.listsService.importCsv(req.user, dto);
+      const result = this.listsService.importCsv(req.user, dto);
+      this.notificationsGateway.emitListDistributed({
+        tenantId: req.user.tenantId,
+        listId: result.list.id,
+        listName: result.list.name,
+        itemCount: result.importedCount,
+        distributedAt: new Date().toISOString(),
+      });
+      return result;
     } catch (error) {
       if (error instanceof ForbiddenException) {
         throw error;
