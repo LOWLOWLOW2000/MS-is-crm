@@ -259,6 +259,34 @@ const ListsPage = () => {
               </select>
             </div>
             <p className="mt-2 text-xs text-slate-500">登録済み: {lists.length} リスト</p>
+            {lists.length > 0 && (
+              <div className="mt-3 overflow-x-auto rounded border border-slate-200">
+                <table className="min-w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+                      <th className="px-2 py-1.5">リスト名</th>
+                      <th className="px-2 py-1.5">件数</th>
+                      <th className="px-2 py-1.5">配布先IS</th>
+                      <th className="px-2 py-1.5">配布日時</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lists.map((list) => (
+                      <tr key={list.id} className="border-b border-slate-100">
+                        <td className="px-2 py-1.5 font-medium">{list.name}</td>
+                        <td className="px-2 py-1.5">{list.itemCount}件</td>
+                        <td className="px-2 py-1.5">{list.assigneeEmail ?? '—'}</td>
+                        <td className="px-2 py-1.5">
+                          {list.assignedAt
+                            ? new Date(list.assignedAt).toLocaleString('ja-JP')
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <div className="mt-3 space-y-2 rounded border border-slate-200 p-3">
               <p className="text-xs font-medium text-slate-700">ISへ配布</p>
               <input

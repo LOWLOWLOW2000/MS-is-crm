@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { signOut, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
@@ -232,22 +232,17 @@ const DashboardPage = () => {
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <section className="mx-auto max-w-6xl space-y-4">
-        <header className="rounded border border-slate-200 bg-white p-5">
-          <h1 className="text-2xl font-bold">ダッシュボード</h1>
+        <header className="rounded border border-slate-200 bg-white p-4">
+          <h1 className="text-xl font-bold">ダッシュボード</h1>
           <p className="mt-1 text-sm text-slate-600">
-            ようこそ、{session.user.name} さん（{session.user.role}）
+            ようこそ、{session.user.name} さん
           </p>
-          <div className="mt-4 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-            <p>メール: {session.user.email}</p>
-            <p>tenantId: {session.user.tenantId}</p>
-          </div>
-          <div className="mt-3">
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-700">
+            <span>メール: {session.user.email}</span>
             <button
               type="button"
-              className="rounded border border-slate-300 px-3 py-1 text-xs"
-              onClick={() => {
-                void handleEnableNotification();
-              }}
+              className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
+              onClick={() => void handleEnableNotification()}
             >
               呼出通知: {notificationPermission}
             </button>
@@ -347,16 +342,6 @@ const DashboardPage = () => {
                   ))
               )}
             </div>
-          </article>
-          <article className="rounded border border-slate-200 bg-white p-4">
-            <h2 className="text-base font-semibold">アカウント操作</h2>
-            <button
-              type="button"
-              className="mt-3 rounded bg-slate-800 px-4 py-2 text-sm text-white"
-              onClick={() => signOut({ callbackUrl: '/login' })}
-            >
-              ログアウト
-            </button>
           </article>
         </section>
 

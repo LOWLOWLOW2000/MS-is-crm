@@ -1,9 +1,5 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller } from '@nestjs/common';
 
+/** ルート用コントローラ。ヘルスチェックは HealthModule に委譲済み。 */
 @Controller()
-export class AppController {
-  @Get('health')
-  getHealth() {
-    return { status: 'ok' };
-  }
-}
+export class AppController {}

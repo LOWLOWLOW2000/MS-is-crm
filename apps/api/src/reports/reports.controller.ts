@@ -23,12 +23,12 @@ export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Get('summary')
-  getSummary(
+  async getSummary(
     @Req() req: JwtRequest,
     @Query('period') period: string | undefined,
-  ): ReportSummaryDto {
+  ): Promise<ReportSummaryDto> {
     try {
-      return this.reportsService.getSummary(req.user, period);
+      return await this.reportsService.getSummary(req.user, period);
     } catch {
       throw new InternalServerErrorException('レポート集計の取得に失敗しました');
     }

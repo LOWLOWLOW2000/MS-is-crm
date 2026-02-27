@@ -37,30 +37,30 @@ export class CallingController {
   ) {}
 
   @Post('approvals')
-  createCallingApproval(
+  async createCallingApproval(
     @Req() req: JwtRequest,
     @Body() dto: CreateCallingApprovalDto,
-  ): CallingApproval {
+  ): Promise<CallingApproval> {
     try {
-      return this.callingService.createApproval(req.user, dto);
+      return await this.callingService.createApproval(req.user, dto);
     } catch (error) {
       throw new InternalServerErrorException('承認情報の保存に失敗しました');
     }
   }
 
   @Post('dial-check')
-  validateDial(@Req() req: JwtRequest, @Body() dto: ValidateDialDto): DialValidationResultDto {
+  async validateDial(@Req() req: JwtRequest, @Body() dto: ValidateDialDto): Promise<DialValidationResultDto> {
     try {
-      return this.callingService.validateDial(req.user, dto);
+      return await this.callingService.validateDial(req.user, dto);
     } catch (error) {
       throw new InternalServerErrorException('発信可否の確認に失敗しました');
     }
   }
 
   @Post('records')
-  createCallingRecord(@Req() req: JwtRequest, @Body() dto: CreateCallingRecordDto): CallingRecord {
+  async createCallingRecord(@Req() req: JwtRequest, @Body() dto: CreateCallingRecordDto): Promise<CallingRecord> {
     try {
-      const record = this.callingService.saveRecord(req.user, dto);
+      const record = await this.callingService.saveRecord(req.user, dto);
       this.notificationsGateway.scheduleRecallReminders(record);
       return record;
     } catch (error) {
@@ -69,32 +69,30 @@ export class CallingController {
   }
 
   @Get('summary')
-  getCallingSummary(@Req() req: JwtRequest): CallingSummaryDto {
+  async getCallingSummary(@Req() req: JwtRequest): Promise<CallingSummaryDto> {
     try {
-      return this.callingService.getSummary(req.user);
+      return await this.callingService.getSummary(req.user);
     } catch (error) {
       throw new InternalServerErrorException('架電サマリーの取得に失敗しました');
     }
   }
 
   @Get('recall')
-  getRecallList(@Req() req: JwtRequest): CallingRecord[] {
+  async getRecallList(@Req() req: JwtRequest): Promise<CallingRecord[]> {
     try {
-      return this.callingService.getRecallList(req.user);
+      return await this.callingService.getRecallList(req.user);
     } catch (error) {
       throw new InternalServerErrorException('再架電一覧の取得に失敗しました');
     }
   }
 
   @Post('help-requests')
-  createHelpRequest(@Req() req: JwtRequest, @Body() dto: CreateHelpRequestDto): CallingHelpRequest {
+  async createHelpRequest(@Req() req: JwtRequest, @Body() dto: CreateHelpRequestDto): Promise<CallingHelpRequest> {
     try {
-      const request = this.callingService.createHelpRequest(req.user, dto);
+      const request = await this.callingService.createHelpRequest(req.user, dto);
       this.notificationsGateway.emitHelpRequested(request);
-      this.notificationsGateway.emitQueueUpdated({
-        tenantId: req.user.tenantId,
-        requests: this.callingService.getWaitingQueue(req.user),
-      });
+      const queue = await this.callingService.getWaitingQueue(req.user);
+      this.notificationsGateway.emitQueueUpdated({ tenantId: req.user.tenantId, requests: queue });
       return request;
     } catch (error) {
       throw new InternalServerErrorException('ディレクター呼出の送信に失敗しました');
@@ -102,21 +100,21 @@ export class CallingController {
   }
 
   @Get('help-requests/recent')
-  getRecentHelpRequests(@Req() req: JwtRequest): CallingHelpRequest[] {
+  async getRecentHelpRequests(@Req() req: JwtRequest): Promise<CallingHelpRequest[]> {
     try {
-      return this.callingService.getRecentHelpRequests(req.user);
+      return await this.callingService.getRecentHelpRequests(req.user);
     } catch (error) {
       throw new InternalServerErrorException('呼出履歴の取得に失敗しました');
     }
   }
 
   @Post('help-requests/:requestId/join')
-  joinHelpRequest(
+  async joinHelpRequest(
     @Req() req: JwtRequest,
     @Param('requestId') requestId: string,
-  ): CallingHelpRequest {
+  ): Promise<CallingHelpRequest> {
     try {
-      const request = this.callingService.joinHelpRequest(req.user, requestId);
+      const request = await this.callingService.joinHelpRequest(req.user, requestId);
       this.notificationsGateway.emitDirectorJoined({
         requestId: request.id,
         tenantId: request.tenantId,
@@ -124,10 +122,8 @@ export class CallingController {
         joinedBy: request.joinedBy ?? req.user.sub,
         joinedAt: request.joinedAt ?? new Date().toISOString(),
       });
-      this.notificationsGateway.emitQueueUpdated({
-        tenantId: req.user.tenantId,
-        requests: this.callingService.getWaitingQueue(req.user),
-      });
+      const queue = await this.callingService.getWaitingQueue(req.user);
+      this.notificationsGateway.emitQueueUpdated({ tenantId: req.user.tenantId, requests: queue });
       return request;
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -138,21 +134,19 @@ export class CallingController {
   }
 
   @Post('help-requests/:requestId/close')
-  closeHelpRequest(
+  async closeHelpRequest(
     @Req() req: JwtRequest,
     @Param('requestId') requestId: string,
-  ): CallingHelpRequest {
+  ): Promise<CallingHelpRequest> {
     try {
-      const request = this.callingService.closeHelpRequest(req.user, requestId);
+      const request = await this.callingService.closeHelpRequest(req.user, requestId);
       this.notificationsGateway.emitCallEnded({
         requestId: request.id,
         tenantId: request.tenantId,
         resolvedAt: request.resolvedAt ?? new Date().toISOString(),
       });
-      this.notificationsGateway.emitQueueUpdated({
-        tenantId: req.user.tenantId,
-        requests: this.callingService.getWaitingQueue(req.user),
-      });
+      const queue = await this.callingService.getWaitingQueue(req.user);
+      this.notificationsGateway.emitQueueUpdated({ tenantId: req.user.tenantId, requests: queue });
       return request;
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -162,4 +156,3 @@ export class CallingController {
     }
   }
 }
-

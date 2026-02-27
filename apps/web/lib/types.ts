@@ -22,6 +22,8 @@ export interface AuthUser {
 
 export interface AuthResponse {
   accessToken: string;
+  refreshToken?: string;
+  refreshExpiresAt?: string;
   user: AuthUser;
 }
 
@@ -234,4 +236,27 @@ export interface ListUnassignedEvent {
   previousAssigneeEmail: string | null;
   unassignedBy: string;
   unassignedAt: string;
+}
+
+/** AIスコアカード一覧用（GET /reports/ai-scorecard）。後から実装を埋める */
+export interface AiScorecardEntry {
+  callRecordId: string;
+  tenantId: string;
+  companyName: string;
+  isMemberEmail: string;
+  callDate: string;
+  durationSeconds: number;
+  result: string;
+  overallScore: number | null;
+  evaluatedAt: string | null;
+  evaluation: {
+    id: string;
+    tenantId: string;
+    callRecordId: string;
+    zoomCallLogId: string | null;
+    evaluatedAt: string;
+    categoryScores: { category: string; score: number; tagCount: number; tags: { tag: string; value: string | number }[] }[];
+    summary: string | null;
+    improvementPoints: string[] | null;
+  } | null;
 }

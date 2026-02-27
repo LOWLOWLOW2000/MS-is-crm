@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { CallingService } from '../calling/calling.service';
+import { CallingRecord } from '../calling/entities/calling-record.entity';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { AiScorecardEntryDto } from './dto/ai-scorecard.dto';
 import {
   ReportPeriod,
   ReportResultBreakdownItem,
@@ -38,24 +40,24 @@ export class ReportsService {
     return { startAt, endAt };
   };
 
-  getSummary = (user: JwtPayload, rawPeriod: string | undefined): ReportSummaryDto => {
+  getSummary = async (user: JwtPayload, rawPeriod: string | undefined): Promise<ReportSummaryDto> => {
     const period = this.resolvePeriod(rawPeriod);
     const { startAt, endAt } = this.resolveRange(period);
     const startMs = startAt.getTime();
     const endMs = endAt.getTime();
 
-    const tenantRecords = this.callingService.getTenantRecords(user.tenantId);
-    const periodRecords = tenantRecords.filter((record) => {
+    const tenantRecords = await this.callingService.getTenantRecords(user.tenantId);
+    const periodRecords = tenantRecords.filter((record: CallingRecord) => {
       const createdMs = new Date(record.createdAt).getTime();
       return createdMs >= startMs && createdMs <= endMs;
     });
 
-    const connectedCount = periodRecords.filter((record) => {
+    const connectedCount = periodRecords.filter((record: CallingRecord) => {
       return record.result === '担当者あり興味' || record.result === '担当者あり不要';
     }).length;
 
     const resultCounter = new Map<string, number>();
-    periodRecords.forEach((record) => {
+    periodRecords.forEach((record: CallingRecord) => {
       resultCounter.set(record.result, (resultCounter.get(record.result) ?? 0) + 1);
     });
 
@@ -72,5 +74,12 @@ export class ReportsService {
         periodRecords.length === 0 ? 0 : Math.round((connectedCount / periodRecords.length) * 100),
       resultBreakdown,
     };
+  };
+
+  /**
+   * AIスコアカード一覧（Phase2で実装。現状は空配列を返す）
+   */
+  getAiScorecard = (_user: JwtPayload): AiScorecardEntryDto[] => {
+    return [];
   };
 }

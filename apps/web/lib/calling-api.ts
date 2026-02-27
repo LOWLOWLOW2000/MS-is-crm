@@ -1,4 +1,5 @@
 import {
+  AiScorecardEntry,
   CallingList,
   CallingSettings,
   CallingApproval,
@@ -322,6 +323,14 @@ export const fetchReportSummary = async (
   }
 
   return (await response.json()) as ReportSummary;
+};
+
+/**
+ * AIスコアカード一覧取得（ダミー実装）。
+ * 後から実装する場合: GET ${apiBaseUrl}/reports/ai-scorecard を呼んで JSON を返す。
+ */
+export const fetchReportAiScorecard = async (_accessToken: string): Promise<AiScorecardEntry[]> => {
+  return [];
 };
 
 export const fetchCallingSettings = async (accessToken: string): Promise<CallingSettings> => {

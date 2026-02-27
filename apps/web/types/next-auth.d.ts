@@ -15,6 +15,9 @@ declare module 'next-auth' {
     tenantId: string;
     role: UserRole;
     accessToken: string;
+    refreshToken?: string;
+    refreshExpiresAt?: string;
+    accessTokenExpiresAt?: number;
   }
 }
 
@@ -23,5 +26,8 @@ declare module 'next-auth/jwt' {
     tenantId?: string;
     role?: UserRole;
     accessToken?: string;
+    refreshToken?: string;
+    refreshExpiresAt?: string;
+    accessTokenExpiresAt?: number;
   }
 }

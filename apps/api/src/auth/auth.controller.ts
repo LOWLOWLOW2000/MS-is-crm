@@ -1,11 +1,13 @@
 import {
+  Body,
   Controller,
   Get,
+  InternalServerErrorException,
   Post,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
-  Body,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
@@ -13,6 +15,7 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
@@ -38,6 +41,18 @@ export class AuthController {
     return this.authService.loginWithPassword(loginDto);
   }
 
+  @Post('refresh')
+  async refresh(@Body() dto: RefreshTokenDto): Promise<AuthResponseDto> {
+    try {
+      return await this.authService.refreshTokens(dto.refreshToken);
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('トークン更新に失敗しました');
+    }
+  }
+
   @Post('google/exchange')
   async loginWithGoogleExchange(
     @Body() googleLoginDto: GoogleLoginDto,
@@ -54,21 +69,27 @@ export class AuthController {
 
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
-  googleCallback(@Req() req: GoogleRequest, @Res() res: Response): void {
-    const result = this.authService.loginWithGoogle(req.user);
+  async googleCallback(@Req() req: GoogleRequest, @Res() res: Response): Promise<void> {
+    const result = await this.authService.loginWithGoogle(req.user);
     const webBaseUrl = this.configService.get<string>('WEB_BASE_URL', 'http://localhost:3000');
     const redirectUrl = new URL('/login', webBaseUrl);
 
     redirectUrl.searchParams.set('token', result.accessToken);
     redirectUrl.searchParams.set('tenantId', result.user.tenantId);
     redirectUrl.searchParams.set('role', result.user.role);
+    if (result.refreshToken) {
+      redirectUrl.searchParams.set('refreshToken', result.refreshToken);
+    }
+    if (result.refreshExpiresAt) {
+      redirectUrl.searchParams.set('refreshExpiresAt', result.refreshExpiresAt);
+    }
 
     res.redirect(redirectUrl.toString());
   }
 
   @Get('profile')
   @UseGuards(JwtAuthGuard)
-  getProfile(@Req() req: JwtRequest) {
+  async getProfile(@Req() req: JwtRequest) {
     return this.authService.getProfile(req.user);
   }
 }

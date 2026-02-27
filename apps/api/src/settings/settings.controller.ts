@@ -25,25 +25,25 @@ export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Get('calling')
-  getCallingSettings(@Req() req: JwtRequest): CallingSettings {
+  async getCallingSettings(@Req() req: JwtRequest): Promise<CallingSettings> {
     try {
-      return this.settingsService.getCallingSettings(req.user);
+      return await this.settingsService.getCallingSettings(req.user);
     } catch {
       throw new InternalServerErrorException('設定取得に失敗しました');
     }
   }
 
   @Patch('calling')
-  updateCallingSettings(
+  async updateCallingSettings(
     @Req() req: JwtRequest,
     @Body() dto: UpdateCallingSettingsDto,
-  ): CallingSettings {
+  ): Promise<CallingSettings> {
     try {
       if (!this.settingsService.canUpdateCallingSettings(req.user)) {
         throw new ForbiddenException('developer 以外は承認スイッチを変更できません');
       }
 
-      return this.settingsService.updateCallingSettings(req.user, dto);
+      return await this.settingsService.updateCallingSettings(req.user, dto);
     } catch (error) {
       if (error instanceof ForbiddenException) {
         throw error;

@@ -1,68 +1,98 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { UpsertScriptTemplateDto } from './dto/upsert-script-template.dto';
-import { ScriptTemplate } from './entities/script-template.entity';
+import { ScriptTemplate, ScriptTab } from './entities/script-template.entity';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ScriptsService {
-  private readonly templates: ScriptTemplate[] = [];
+  constructor(private readonly prisma: PrismaService) {}
 
-  getTemplates = (user: JwtPayload): ScriptTemplate[] => {
-    return this.templates
-      .filter((template) => template.tenantId === user.tenantId)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  private toTemplate = (row: {
+    id: string;
+    tenantId: string;
+    name: string;
+    industryTag: string | null;
+    tabs: unknown;
+    createdBy: string;
+    updatedBy: string;
+    createdAt: string;
+    updatedAt: string;
+  }): ScriptTemplate => ({
+    id: row.id,
+    tenantId: row.tenantId,
+    name: row.name,
+    industryTag: row.industryTag,
+    tabs: Array.isArray(row.tabs) ? (row.tabs as ScriptTab[]) : [],
+    createdBy: row.createdBy,
+    updatedBy: row.updatedBy,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+
+  getTemplates = async (user: JwtPayload): Promise<ScriptTemplate[]> => {
+    const rows = await this.prisma.scriptTemplate.findMany({
+      where: { tenantId: user.tenantId },
+      orderBy: { updatedAt: 'desc' },
+    });
+    return rows.map((r) => this.toTemplate(r));
   };
 
-  createTemplate = (user: JwtPayload, dto: UpsertScriptTemplateDto): ScriptTemplate => {
-    const nowIso = new Date().toISOString();
-
-    const template: ScriptTemplate = {
-      id: `script-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      tenantId: user.tenantId,
-      name: dto.name,
-      industryTag: dto.industryTag?.trim() ? dto.industryTag.trim() : null,
-      tabs: dto.tabs,
-      createdBy: user.sub,
-      updatedBy: user.sub,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    };
-
-    this.templates.push(template);
-    return template;
+  createTemplate = async (user: JwtPayload, dto: UpsertScriptTemplateDto): Promise<ScriptTemplate> => {
+    const now = new Date().toISOString();
+    const row = await this.prisma.scriptTemplate.create({
+      data: {
+        tenantId: user.tenantId,
+        name: dto.name,
+        industryTag: dto.industryTag?.trim() ? dto.industryTag.trim() : null,
+        tabs: dto.tabs as unknown as object,
+        createdBy: user.sub,
+        updatedBy: user.sub,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+    return this.toTemplate(row);
   };
 
-  updateTemplate = (
+  updateTemplate = async (
     user: JwtPayload,
     templateId: string,
     dto: UpsertScriptTemplateDto,
-  ): ScriptTemplate => {
-    const template = this.templates.find(
-      (candidate) => candidate.id === templateId && candidate.tenantId === user.tenantId,
-    );
+  ): Promise<ScriptTemplate> => {
+    const existing = await this.prisma.scriptTemplate.findFirst({
+      where: { id: templateId, tenantId: user.tenantId },
+    });
 
-    if (!template) {
+    if (!existing) {
       throw new NotFoundException('スクリプトテンプレートが見つかりません');
     }
 
-    template.name = dto.name;
-    template.industryTag = dto.industryTag?.trim() ? dto.industryTag.trim() : null;
-    template.tabs = dto.tabs;
-    template.updatedBy = user.sub;
-    template.updatedAt = new Date().toISOString();
-
-    return template;
+    const now = new Date().toISOString();
+    const row = await this.prisma.scriptTemplate.update({
+      where: { id: templateId },
+      data: {
+        name: dto.name,
+        industryTag: dto.industryTag?.trim() ? dto.industryTag.trim() : null,
+        tabs: dto.tabs as unknown as object,
+        updatedBy: user.sub,
+        updatedAt: now,
+      },
+    });
+    return this.toTemplate(row);
   };
 
-  deleteTemplate = (user: JwtPayload, templateId: string): void => {
-    const index = this.templates.findIndex(
-      (candidate) => candidate.id === templateId && candidate.tenantId === user.tenantId,
-    );
+  deleteTemplate = async (user: JwtPayload, templateId: string): Promise<void> => {
+    const existing = await this.prisma.scriptTemplate.findFirst({
+      where: { id: templateId, tenantId: user.tenantId },
+    });
 
-    if (index < 0) {
+    if (!existing) {
       throw new NotFoundException('スクリプトテンプレートが見つかりません');
     }
 
-    this.templates.splice(index, 1);
+    await this.prisma.scriptTemplate.delete({
+      where: { id: templateId },
+    });
   };
 }

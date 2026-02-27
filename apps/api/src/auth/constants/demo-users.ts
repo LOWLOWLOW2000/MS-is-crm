@@ -23,4 +23,20 @@ export const demoUsers: AuthUser[] = [
     name: 'IS Member User',
     passwordHash: hashedPassword,
   },
+  {
+    id: 'user-director-01',
+    tenantId: 'tenant-demo-01',
+    role: UserRole.Director,
+    email: 'director@example.com',
+    name: 'Director User',
+    passwordHash: hashedPassword,
+  },
+  {
+    id: 'user-company-01',
+    tenantId: 'tenant-demo-01',
+    role: UserRole.EnterpriseAdmin,
+    email: 'company@example.com',
+    name: 'Company Admin User',
+    passwordHash: hashedPassword,
+  },
 ];

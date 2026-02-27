@@ -41,10 +41,10 @@ export class ListsController {
   };
 
   @Post('import-csv')
-  importCsv(@Req() req: JwtRequest, @Body() dto: ImportListCsvDto): ImportListResultDto {
+  async importCsv(@Req() req: JwtRequest, @Body() dto: ImportListCsvDto): Promise<ImportListResultDto> {
     try {
       this.assertListManageRole(req.user);
-      const result = this.listsService.importCsv(req.user, dto);
+      const result = await this.listsService.importCsv(req.user, dto);
       this.notificationsGateway.emitListDistributed({
         tenantId: req.user.tenantId,
         listId: result.list.id,
@@ -62,10 +62,10 @@ export class ListsController {
   }
 
   @Get()
-  getLists(@Req() req: JwtRequest): CallingList[] {
+  async getLists(@Req() req: JwtRequest): Promise<CallingList[]> {
     try {
       this.assertListManageRole(req.user);
-      return this.listsService.getLists(req.user);
+      return await this.listsService.getLists(req.user);
     } catch (error) {
       if (error instanceof ForbiddenException) {
         throw error;
@@ -75,21 +75,21 @@ export class ListsController {
   }
 
   @Get('assigned/me')
-  getMyAssignedLists(@Req() req: JwtRequest): CallingList[] {
+  async getMyAssignedLists(@Req() req: JwtRequest): Promise<CallingList[]> {
     try {
-      return this.listsService.getAssignedLists(req.user);
+      return await this.listsService.getAssignedLists(req.user);
     } catch {
       throw new InternalServerErrorException('配布リストの取得に失敗しました');
     }
   }
 
   @Get(':listId/items')
-  getListItems(@Req() req: JwtRequest, @Param('listId') listId: string): ListItem[] {
+  async getListItems(@Req() req: JwtRequest, @Param('listId') listId: string): Promise<ListItem[]> {
     try {
       if (req.user.role === UserRole.IsMember) {
-        return this.listsService.getAssignedListItems(req.user, listId);
+        return await this.listsService.getAssignedListItems(req.user, listId);
       }
-      return this.listsService.getListItems(req.user, listId);
+      return await this.listsService.getListItems(req.user, listId);
     } catch (error) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException) {
         throw error;
@@ -99,20 +99,20 @@ export class ListsController {
   }
 
   @Post(':listId/assign')
-  assignList(
+  async assignList(
     @Req() req: JwtRequest,
     @Param('listId') listId: string,
     @Body() dto: AssignListDto,
-  ): CallingList {
+  ): Promise<CallingList> {
     try {
       this.assertListManageRole(req.user);
-      const assigned = this.listsService.assignList(req.user, listId, dto.assigneeEmail);
+      const assigned = await this.listsService.assignList(req.user, listId, dto.assigneeEmail);
       this.notificationsGateway.emitListAssigned({
         tenantId: req.user.tenantId,
         listId: assigned.id,
         listName: assigned.name,
         assigneeEmail: assigned.assigneeEmail ?? dto.assigneeEmail,
-        assignedBy: req.user.email,
+        assignedBy: req.user.email ?? '',
         assignedAt: assigned.assignedAt ?? new Date().toISOString(),
       });
       return assigned;
@@ -125,16 +125,16 @@ export class ListsController {
   }
 
   @Post(':listId/unassign')
-  unassignList(@Req() req: JwtRequest, @Param('listId') listId: string): CallingList {
+  async unassignList(@Req() req: JwtRequest, @Param('listId') listId: string): Promise<CallingList> {
     try {
       this.assertListManageRole(req.user);
-      const unassignedResult = this.listsService.unassignList(req.user, listId);
+      const unassignedResult = await this.listsService.unassignList(req.user, listId);
       this.notificationsGateway.emitListUnassigned({
         tenantId: req.user.tenantId,
         listId: unassignedResult.list.id,
         listName: unassignedResult.list.name,
         previousAssigneeEmail: unassignedResult.previousAssigneeEmail,
-        unassignedBy: req.user.email,
+        unassignedBy: req.user.email ?? '',
         unassignedAt: new Date().toISOString(),
       });
       return unassignedResult.list;

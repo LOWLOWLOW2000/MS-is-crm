@@ -4,6 +4,7 @@ import { ImportListCsvDto } from './dto/import-list-csv.dto';
 import { ImportListResultDto } from './dto/import-list-result.dto';
 import { CallingList } from './entities/calling-list.entity';
 import { ListItem } from './entities/list-item.entity';
+import { PrismaService } from '../prisma/prisma.service';
 
 interface ParsedCsvRow {
   companyName: string;
@@ -20,8 +21,7 @@ interface UnassignListResult {
 
 @Injectable()
 export class ListsService {
-  private readonly lists: CallingList[] = [];
-  private readonly items: ListItem[] = [];
+  constructor(private readonly prisma: PrismaService) {}
 
   private parseCsvLine = (line: string): string[] => {
     const values: string[] = [];
@@ -94,138 +94,196 @@ export class ListsService {
     });
   };
 
-  importCsv = (user: JwtPayload, dto: ImportListCsvDto): ImportListResultDto => {
+  private toList = (row: {
+    id: string;
+    tenantId: string;
+    name: string;
+    sourceType: string;
+    createdBy: string;
+    createdAt: string;
+    itemCount: number;
+    assigneeEmail: string | null;
+    assignedBy: string | null;
+    assignedAt: string | null;
+  }): CallingList => ({
+    id: row.id,
+    tenantId: row.tenantId,
+    name: row.name,
+    sourceType: row.sourceType as CallingList['sourceType'],
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+    itemCount: row.itemCount,
+    assigneeEmail: row.assigneeEmail,
+    assignedBy: row.assignedBy,
+    assignedAt: row.assignedAt,
+  });
+
+  private toItem = (row: {
+    id: string;
+    tenantId: string;
+    listId: string;
+    companyName: string;
+    phone: string;
+    address: string;
+    targetUrl: string;
+    industryTag: string | null;
+    createdAt: string;
+  }): ListItem => ({
+    id: row.id,
+    tenantId: row.tenantId,
+    listId: row.listId,
+    companyName: row.companyName,
+    phone: row.phone,
+    address: row.address,
+    targetUrl: row.targetUrl,
+    industryTag: row.industryTag,
+    createdAt: row.createdAt,
+  });
+
+  importCsv = async (user: JwtPayload, dto: ImportListCsvDto): Promise<ImportListResultDto> => {
     const parsedRows = this.parseCsvRows(dto.csvText);
     const nowIso = new Date().toISOString();
+    const listName = dto.name?.trim() || `CSVリスト-${new Date().toLocaleDateString('ja-JP')}`;
 
-    const list: CallingList = {
-      id: `list-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      tenantId: user.tenantId,
-      name: dto.name?.trim() || `CSVリスト-${new Date().toLocaleDateString('ja-JP')}`,
-      sourceType: 'csv',
-      createdBy: user.sub,
-      createdAt: nowIso,
-      itemCount: 0,
-      assigneeEmail: null,
-      assignedBy: null,
-      assignedAt: null,
-    };
+    const existingUrls = await this.prisma.listItem.findMany({
+      where: { tenantId: user.tenantId },
+      select: { targetUrl: true },
+    });
+    const existingUrlSet = new Set(existingUrls.map((r) => r.targetUrl).filter((u) => u.length > 0));
 
-    const existingUrls = new Set(
-      this.items
-        .filter((item) => item.tenantId === user.tenantId)
-        .map((item) => item.targetUrl)
-        .filter((url) => url.length > 0),
-    );
-
-    let importedCount = 0;
+    const itemsToCreate: { companyName: string; phone: string; address: string; targetUrl: string; industryTag: string | null }[] = [];
     let skippedCount = 0;
 
-    parsedRows.forEach((row) => {
+    for (const row of parsedRows) {
       if (!row.companyName || !row.phone || !row.address || !row.targetUrl) {
         skippedCount += 1;
-        return;
+        continue;
       }
-
-      if (existingUrls.has(row.targetUrl)) {
+      if (existingUrlSet.has(row.targetUrl)) {
         skippedCount += 1;
-        return;
+        continue;
       }
-
-      const item: ListItem = {
-        id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        tenantId: user.tenantId,
-        listId: list.id,
+      itemsToCreate.push({
         companyName: row.companyName,
         phone: row.phone,
         address: row.address,
         targetUrl: row.targetUrl,
         industryTag: row.industryTag,
-        createdAt: nowIso,
-      };
+      });
+      existingUrlSet.add(row.targetUrl);
+    }
 
-      this.items.push(item);
-      existingUrls.add(row.targetUrl);
-      importedCount += 1;
+    const list = await this.prisma.callingList.create({
+      data: {
+        tenantId: user.tenantId,
+        name: listName,
+        sourceType: 'csv',
+        createdBy: user.sub,
+        createdAt: nowIso,
+        itemCount: itemsToCreate.length,
+        items: {
+          create: itemsToCreate.map((row) => ({
+            tenantId: user.tenantId,
+            companyName: row.companyName,
+            phone: row.phone,
+            address: row.address,
+            targetUrl: row.targetUrl,
+            industryTag: row.industryTag,
+            createdAt: nowIso,
+          })),
+        },
+      },
     });
 
-    list.itemCount = importedCount;
-    this.lists.push(list);
-
     return {
-      list,
-      importedCount,
+      list: this.toList(list),
+      importedCount: itemsToCreate.length,
       skippedCount,
     };
   };
 
-  getLists = (user: JwtPayload): CallingList[] => {
-    return this.lists
-      .filter((list) => list.tenantId === user.tenantId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  getLists = async (user: JwtPayload): Promise<CallingList[]> => {
+    const rows = await this.prisma.callingList.findMany({
+      where: { tenantId: user.tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((r) => this.toList(r));
   };
 
-  getListItems = (user: JwtPayload, listId: string): ListItem[] => {
-    const list = this.lists.find((candidate) => candidate.id === listId && candidate.tenantId === user.tenantId);
-
+  getListItems = async (user: JwtPayload, listId: string): Promise<ListItem[]> => {
+    const list = await this.prisma.callingList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+    });
     if (!list) {
       throw new NotFoundException('対象リストが見つかりません');
     }
-
-    return this.items
-      .filter((item) => item.tenantId === user.tenantId && item.listId === listId)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const rows = await this.prisma.listItem.findMany({
+      where: { tenantId: user.tenantId, listId },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => this.toItem(r));
   };
 
-  getAssignedListItems = (user: JwtPayload, listId: string): ListItem[] => {
-    const list = this.lists.find((candidate) => candidate.id === listId && candidate.tenantId === user.tenantId);
+  getAssignedListItems = async (user: JwtPayload, listId: string): Promise<ListItem[]> => {
+    const list = await this.prisma.callingList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+    });
     if (!list) {
       throw new NotFoundException('対象リストが見つかりません');
     }
-    if (!list.assigneeEmail || list.assigneeEmail.toLowerCase() !== user.email.toLowerCase()) {
+    const email = user.email?.toLowerCase() ?? '';
+    if (!list.assigneeEmail || list.assigneeEmail.toLowerCase() !== email) {
       throw new ForbiddenException('配布対象外のリストです');
     }
-
-    return this.items
-      .filter((item) => item.tenantId === user.tenantId && item.listId === listId)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const rows = await this.prisma.listItem.findMany({
+      where: { tenantId: user.tenantId, listId },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => this.toItem(r));
   };
 
-  getAssignedLists = (user: JwtPayload): CallingList[] => {
-    return this.lists
-      .filter(
-        (list) =>
-          list.tenantId === user.tenantId &&
-          list.assigneeEmail !== null &&
-          list.assigneeEmail.toLowerCase() === user.email.toLowerCase(),
-      )
-      .sort((a, b) => (b.assignedAt ?? '').localeCompare(a.assignedAt ?? ''));
+  getAssignedLists = async (user: JwtPayload): Promise<CallingList[]> => {
+    const email = user.email?.toLowerCase() ?? '';
+    const rows = await this.prisma.callingList.findMany({
+      where: { tenantId: user.tenantId, assigneeEmail: { not: null } },
+      orderBy: { assignedAt: 'desc' },
+    });
+    return rows
+      .filter((r) => r.assigneeEmail?.toLowerCase() === email)
+      .map((r) => this.toList(r));
   };
 
-  assignList = (user: JwtPayload, listId: string, assigneeEmail: string): CallingList => {
-    const list = this.lists.find((candidate) => candidate.id === listId && candidate.tenantId === user.tenantId);
-
+  assignList = async (user: JwtPayload, listId: string, assigneeEmail: string): Promise<CallingList> => {
+    const list = await this.prisma.callingList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+    });
     if (!list) {
       throw new NotFoundException('対象リストが見つかりません');
     }
-
-    list.assigneeEmail = assigneeEmail.trim().toLowerCase();
-    list.assignedBy = user.email;
-    list.assignedAt = new Date().toISOString();
-    return list;
+    const now = new Date().toISOString();
+    const updated = await this.prisma.callingList.update({
+      where: { id: listId },
+      data: {
+        assigneeEmail: assigneeEmail.trim().toLowerCase(),
+        assignedBy: user.email ?? null,
+        assignedAt: now,
+      },
+    });
+    return this.toList(updated);
   };
 
-  unassignList = (user: JwtPayload, listId: string): UnassignListResult => {
-    const list = this.lists.find((candidate) => candidate.id === listId && candidate.tenantId === user.tenantId);
-
+  unassignList = async (user: JwtPayload, listId: string): Promise<UnassignListResult> => {
+    const list = await this.prisma.callingList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+    });
     if (!list) {
       throw new NotFoundException('対象リストが見つかりません');
     }
-
     const previousAssigneeEmail = list.assigneeEmail;
-    list.assigneeEmail = null;
-    list.assignedBy = null;
-    list.assignedAt = null;
-    return { list, previousAssigneeEmail };
+    const updated = await this.prisma.callingList.update({
+      where: { id: listId },
+      data: { assigneeEmail: null, assignedBy: null, assignedAt: null },
+    });
+    return { list: this.toList(updated), previousAssigneeEmail };
   };
 }

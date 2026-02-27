@@ -1,0 +1,172 @@
+// IS-CRM Prisma Schema
+// 全テーブルに tenantId 必須（マルチテナント）
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  tenantId     String
+  email        String
+  name         String
+  passwordHash String?
+  role         String    // UserRole
+  createdAt    String
+  updatedAt    String
+
+  refreshTokens RefreshToken[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  tokenHash String
+  expiresAt String
+  createdAt String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model CallingRecord {
+  id            String   @id @default(cuid())
+  tenantId      String
+  createdBy    String
+  companyName  String
+  companyPhone String
+  companyAddress String
+  targetUrl    String
+  approved     Boolean
+  approvedAt   String?
+  approvedBy   String?
+  result       String   // CallingResultType
+  memo         String   @default("")
+  nextCallAt   String?
+  createdAt    String
+  updatedAt    String
+
+  @@index([tenantId])
+  @@index([tenantId, nextCallAt])
+  @@map("calling_records")
+}
+
+model CallingApproval {
+  id          String @id @default(cuid())
+  tenantId    String
+  approvedBy  String
+  approvedAt String
+  targetUrl   String
+  companyName String
+
+  @@index([tenantId])
+  @@map("calling_approvals")
+}
+
+model CallingHelpRequest {
+  id              String   @id @default(cuid())
+  tenantId        String
+  requestedBy     String
+  requestedByEmail String
+  companyName    String
+  scriptTab       String
+  requestedAt    String
+  queueNumber     Int      @default(0)
+  status         String   // waiting | joined | closed
+  joinedBy        String?
+  joinedAt       String?
+  resolvedAt     String?
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("calling_help_requests")
+}
+
+model CallingSettings {
+  tenantId            String @id
+  humanApprovalEnabled Boolean
+  updatedBy           String
+  updatedAt           String
+
+  @@map("calling_settings")
+}
+
+model CallingList {
+  id             String   @id @default(cuid())
+  tenantId       String
+  name           String
+  sourceType     String   @default("csv")
+  createdBy      String
+  createdAt      String
+  itemCount      Int      @default(0)
+  assigneeEmail  String?
+  assignedBy     String?
+  assignedAt     String?
+
+  items ListItem[]
+
+  @@index([tenantId])
+  @@map("calling_lists")
+}
+
+model ListItem {
+  id           String   @id @default(cuid())
+  tenantId     String
+  listId       String
+  companyName  String
+  phone        String
+  address      String
+  targetUrl    String
+  industryTag  String?
+  createdAt    String
+
+  list CallingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([listId])
+  @@map("list_items")
+}
+
+model ScriptTemplate {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  industryTag String?
+  tabs        Json     // ScriptTab[]
+  createdBy   String
+  updatedBy   String
+  createdAt   String
+  updatedAt   String
+
+  @@index([tenantId])
+  @@map("script_templates")
+}
+
+model CallingAiEvaluation {
+  id             String   @id @default(cuid())
+  tenantId       String
+  callRecordId   String
+  evaluatedAt    String
+  categoryScores Json     // AiCategoryScore[]
+  summary        String?
+  improvementPoints Json? // string[]
+
+  @@index([tenantId])
+  @@index([callRecordId])
+  @@map("calling_ai_evaluations")
+}
+

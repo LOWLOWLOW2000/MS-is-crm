@@ -8,10 +8,12 @@ import {
 import { ZoomUrlValidationResponseDto, ZoomWebhookDto } from './dto/zoom-webhook.dto';
 import { ZoomCallLog } from './entities/zoom-call-log.entity';
 
+/**
+ * 通話ログはユーザー（テナント）側で保持する方針のため、
+ * 運営・開発側では一切保持しない。Webhook は検証・受信のみ行う。
+ */
 @Injectable()
 export class ZoomService {
-  private readonly callLogs: ZoomCallLog[] = [];
-
   private readonly defaultTenantId = process.env.ZOOM_DEFAULT_TENANT_ID ?? 'tenant-demo-01';
   private readonly zoomAccountId = process.env.ZOOM_ACCOUNT_ID;
   private readonly zoomClientId = process.env.ZOOM_CLIENT_ID;
@@ -65,77 +67,22 @@ export class ZoomService {
     };
   };
 
-  handleWebhookEvent = (dto: ZoomWebhookDto): ZoomCallLog | null => {
+  /**
+   * Webhook イベントを受信するが、運営側ではログを保持しない。
+   * 必要に応じてテナント側・クライアント側で処理する。
+   */
+  handleWebhookEvent = (dto: ZoomWebhookDto): void => {
     const eventType = dto.event ?? 'unknown';
-    const tenantId = this.resolveTenantId(dto);
-    const object = dto.payload?.object;
-    const meetingId = object?.id ? String(object.id) : null;
-    const meetingUuid = object?.uuid ?? null;
-    const topic = object?.topic ?? null;
-    const hostEmail = object?.host_email ?? null;
-    const nowIso = new Date().toISOString();
-
     if (eventType !== 'meeting.started' && eventType !== 'meeting.ended') {
-      return null;
+      return;
     }
-
-    if (eventType === 'meeting.started') {
-      const log: ZoomCallLog = {
-        id: `zoom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        tenantId,
-        meetingId,
-        meetingUuid,
-        topic,
-        hostEmail,
-        status: 'started',
-        startedAt: object?.start_time ?? nowIso,
-        endedAt: null,
-        eventType,
-        receivedAt: nowIso,
-      };
-
-      this.callLogs.unshift(log);
-      return log;
-    }
-
-    const found = this.callLogs.find((log) => {
-      return (
-        log.tenantId === tenantId &&
-        ((meetingUuid && log.meetingUuid === meetingUuid) || (meetingId && log.meetingId === meetingId)) &&
-        log.status === 'started'
-      );
-    });
-
-    if (found) {
-      found.status = 'ended';
-      found.endedAt = object?.end_time ?? nowIso;
-      found.eventType = eventType;
-      found.receivedAt = nowIso;
-      return found;
-    }
-
-    const log: ZoomCallLog = {
-      id: `zoom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      tenantId,
-      meetingId,
-      meetingUuid,
-      topic,
-      hostEmail,
-      status: 'ended',
-      startedAt: null,
-      endedAt: object?.end_time ?? nowIso,
-      eventType,
-      receivedAt: nowIso,
-    };
-    this.callLogs.unshift(log);
-    return log;
+    void this.resolveTenantId(dto);
+    // ログは保存しない（ユーザー側で保持する方針）
   };
 
-  getRecentCallLogs = (user: JwtPayload): ZoomCallLog[] => {
-    return this.callLogs
-      .filter((log) => log.tenantId === user.tenantId)
-      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
-      .slice(0, 50);
+  /** 運営側ではログを保持しないため、常に空配列を返す。 */
+  getRecentCallLogs = (_user: JwtPayload): ZoomCallLog[] => {
+    return [];
   };
 
   private createFallbackDialSession = (
@@ -146,21 +93,6 @@ export class ZoomService {
     const topic = `${dto.companyName} 架電`;
     const scheduledAt = new Date().toISOString();
     const joinUrl = `https://zoom.us/j/${meetingId}`;
-
-    const log: ZoomCallLog = {
-      id: `zoom-dial-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      tenantId: user.tenantId,
-      meetingId,
-      meetingUuid: null,
-      topic,
-      hostEmail: user.email,
-      status: 'started',
-      startedAt: scheduledAt,
-      endedAt: null,
-      eventType: 'meeting.started.local_dial_fallback',
-      receivedAt: scheduledAt,
-    };
-    this.callLogs.unshift(log);
 
     return {
       provider: 'zoom',
@@ -244,21 +176,6 @@ export class ZoomService {
     const joinUrl = data.join_url ?? `https://zoom.us/j/${meetingId}`;
     const startUrl = data.start_url ?? joinUrl;
     const startTime = data.start_time ?? scheduledAt;
-
-    const log: ZoomCallLog = {
-      id: `zoom-dial-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      tenantId: user.tenantId,
-      meetingId,
-      meetingUuid: data.uuid ?? null,
-      topic: data.topic ?? topic,
-      hostEmail: data.host_email ?? user.email,
-      status: 'started',
-      startedAt: startTime,
-      endedAt: null,
-      eventType: 'meeting.started.api_dial',
-      receivedAt: new Date().toISOString(),
-    };
-    this.callLogs.unshift(log);
 
     return {
       provider: 'zoom',

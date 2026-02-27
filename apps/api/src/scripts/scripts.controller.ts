@@ -36,10 +36,10 @@ export class ScriptsController {
   };
 
   @Get()
-  getTemplates(@Req() req: JwtRequest): ScriptTemplate[] {
+  async getTemplates(@Req() req: JwtRequest): Promise<ScriptTemplate[]> {
     try {
       this.assertNotIsMember(req.user);
-      return this.scriptsService.getTemplates(req.user);
+      return await this.scriptsService.getTemplates(req.user);
     } catch (error) {
       if (error instanceof ForbiddenException) {
         throw error;
@@ -49,10 +49,10 @@ export class ScriptsController {
   }
 
   @Post()
-  createTemplate(@Req() req: JwtRequest, @Body() dto: UpsertScriptTemplateDto): ScriptTemplate {
+  async createTemplate(@Req() req: JwtRequest, @Body() dto: UpsertScriptTemplateDto): Promise<ScriptTemplate> {
     try {
       this.assertNotIsMember(req.user);
-      return this.scriptsService.createTemplate(req.user, dto);
+      return await this.scriptsService.createTemplate(req.user, dto);
     } catch (error) {
       if (error instanceof ForbiddenException) {
         throw error;
@@ -62,14 +62,14 @@ export class ScriptsController {
   }
 
   @Patch(':templateId')
-  updateTemplate(
+  async updateTemplate(
     @Req() req: JwtRequest,
     @Param('templateId') templateId: string,
     @Body() dto: UpsertScriptTemplateDto,
-  ): ScriptTemplate {
+  ): Promise<ScriptTemplate> {
     try {
       this.assertNotIsMember(req.user);
-      return this.scriptsService.updateTemplate(req.user, templateId, dto);
+      return await this.scriptsService.updateTemplate(req.user, templateId, dto);
     } catch (error) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException) {
         throw error;
@@ -79,10 +79,10 @@ export class ScriptsController {
   }
 
   @Delete(':templateId')
-  deleteTemplate(@Req() req: JwtRequest, @Param('templateId') templateId: string): { ok: true } {
+  async deleteTemplate(@Req() req: JwtRequest, @Param('templateId') templateId: string): Promise<{ ok: true }> {
     try {
       this.assertNotIsMember(req.user);
-      this.scriptsService.deleteTemplate(req.user, templateId);
+      await this.scriptsService.deleteTemplate(req.user, templateId);
       return { ok: true };
     } catch (error) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException) {

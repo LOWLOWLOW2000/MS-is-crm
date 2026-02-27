@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { fetchReportSummary } from '@/lib/calling-api';
 import type { ReportPeriod, ReportSummary } from '@/lib/types';
+import { RoleBadge } from '../_components/role-badge';
 
 const PERIOD_OPTIONS: { value: ReportPeriod; label: string }[] = [
   { value: 'daily', label: '日次' },
@@ -45,7 +46,7 @@ const ReportsPage = () => {
   const [period, setPeriod] = useState<ReportPeriod>('daily');
   const [summary, setSummary] = useState<ReportSummary>(initialSummary);
   const [isLoading, setIsLoading] = useState(true);
-  const [statusMessage, setStatusMessage] = useState('待機中');
+  const [statusMessage, setStatusMessage] = useState('レポートを読み込み中です…。');
 
   const handleExportCsv = (): void => {
     const rows: string[][] = [
@@ -69,7 +70,7 @@ const ReportsPage = () => {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-    setStatusMessage(`CSVを出力しました: ${filename}`);
+      setStatusMessage(`CSVを出力しました。（${filename}）`);
   };
 
   useEffect(() => {
@@ -93,9 +94,13 @@ const ReportsPage = () => {
       try {
         const nextSummary = await fetchReportSummary(session.accessToken, period);
         setSummary(nextSummary);
-        setStatusMessage('レポートを更新しました');
+        if (nextSummary.totalCalls === 0) {
+          setStatusMessage('対象期間のレポート対象データがありません。');
+        } else {
+          setStatusMessage('レポートを更新しました。');
+        }
       } catch {
-        setStatusMessage('レポートの取得に失敗しました');
+        setStatusMessage('レポートの取得に失敗しました。');
       } finally {
         setIsLoading(false);
       }
@@ -111,22 +116,25 @@ const ReportsPage = () => {
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <section className="mx-auto max-w-6xl space-y-4">
-        <header className="flex items-center justify-between rounded border border-slate-200 bg-white p-5">
-          <div>
-            <h1 className="text-2xl font-bold">基本レポート</h1>
-            <p className="text-sm text-slate-600">日次・週次・月次の架電集計</p>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/dashboard" className="rounded border border-slate-300 px-3 py-2 text-sm">
-              ダッシュボードへ
-            </Link>
-            <button
-              type="button"
-              className="rounded bg-slate-800 px-3 py-2 text-sm text-white"
-              onClick={() => signOut({ callbackUrl: '/login' })}
-            >
-              ログアウト
-            </button>
+        <header className="flex flex-col gap-4 rounded border border-slate-200 bg-white p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">基本レポート</h1>
+              <p className="text-sm text-slate-600">日次・週次・月次の架電集計。</p>
+              <RoleBadge role={session.user.role} name={session.user.name ?? undefined} />
+            </div>
+            <div className="flex gap-2">
+              <Link href="/dashboard" className="rounded border border-slate-300 px-3 py-2 text-sm">
+                ダッシュボードへ
+              </Link>
+              <button
+                type="button"
+                className="rounded bg-slate-800 px-3 py-2 text-sm text-white"
+                onClick={() => signOut({ callbackUrl: '/login' })}
+              >
+                ログアウト
+              </button>
+            </div>
           </div>
         </header>
 
@@ -159,11 +167,32 @@ const ReportsPage = () => {
           </button>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2">
+        <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <article className="rounded border border-slate-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-slate-700">架電件数</h2>
+            <h2 className="text-sm font-semibold text-slate-700">架電件数（コール数）</h2>
             <p className="mt-2 text-2xl font-bold">
               {isLoading ? '...' : `${summary.totalCalls}件`}
+            </p>
+          </article>
+          <article className="rounded border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold text-slate-700">コンタクト数</h2>
+            <p className="mt-2 text-2xl font-bold">
+              {isLoading
+                ? '...'
+                : `${summary.resultBreakdown
+                    .filter(
+                      (r) =>
+                        r.result === '担当者あり興味' || r.result === '担当者あり不要',
+                    )
+                    .reduce((acc, r) => acc + r.count, 0)}件`}
+            </p>
+          </article>
+          <article className="rounded border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold text-slate-700">アポ数</h2>
+            <p className="mt-2 text-2xl font-bold">
+              {isLoading
+                ? '...'
+                : `${summary.resultBreakdown.find((r) => r.result === '担当者あり興味')?.count ?? 0}件`}
             </p>
           </article>
           <article className="rounded border border-slate-200 bg-white p-4">

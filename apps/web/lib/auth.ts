@@ -3,8 +3,10 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import type { AuthResponse, UserRole } from './types';
 
-const apiBaseUrl = process.env.API_BASE_URL ?? 'http://localhost:3001';
+const apiBaseUrl = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
 const DEFAULT_USER_ROLE: UserRole = 'is_member';
+const ACCESS_TOKEN_EXPIRES_MS = 24 * 60 * 60 * 1000;
+const REFRESH_THRESHOLD_MS = 60 * 1000;
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -50,6 +52,9 @@ export const authOptions: NextAuthOptions = {
           tenantId: result.user.tenantId,
           role: result.user.role,
           accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+          refreshExpiresAt: result.refreshExpiresAt,
+          accessTokenExpiresAt: Date.now() + ACCESS_TOKEN_EXPIRES_MS,
         };
       },
     }),
@@ -102,6 +107,9 @@ export const authOptions: NextAuthOptions = {
       user.tenantId = result.user.tenantId;
       user.role = result.user.role;
       user.accessToken = result.accessToken;
+      user.refreshToken = result.refreshToken;
+      user.refreshExpiresAt = result.refreshExpiresAt;
+      user.accessTokenExpiresAt = Date.now() + ACCESS_TOKEN_EXPIRES_MS;
 
       return true;
     },
@@ -113,6 +121,35 @@ export const authOptions: NextAuthOptions = {
         token.tenantId = user.tenantId;
         token.role = user.role;
         token.accessToken = user.accessToken;
+        token.refreshToken = user.refreshToken;
+        token.refreshExpiresAt = user.refreshExpiresAt;
+        token.accessTokenExpiresAt = user.accessTokenExpiresAt;
+        return token;
+      }
+
+      const shouldRefresh =
+        token.refreshToken &&
+        typeof token.accessTokenExpiresAt === 'number' &&
+        Date.now() > token.accessTokenExpiresAt - REFRESH_THRESHOLD_MS;
+
+      if (shouldRefresh) {
+        try {
+          const res = await fetch(`${apiBaseUrl}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: token.refreshToken }),
+            cache: 'no-store',
+          });
+          if (res.ok) {
+            const data = (await res.json()) as AuthResponse;
+            token.accessToken = data.accessToken;
+            token.accessTokenExpiresAt = Date.now() + ACCESS_TOKEN_EXPIRES_MS;
+            token.refreshToken = data.refreshToken ?? token.refreshToken;
+            token.refreshExpiresAt = data.refreshExpiresAt ?? token.refreshExpiresAt;
+          }
+        } catch {
+          // ネットワークエラー時はそのまま返す（次回リトライ）
+        }
       }
 
       return token;

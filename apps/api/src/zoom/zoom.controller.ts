@@ -58,6 +58,7 @@ export class ZoomController {
     }
   }
 
+  /** 運営側ではログを保持しないため、常に空配列。テナント側でログを保持する想定。 */
   @Get('calls')
   @UseGuards(JwtAuthGuard)
   getRecentCallLogs(@Req() req: JwtRequest): ZoomCallLog[] {
