@@ -139,6 +139,7 @@ const CallingPage = () => {
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [listId, setListId] = useState<string | null>(null);
   const [assignedListsForMe, setAssignedListsForMe] = useState<CallingList[]>([]);
+  const [isLoadingAssignedLists, setIsLoadingAssignedLists] = useState(false);
   const [selectedAssignedListId, setSelectedAssignedListId] = useState('');
   const [manualCompany, setManualCompany] = useState<CompanyProfile>(DEFAULT_COMPANY);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -251,10 +252,12 @@ const CallingPage = () => {
     }
     if (session.user.role !== 'is_member') {
       setAssignedListsForMe([]);
+      setIsLoadingAssignedLists(false);
       return;
     }
 
     const loadAssignedLists = async (): Promise<void> => {
+      setIsLoadingAssignedLists(true);
       try {
         const lists = await fetchAssignedCallingLists(session.accessToken);
         setAssignedListsForMe(lists);
@@ -265,6 +268,8 @@ const CallingPage = () => {
       } catch {
         setAssignedListsForMe([]);
         setStatusMessage('自分への配布リスト取得に失敗しました。');
+      } finally {
+        setIsLoadingAssignedLists(false);
       }
     };
 
@@ -658,7 +663,9 @@ const CallingPage = () => {
           {session.user.role === 'is_member' && (
             <div className="rounded border border-slate-200 p-3">
               <h2 className="text-sm font-semibold text-slate-700">自分への配布リスト</h2>
-              {assignedListsForMe.length === 0 ? (
+              {isLoadingAssignedLists ? (
+                <p className="mt-2 text-xs text-slate-500">配布リストを読み込み中...</p>
+              ) : assignedListsForMe.length === 0 ? (
                 <p className="mt-2 text-xs text-slate-500">配布リストはありません。</p>
               ) : (
                 <>
