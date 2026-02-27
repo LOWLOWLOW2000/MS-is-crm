@@ -22,6 +22,23 @@ const initialSummary: ReportSummary = {
   resultBreakdown: [],
 };
 
+const formatDateForFilename = (): string => {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mi = String(now.getMinutes()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}-${hh}${mi}`;
+};
+
+const escapeCsvCell = (value: string): string => {
+  if (value.includes('"') || value.includes(',') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+};
+
 const ReportsPage = () => {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -29,6 +46,31 @@ const ReportsPage = () => {
   const [summary, setSummary] = useState<ReportSummary>(initialSummary);
   const [isLoading, setIsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState('待機中');
+
+  const handleExportCsv = (): void => {
+    const rows: string[][] = [
+      ['period', summary.period],
+      ['startAt', summary.startAt],
+      ['endAt', summary.endAt],
+      ['totalCalls', String(summary.totalCalls)],
+      ['connectedRate', String(summary.connectedRate)],
+      [],
+      ['result', 'count'],
+      ...summary.resultBreakdown.map((item) => [item.result, String(item.count)]),
+    ];
+
+    const csv = rows.map((row) => row.map((cell) => escapeCsvCell(cell)).join(',')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const filename = `reports-${summary.period}-${formatDateForFilename()}.csv`;
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatusMessage(`CSVを出力しました: ${filename}`);
+  };
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -108,6 +150,13 @@ const ReportsPage = () => {
             対象期間: {new Date(summary.startAt).toLocaleString('ja-JP')} -{' '}
             {new Date(summary.endAt).toLocaleString('ja-JP')}
           </p>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            className="mt-3 rounded bg-emerald-600 px-3 py-2 text-xs text-white"
+          >
+            CSVエクスポート
+          </button>
         </section>
 
         <section className="grid gap-4 md:grid-cols-2">
