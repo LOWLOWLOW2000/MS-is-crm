@@ -62,6 +62,8 @@ export interface ListUnassignedEvent {
   tenantId: string;
   listId: string;
   listName: string;
+  previousAssigneeEmail: string | null;
+  unassignedBy: string;
   unassignedAt: string;
 }
 

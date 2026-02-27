@@ -128,14 +128,16 @@ export class ListsController {
   unassignList(@Req() req: JwtRequest, @Param('listId') listId: string): CallingList {
     try {
       this.assertListManageRole(req.user);
-      const unassigned = this.listsService.unassignList(req.user, listId);
+      const unassignedResult = this.listsService.unassignList(req.user, listId);
       this.notificationsGateway.emitListUnassigned({
         tenantId: req.user.tenantId,
-        listId: unassigned.id,
-        listName: unassigned.name,
+        listId: unassignedResult.list.id,
+        listName: unassignedResult.list.name,
+        previousAssigneeEmail: unassignedResult.previousAssigneeEmail,
+        unassignedBy: req.user.email,
         unassignedAt: new Date().toISOString(),
       });
-      return unassigned;
+      return unassignedResult.list;
     } catch (error) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException) {
         throw error;

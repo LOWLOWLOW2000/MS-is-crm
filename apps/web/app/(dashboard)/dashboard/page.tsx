@@ -190,6 +190,9 @@ const DashboardPage = () => {
       if (event.tenantId !== session.user.tenantId) {
         return;
       }
+      if (event.previousAssigneeEmail && event.previousAssigneeEmail !== session.user.email) {
+        return;
+      }
       setAssignedLists((current) => current.filter((item) => item.listId !== event.listId));
       setMyAssignedListSnapshots((current) => current.filter((item) => item.listId !== event.listId));
     });

@@ -13,6 +13,11 @@ interface ParsedCsvRow {
   industryTag: string | null;
 }
 
+interface UnassignListResult {
+  list: CallingList;
+  previousAssigneeEmail: string | null;
+}
+
 @Injectable()
 export class ListsService {
   private readonly lists: CallingList[] = [];
@@ -210,16 +215,17 @@ export class ListsService {
     return list;
   };
 
-  unassignList = (user: JwtPayload, listId: string): CallingList => {
+  unassignList = (user: JwtPayload, listId: string): UnassignListResult => {
     const list = this.lists.find((candidate) => candidate.id === listId && candidate.tenantId === user.tenantId);
 
     if (!list) {
       throw new NotFoundException('対象リストが見つかりません');
     }
 
+    const previousAssigneeEmail = list.assigneeEmail;
     list.assigneeEmail = null;
     list.assignedBy = null;
     list.assignedAt = null;
-    return list;
+    return { list, previousAssigneeEmail };
   };
 }

@@ -397,6 +397,9 @@ const CallingPage = () => {
       if (event.tenantId !== session.user.tenantId) {
         return;
       }
+      if (event.previousAssigneeEmail && event.previousAssigneeEmail !== session.user.email) {
+        return;
+      }
 
       setAssignedListsForMe((current) => current.filter((list) => list.id !== event.listId));
       if (listId === event.listId) {
@@ -405,7 +408,7 @@ const CallingPage = () => {
         setListItems([]);
         setCurrentItemIndex(0);
       }
-      setStatusMessage(`配布解除: ${event.listName}`);
+      setStatusMessage(`配布解除: ${event.listName}（解除者: ${event.unassignedBy}）`);
     });
 
     return () => {
