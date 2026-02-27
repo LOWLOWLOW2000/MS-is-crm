@@ -58,6 +58,13 @@ export interface ListAssignedEvent {
   assignedAt: string;
 }
 
+export interface ListUnassignedEvent {
+  tenantId: string;
+  listId: string;
+  listName: string;
+  unassignedAt: string;
+}
+
 @WebSocketGateway({
   cors: {
     origin: ['http://localhost:3000'],
@@ -95,6 +102,10 @@ export class NotificationsGateway implements OnModuleDestroy {
 
   emitListAssigned = (event: ListAssignedEvent): void => {
     this.server.emit('list:assigned', event);
+  };
+
+  emitListUnassigned = (event: ListUnassignedEvent): void => {
+    this.server.emit('list:unassigned', event);
   };
 
   scheduleRecallReminders = (record: CallingRecord): void => {

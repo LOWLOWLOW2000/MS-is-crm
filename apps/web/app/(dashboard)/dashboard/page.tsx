@@ -17,6 +17,7 @@ import type {
   CallingSummary,
   ListAssignedEvent,
   ListDistributedEvent,
+  ListUnassignedEvent,
   RecallReminderEvent,
   ZoomCallLog,
 } from '@/lib/types';
@@ -183,6 +184,14 @@ const DashboardPage = () => {
           body: `${event.listName} / 配布者: ${event.assignedBy}`,
         });
       }
+    });
+
+    socket.on('list:unassigned', (event: ListUnassignedEvent) => {
+      if (event.tenantId !== session.user.tenantId) {
+        return;
+      }
+      setAssignedLists((current) => current.filter((item) => item.listId !== event.listId));
+      setMyAssignedListSnapshots((current) => current.filter((item) => item.listId !== event.listId));
     });
 
     return () => {

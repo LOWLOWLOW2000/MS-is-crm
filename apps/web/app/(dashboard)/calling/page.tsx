@@ -15,7 +15,14 @@ import {
   saveCallingRecord,
   validateDialPermission,
 } from '@/lib/calling-api';
-import type { CallingList, CallingResultType, ListAssignedEvent, ListItem, RecallReminderEvent } from '@/lib/types';
+import type {
+  CallingList,
+  CallingResultType,
+  ListAssignedEvent,
+  ListItem,
+  ListUnassignedEvent,
+  RecallReminderEvent,
+} from '@/lib/types';
 import { useCallingSessionStore } from '@/lib/stores/calling-session-store';
 
 type ScriptTab = {
@@ -384,6 +391,21 @@ const CallingPage = () => {
       })();
 
       setStatusMessage(`新しい配布リストを受信: ${event.listName}（配布者: ${event.assignedBy}）`);
+    });
+
+    socket.on('list:unassigned', (event: ListUnassignedEvent) => {
+      if (event.tenantId !== session.user.tenantId) {
+        return;
+      }
+
+      setAssignedListsForMe((current) => current.filter((list) => list.id !== event.listId));
+      if (listId === event.listId) {
+        setListId(null);
+        setSelectedAssignedListId('');
+        setListItems([]);
+        setCurrentItemIndex(0);
+      }
+      setStatusMessage(`配布解除: ${event.listName}`);
     });
 
     return () => {

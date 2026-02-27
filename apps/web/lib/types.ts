@@ -208,3 +208,10 @@ export interface ListAssignedEvent {
   assignedBy: string;
   assignedAt: string;
 }
+
+export interface ListUnassignedEvent {
+  tenantId: string;
+  listId: string;
+  listName: string;
+  unassignedAt: string;
+}
