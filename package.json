@@ -4,7 +4,7 @@
   "scripts": {
     "dev:api": "cd apps/api && npm run start:dev",
     "dev:web": "cd apps/web && npm run dev",
-    "start:dev": "node scripts/print-restart-commands.js && concurrently -k -n api,web \"npm run dev:api\" \"npm run dev:web\"",
+    "start:dev": "node -e \"require(require('path').join(process.env.npm_config_local_prefix||process.cwd(),'run-start-dev.js'))\"",
     "restart:dev": "bash scripts/restart-dev.sh",
     "db:push": "cd apps/api && npm run db:push",
     "db:migrate": "cd apps/api && npm run db:migrate",

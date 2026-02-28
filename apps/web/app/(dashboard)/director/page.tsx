@@ -10,6 +10,7 @@ import {
   fetchRecentHelpRequests,
   getApiBaseUrl,
   joinHelpRequest,
+  sendDirectorWhisper,
 } from '@/lib/calling-api';
 import type { CallingHelpRequest } from '@/lib/types';
 
@@ -49,6 +50,8 @@ const DirectorPage = () => {
   const [nowMs, setNowMs] = useState<number>(Date.now());
   const [filter, setFilter] = useState<HelpRequestFilter>('all');
   const [keyword, setKeyword] = useState('');
+  const [whisperByRequestId, setWhisperByRequestId] = useState<Record<string, string>>({});
+  const [sendingWhisperId, setSendingWhisperId] = useState<string | null>(null);
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -233,6 +236,28 @@ const DirectorPage = () => {
     }
   };
 
+  const handleSendWhisper = async (requestId: string): Promise<void> => {
+    const message = (whisperByRequestId[requestId] ?? '').trim();
+    if (!message || !session?.accessToken) {
+      setStatusMessage('メッセージを入力してください。');
+      return;
+    }
+    setSendingWhisperId(requestId);
+    try {
+      await sendDirectorWhisper(session.accessToken, requestId, message);
+      setWhisperByRequestId((prev) => {
+        const next = { ...prev };
+        delete next[requestId];
+        return next;
+      });
+      setStatusMessage('囁きを送信しました。');
+    } catch {
+      setStatusMessage('囁きの送信に失敗しました。');
+    } finally {
+      setSendingWhisperId(null);
+    }
+  };
+
   if (status !== 'authenticated' || !session?.user) {
     return <main className="p-6">読み込み中...</main>;
   }
@@ -360,6 +385,28 @@ const DirectorPage = () => {
                       参加時刻: {request.joinedAt ? new Date(request.joinedAt).toLocaleString('ja-JP') : '-'}
                     </p>
                     <p className="text-xs text-slate-500">経過時間: {formatElapsed(request.joinedAt, nowMs)}</p>
+                    <div className="mt-2 flex flex-col gap-1.5 border-t border-blue-200 pt-2">
+                      <label className="text-xs font-medium text-slate-600">ISへ囁き送信</label>
+                      <div className="flex gap-1">
+                        <input
+                          type="text"
+                          value={whisperByRequestId[request.id] ?? ''}
+                          onChange={(e) =>
+                            setWhisperByRequestId((prev) => ({ ...prev, [request.id]: e.target.value }))
+                          }
+                          placeholder="短いメッセージを入力..."
+                          className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
+                        />
+                        <button
+                          type="button"
+                          className="rounded bg-amber-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                          onClick={() => void handleSendWhisper(request.id)}
+                          disabled={sendingWhisperId === request.id}
+                        >
+                          {sendingWhisperId === request.id ? '送信中...' : '送信'}
+                        </button>
+                      </div>
+                    </div>
                     <button
                       type="button"
                       className="mt-2 rounded bg-slate-700 px-3 py-1 text-xs text-white"

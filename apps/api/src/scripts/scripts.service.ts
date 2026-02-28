@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import type { PdfExtractResultDto } from './dto/pdf-extract-result.dto';
 import { UpsertScriptTemplateDto } from './dto/upsert-script-template.dto';
 import { ScriptTemplate, ScriptTab } from './entities/script-template.entity';
 import { PrismaService } from '../prisma/prisma.service';
@@ -29,6 +30,18 @@ export class ScriptsService {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
+
+  /** Phase2: PDFからテキスト抽出（スタブ）。実装は Python 等で行い、ここでは固定文を返す */
+  extractTextFromPdf = async (file: { buffer?: Buffer; originalname?: string } | undefined): Promise<PdfExtractResultDto> => {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('PDFファイルをアップロードしてください');
+    }
+    return {
+      text: '（PDFから抽出したテキスト。実際の抽出は Python / 外部サービスで実装予定です。）',
+      suggestedTabName: 'PDF取り込み',
+      pageCount: 1,
+    };
+  };
 
   getTemplates = async (user: JwtPayload): Promise<ScriptTemplate[]> => {
     const rows = await this.prisma.scriptTemplate.findMany({

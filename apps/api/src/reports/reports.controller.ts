@@ -10,6 +10,7 @@ import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { AiScorecardEntryDto } from './dto/ai-scorecard.dto';
+import type { ReportByMemberDto } from './dto/report-by-member.dto';
 import { ReportSummaryDto } from './dto/report-summary.dto';
 import { ReportsService } from './reports.service';
 
@@ -34,15 +35,58 @@ export class ReportsController {
     }
   }
 
+  /** ISメンバー別の架電実績。period は daily | weekly | monthly */
+  @Get('by-member')
+  async getByMember(
+    @Req() req: JwtRequest,
+    @Query('period') period: string | undefined,
+  ): Promise<ReportByMemberDto> {
+    try {
+      return await this.reportsService.getByMember(req.user, period);
+    } catch {
+      throw new InternalServerErrorException('IS別実績の取得に失敗しました');
+    }
+  }
+
   /**
-   * AIスコアカード一覧（Phase2で実装予定。現時点では空配列）
+   * Phase3: AIスコアカード一覧（評価が付いた架電記録）
    */
   @Get('ai-scorecard')
-  getAiScorecard(@Req() req: JwtRequest): AiScorecardEntryDto[] {
+  async getAiScorecard(@Req() req: JwtRequest): Promise<AiScorecardEntryDto[]> {
     try {
-      return this.reportsService.getAiScorecard(req.user);
+      return await this.reportsService.getAiScorecard(req.user);
     } catch {
       throw new InternalServerErrorException('AIスコアカードの取得に失敗しました');
+    }
+  }
+
+  /** Phase3 スタブ: 黄金トークパターン */
+  @Get('golden-patterns')
+  async getGoldenPatterns(@Req() req: JwtRequest): Promise<{ patterns: unknown[]; period: string }> {
+    try {
+      return await this.reportsService.getGoldenPatterns(req.user);
+    } catch {
+      throw new InternalServerErrorException('黄金トークパターンの取得に失敗しました');
+    }
+  }
+
+  /** Phase3 スタブ: 最適架電時間帯マップ */
+  @Get('optimal-time-map')
+  async getOptimalTimeMap(@Req() req: JwtRequest): Promise<{ heatmap: unknown[]; period: string }> {
+    try {
+      return await this.reportsService.getOptimalTimeMap(req.user);
+    } catch {
+      throw new InternalServerErrorException('最適時間帯マップの取得に失敗しました');
+    }
+  }
+
+  /** Phase3 スタブ: 商談パイプライン予測 */
+  @Get('pipeline-forecast')
+  async getPipelineForecast(@Req() req: JwtRequest): Promise<{ forecast: unknown; period: string }> {
+    try {
+      return await this.reportsService.getPipelineForecast(req.user);
+    } catch {
+      throw new InternalServerErrorException('パイプライン予測の取得に失敗しました');
     }
   }
 }

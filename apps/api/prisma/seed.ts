@@ -42,6 +42,33 @@ async function main(): Promise<void> {
   }
 
   console.log('Seed: demo users upserted.');
+
+  // リスト生成用マスタ（デモ用・選択式で使う）
+  const areas = ['東京都', '大阪府', '神奈川県'];
+  for (const name of areas) {
+    await prisma.listAreaMaster.upsert({
+      where: { tenantId_name: { tenantId: DEMO_TENANT, name } },
+      create: { tenantId: DEMO_TENANT, name, isActive: true, createdAt: now, updatedAt: now },
+      update: { isActive: true, updatedAt: now },
+    });
+  }
+  const industries = ['IT・ソフトウェア', '製造業', '小売'];
+  for (const name of industries) {
+    await prisma.listIndustryMaster.upsert({
+      where: { tenantId_name: { tenantId: DEMO_TENANT, name } },
+      create: { tenantId: DEMO_TENANT, name, isActive: true, createdAt: now, updatedAt: now },
+      update: { isActive: true, updatedAt: now },
+    });
+  }
+  const keywords = ['BtoB', '従業員50人以上', '上場企業'];
+  for (const name of keywords) {
+    await prisma.listKeywordMaster.upsert({
+      where: { tenantId_name: { tenantId: DEMO_TENANT, name } },
+      create: { tenantId: DEMO_TENANT, name, isActive: true, createdAt: now, updatedAt: now },
+      update: { isActive: true, updatedAt: now },
+    });
+  }
+  console.log('Seed: list masters (area, industry, keyword) upserted.');
 }
 
 main()

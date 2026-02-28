@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { io } from 'socket.io-client';
@@ -12,12 +13,14 @@ import {
   fetchAssignedCallingLists,
   fetchListItems,
   fetchCallingSettings,
+  fetchRecallList,
   getApiBaseUrl,
   saveCallingRecord,
   validateDialPermission,
 } from '@/lib/calling-api';
 import type {
   CallingList,
+  CallingRecord,
   CallingResultType,
   ListAssignedEvent,
   ListItem,
@@ -25,6 +28,13 @@ import type {
   RecallReminderEvent,
 } from '@/lib/types';
 import { useCallingSessionStore } from '@/lib/stores/calling-session-store';
+import {
+  USE_MOCK_KANBAN,
+  getMockAssignedLists,
+  getMockListItems,
+  getMockRecallList,
+} from '@/lib/mock-calling-kanban';
+import CallingPageV2 from './CallingPageV2';
 
 type ScriptTab = {
   id: string;
@@ -32,6 +42,9 @@ type ScriptTab = {
   content: string;
   isCustom: boolean;
 };
+
+/** 各セクションの大カテゴリ名を表示する（本番では false にして外す） */
+const SHOW_SECTION_LABELS = true;
 
 const BGM_VOLUME_KEY = 'calling-bgm-volume';
 const COMPANY_HP_TAB_ID = 'company-hp';
@@ -218,8 +231,23 @@ const CallingPage = () => {
   const [assignedListsForMe, setAssignedListsForMe] = useState<CallingList[]>([]);
   const [isLoadingAssignedLists, setIsLoadingAssignedLists] = useState(false);
   const [selectedAssignedListId, setSelectedAssignedListId] = useState('');
+  const [recallList, setRecallList] = useState<CallingRecord[]>([]);
+  const [isLoadingRecall, setIsLoadingRecall] = useState(false);
+  const [showRecallPopup, setShowRecallPopup] = useState(false);
+  /** 着信POPUP（無音・右上表示・会社ステータス＋メインに表示ボタン） */
+  const [showIncomingPopup, setShowIncomingPopup] = useState(false);
   const [manualCompany, setManualCompany] = useState<CompanyProfile>(DEFAULT_COMPANY);
+  const [viewMode, setViewMode] = useState<1 | 2>(1);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const rightPanelsLayout = useDefaultLayout({
+    id: 'calling-right-panels',
+    panelIds: ['calling-right-top', 'calling-right-bottom'],
+    storage:
+      typeof window !== 'undefined'
+        ? localStorage
+        : { getItem: () => null, setItem: () => {} },
+  });
 
   type DraftSnapshot = {
     memo: string;
@@ -338,9 +366,15 @@ const CallingPage = () => {
     const audio = new Audio('/sounds/office-ambience.mp3');
     audio.loop = true;
     audio.volume = 0.2;
+
+    const onError = (): void => {
+      audioRef.current = null;
+    };
+    audio.addEventListener('error', onError);
     audioRef.current = audio;
 
     return () => {
+      audio.removeEventListener('error', onError);
       audio.pause();
       audioRef.current = null;
     };
@@ -386,11 +420,20 @@ const CallingPage = () => {
     const loadAssignedLists = async (): Promise<void> => {
       setIsLoadingAssignedLists(true);
       try {
-        const lists = await fetchAssignedCallingLists(session.accessToken);
-        setAssignedListsForMe(lists);
-        if (!listId && lists.length > 0) {
-          setListId(lists[0].id);
-          setSelectedAssignedListId(lists[0].id);
+        if (USE_MOCK_KANBAN) {
+          const lists = getMockAssignedLists();
+          setAssignedListsForMe(lists);
+          if (!listId && lists.length > 0) {
+            setListId(lists[0].id);
+            setSelectedAssignedListId(lists[0].id);
+          }
+        } else {
+          const lists = await fetchAssignedCallingLists(session.accessToken);
+          setAssignedListsForMe(lists);
+          if (!listId && lists.length > 0) {
+            setListId(lists[0].id);
+            setSelectedAssignedListId(lists[0].id);
+          }
         }
       } catch {
         setAssignedListsForMe([]);
@@ -402,6 +445,41 @@ const CallingPage = () => {
 
     void loadAssignedLists();
   }, [status, session?.accessToken, session?.user?.role, listId]);
+
+  // 再架電一覧取得（is_member のみ）。Phase2: USE_MOCK_KANBAN=false でAPIのみ
+  useEffect(() => {
+    if (status !== 'authenticated' || session?.user?.role !== 'is_member') {
+      setRecallList([]);
+      return;
+    }
+    const loadRecall = async (): Promise<void> => {
+      setIsLoadingRecall(true);
+      try {
+        if (USE_MOCK_KANBAN) {
+          setRecallList(getMockRecallList());
+        } else if (session?.accessToken) {
+          const list = await fetchRecallList(session.accessToken);
+          setRecallList(list);
+        } else {
+          setRecallList([]);
+        }
+      } catch {
+        setRecallList([]);
+      } finally {
+        setIsLoadingRecall(false);
+      }
+    };
+    void loadRecall();
+  }, [status, session?.accessToken, session?.user?.role]);
+
+  // モック時は再架電を定期更新して揺れ・ポップアップ条件を維持（Phase2では削除 or WebSocketに置換可）
+  useEffect(() => {
+    if (!USE_MOCK_KANBAN || session?.user?.role !== 'is_member') return;
+    const interval = setInterval(() => {
+      setRecallList(getMockRecallList());
+    }, 30 * 1000);
+    return () => clearInterval(interval);
+  }, [session?.user?.role]);
 
   useEffect(() => {
     if (status !== 'authenticated' || !session?.accessToken) {
@@ -416,7 +494,12 @@ const CallingPage = () => {
 
     const loadListItems = async (): Promise<void> => {
       try {
-        const items = await fetchListItems(session.accessToken, listId);
+        let items: ListItem[];
+        if (USE_MOCK_KANBAN && listId.startsWith('mock-')) {
+          items = getMockListItems(listId);
+        } else {
+          items = await fetchListItems(session.accessToken, listId);
+        }
         setListItems(items);
         setCurrentItemIndex(0);
         if (items.length > 0) {
@@ -669,6 +752,7 @@ const CallingPage = () => {
 
   const handleStartBgm = async () => {
     if (!audioRef.current) {
+      setStatusMessage('BGMファイルがありません。（/sounds/office-ambience.mp3 を配置すると再生できます）');
       return;
     }
     try {
@@ -709,6 +793,25 @@ const CallingPage = () => {
     }
     const nextQuery = nextParams.toString();
     window.history.replaceState({}, '', nextQuery ? `/calling?${nextQuery}` : '/calling');
+  };
+
+  /** 看板の配布リストカードをクリックしたとき */
+  const handleSelectListCard = (nextListId: string): void => {
+    setSelectedAssignedListId(nextListId);
+    setListId(nextListId);
+    const nextParams = new URLSearchParams(window.location.search);
+    nextParams.set('listId', nextListId);
+    window.history.replaceState({}, '', `/calling?${nextParams.toString()}`);
+  };
+
+  /** 再架電エリアをクリックしたとき（未架電の再架電があればポップアップ） */
+  const handleRecallAreaClick = (): void => {
+    const now = Date.now();
+    const oneMinuteMs = 60 * 1000;
+    const hasOverdueRecall = recallList.some((r) => r.nextCallAt && new Date(r.nextCallAt).getTime() < now + oneMinuteMs);
+    if (hasOverdueRecall) {
+      setShowRecallPopup(true);
+    }
   };
 
   const handleAddCustomTab = () => {
@@ -768,6 +871,9 @@ const CallingPage = () => {
   };
 
   const handleApprove = async (): Promise<void> => {
+    // #region agent log
+    fetch('http://127.0.0.1:7790/ingest/7094b1fb-325d-446a-815b-bc3be8ae2d53',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'64b74a'},body:JSON.stringify({sessionId:'64b74a',location:'page.tsx:handleApprove',message:'handleApprove entry',data:{hasSession:!!session?.accessToken},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     if (!session?.accessToken) {
       setStatusMessage('アクセストークンが見つからないため承認できません。');
       return;
@@ -778,12 +884,17 @@ const CallingPage = () => {
         companyName: companyProfile.companyName,
         targetUrl: displayUrl,
       });
-
+      // #region agent log
+      fetch('http://127.0.0.1:7790/ingest/7094b1fb-325d-446a-815b-bc3be8ae2d53',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'64b74a'},body:JSON.stringify({sessionId:'64b74a',location:'page.tsx:handleApprove:success',message:'createCallingApproval success',data:{approvalId:approval?.id},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       setIsApproved(true);
       setApprovalId(approval.id);
       setApprovedAt(approval.approvedAt);
       setStatusMessage(`承認済み: ${new Date(approval.approvedAt).toLocaleString('ja-JP')}`);
-    } catch {
+    } catch (e) {
+      // #region agent log
+      fetch('http://127.0.0.1:7790/ingest/7094b1fb-325d-446a-815b-bc3be8ae2d53',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'64b74a'},body:JSON.stringify({sessionId:'64b74a',location:'page.tsx:handleApprove:catch',message:'createCallingApproval failed',data:{err:String(e)},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+      // #endregion
       setIsApproved(false);
       setApprovalId(null);
       setApprovedAt(null);
@@ -805,9 +916,7 @@ const CallingPage = () => {
       window.open(zoomSession.startUrl, '_blank', 'noopener,noreferrer');
       setCallStarted(true);
       setStatusMessage(
-        `ZOOM発信セッションを開始しました: ${zoomSession.meetingId}${
-          zoomSession.isFallback ? '（フォールバックURL）' : ''
-        }。ボタンが「発信切断」に切り替わりました（MOC）。`,
+        `発信セッションを開始しました。ボタンが「発信切断」に切り替わりました。`,
       );
     };
 
@@ -816,7 +925,7 @@ const CallingPage = () => {
         await startZoomDialSession();
         return;
       } catch {
-        setStatusMessage('ZOOM発信処理に失敗しました。');
+        setStatusMessage('発信処理に失敗しました。');
         return;
       }
     }
@@ -839,7 +948,7 @@ const CallingPage = () => {
 
       await startZoomDialSession();
     } catch {
-      setStatusMessage('ZOOM発信処理に失敗しました。');
+      setStatusMessage('発信処理に失敗しました。');
     }
   };
 
@@ -954,10 +1063,58 @@ const CallingPage = () => {
     return <main className="p-6">読み込み中...</main>;
   }
 
+  // UI2: 独立した別レイアウト（CallingPageV2）。UI1 と別途改修して育てる
+  if (viewMode === 2) {
+    return (
+      <main className="min-h-screen bg-slate-100 p-4">
+        <div className="fixed top-4 right-4 z-50 flex gap-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 shadow-md">
+          <span className="px-1 text-xs text-slate-500">UI:</span>
+          <button
+            type="button"
+            onClick={() => setViewMode(1)}
+            className="rounded px-2 py-1 text-sm font-medium text-slate-500 hover:bg-slate-100"
+          >
+            1
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode(2)}
+            className="rounded bg-blue-600 px-2 py-1 text-sm font-medium text-white"
+          >
+            2
+          </button>
+        </div>
+        <CallingPageV2 />
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4">
+      <div className="fixed top-4 right-4 z-50 flex gap-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 shadow-md">
+        <span className="px-1 text-xs text-slate-500">UI:</span>
+        <button
+          type="button"
+          onClick={() => setViewMode(1)}
+          className="rounded bg-blue-600 px-2 py-1 text-sm font-medium text-white"
+        >
+          1
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode(2)}
+          className="rounded px-2 py-1 text-sm font-medium text-slate-500 hover:bg-slate-100"
+        >
+          2
+        </button>
+      </div>
       <div className="flex h-[calc(100vh-7rem)] gap-3">
-        <section className="flex w-2/5 min-w-[360px] flex-col gap-3 overflow-y-auto rounded border border-slate-200 bg-white p-4">
+        <section className="flex w-2/5 min-w-[360px] flex-col gap-3 overflow-y-auto rounded border border-slate-200 bg-white p-4 relative">
+          {SHOW_SECTION_LABELS && (
+            <span className="sticky top-0 z-10 -mx-4 -mt-4 mb-1 block bg-white px-4 py-1 text-xs font-medium text-black">
+              左カラム 上
+            </span>
+          )}
           {listId && listItems.length > 0 && (
             <p className="text-xs text-slate-500">
               リスト連動: {currentItemIndex + 1}/{listItems.length}
@@ -965,40 +1122,113 @@ const CallingPage = () => {
           )}
           {session.user.role === 'is_member' && (
             <div className="rounded border border-slate-200 p-3">
+              <style>{`
+                @keyframes recall-shake {
+                  0%, 90%, 100% { transform: translateX(0); }
+                  92% { transform: translateX(-3px); }
+                  94% { transform: translateX(3px); }
+                  96% { transform: translateX(-2px); }
+                  98% { transform: translateX(2px); }
+                }
+                .recall-card-due {
+                  animation: recall-shake 3s ease-in-out infinite;
+                }
+              `}</style>
               <h2 className="text-sm font-semibold text-slate-700">自分への配布リスト</h2>
-              {isLoadingAssignedLists ? (
-                <p className="mt-2 text-xs text-slate-500">配布リストを読み込み中...</p>
-              ) : assignedListsForMe.length === 0 ? (
-                <p className="mt-2 text-xs text-slate-500">配布リストはありません。</p>
-              ) : (
-                <>
-                  <select
-                    className="mt-2 w-full rounded border border-slate-300 px-2 py-2 text-sm"
-                    value={selectedAssignedListId}
-                    onChange={handleAssignedListChange}
-                  >
-                    {assignedListsForMe.map((list) => (
-                      <option key={list.id} value={list.id}>
-                        {list.name}（{list.itemCount}件）
-                      </option>
-                    ))}
-                  </select>
-                  {selectedAssignedListId &&
-                    (() => {
-                      const selectedList = assignedListsForMe.find((list) => list.id === selectedAssignedListId);
-                      if (!selectedList) {
-                        return null;
-                      }
-                      return (
-                        <p className="mt-1 text-xs text-slate-500">
-                          配布者: {selectedList.assignedBy ?? '-'} / 配布日時:{' '}
-                          {selectedList.assignedAt
-                            ? new Date(selectedList.assignedAt).toLocaleString('ja-JP')
-                            : '-'}
-                        </p>
-                      );
-                    })()}
-                </>
+              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                {/* 左: 再架電エリア（看板の一番左に溜まる） */}
+                <div className="shrink-0 space-y-1.5">
+                  <p className="text-xs font-medium text-slate-600">再架電</p>
+                  {isLoadingRecall ? (
+                    <p className="text-xs text-slate-400">読み込み中...</p>
+                  ) : recallList.length === 0 ? (
+                    <p className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-400">
+                      再架電なし
+                    </p>
+                  ) : (
+                    <div className="flex max-h-[200px] flex-col gap-1.5 overflow-y-auto">
+                      {recallList.map((r) => {
+                        const nextAt = r.nextCallAt ? new Date(r.nextCallAt).getTime() : 0;
+                        const now = Date.now();
+                        const twoMinMs = 2 * 60 * 1000;
+                        const isDueSoon = nextAt > 0 && nextAt - now <= twoMinMs && nextAt - now > 0;
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={handleRecallAreaClick}
+                            className={`rounded border border-amber-200 bg-amber-50 px-2.5 py-2 text-left text-xs shadow-sm hover:bg-amber-100 ${
+                              isDueSoon ? 'recall-card-due border-amber-400' : ''
+                            }`}
+                          >
+                            <p className="font-medium text-slate-800 truncate">{r.companyName}</p>
+                            <p className="mt-0.5 text-slate-500">
+                              {r.nextCallAt ? new Date(r.nextCallAt).toLocaleString('ja-JP', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                {/* 右: 配布リストカード */}
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className="text-xs font-medium text-slate-600">配布リスト</p>
+                  {isLoadingAssignedLists ? (
+                    <p className="text-xs text-slate-400">読み込み中...</p>
+                  ) : assignedListsForMe.length === 0 ? (
+                    <p className="text-xs text-slate-400">配布リストはありません。</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {assignedListsForMe.map((list) => (
+                        <button
+                          key={list.id}
+                          type="button"
+                          onClick={() => handleSelectListCard(list.id)}
+                          className={`rounded border px-3 py-2.5 text-left text-xs shadow-sm transition-colors ${
+                            selectedAssignedListId === list.id
+                              ? 'border-blue-500 bg-blue-50 text-blue-900'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <p className="font-medium truncate max-w-[140px]">{list.name}</p>
+                          <p className="mt-0.5 text-slate-500">{list.itemCount}件</p>
+                          {list.assignedBy && (
+                            <p className="mt-0.5 text-slate-400">配布: {list.assignedBy}</p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* 再架電・未架電時ポップアップ */}
+              {showRecallPopup && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="recall-popup-title"
+                >
+                  <div className="max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+                    <p
+                      id="recall-popup-title"
+                      className="text-center font-medium leading-relaxed text-slate-700"
+                      style={{ fontFamily: '"Hiragino Maru Gothic ProN", "M PLUS Rounded 1c", sans-serif', fontWeight: 400 }}
+                    >
+                      再架電先を表示します。準備してお待ちください。
+                    </p>
+                    <div className="mt-4 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setShowRecallPopup(false)}
+                        className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
+                      >
+                        閉じる
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -1028,9 +1258,13 @@ const CallingPage = () => {
                       : 'bg-emerald-600 hover:bg-emerald-700'
                 }`}
                 onClick={() => {
+                  // #region agent log
+                  const branch = callStarted ? 'callStarted' : (!humanApprovalEnabled || (isApproved && approvalId)) ? 'handleDial' : 'handleApprove';
+                  fetch('http://127.0.0.1:7790/ingest/7094b1fb-325d-446a-815b-bc3be8ae2d53',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'64b74a'},body:JSON.stringify({sessionId:'64b74a',location:'page.tsx:flowConfirmButton',message:'flow button click',data:{branch,isApproved:!!isApproved,hasApprovalId:!!approvalId},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+                  // #endregion
                   if (callStarted) {
                     setCallStarted(false);
-                    setStatusMessage('発信を切断しました（MOC）。ボタンは「📞 ZOOM発信」に戻ります。');
+                    setStatusMessage('発信を切断しました。');
                     return;
                   }
                   if (!humanApprovalEnabled || (isApproved && approvalId)) {
@@ -1043,8 +1277,16 @@ const CallingPage = () => {
                 {callStarted
                   ? '発信切断'
                   : !humanApprovalEnabled || (isApproved && approvalId)
-                    ? '📞 ZOOM発信'
+                    ? '発信'
                     : 'フロー確認承認'}
+              </button>
+              <button
+                type="button"
+                className="shrink-0 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                onClick={() => setShowIncomingPopup(true)}
+                title="着信時は右上に無音でポップアップ表示"
+              >
+                着信
               </button>
               <button
                 type="button"
@@ -1073,6 +1315,9 @@ const CallingPage = () => {
             </p>
           </div>
 
+          {SHOW_SECTION_LABELS && (
+            <span className="block text-xs font-medium text-black">左カラム 下</span>
+          )}
           <div className="rounded border border-slate-200 p-3">
             <h2 className="text-sm font-semibold text-slate-700">企業情報</h2>
             <dl className="mt-2 space-y-1 text-sm">
@@ -1120,7 +1365,7 @@ const CallingPage = () => {
                 pushDraftToHistory();
                 setMemo(event.target.value);
               }}
-              className="mt-1 h-20 w-full rounded border border-slate-300 p-2 text-sm"
+              className="neo-trigger mt-1 h-20 w-full rounded border border-slate-300 p-2 text-sm"
               placeholder="ヒアリング内容を記録"
             />
             <label htmlFor="next-call" className="mt-3 block text-sm font-medium">
@@ -1138,131 +1383,20 @@ const CallingPage = () => {
             />
           </div>
 
-          <div className="rounded border border-slate-200 p-3">
-            <button
-              type="button"
-              className="w-full rounded bg-rose-600 px-3 py-2 text-sm font-medium text-white"
-              onClick={() => {
-                void handleHelpRequest();
-              }}
-            >
-              🆘 ディレクター呼出
-            </button>
-            <p className="mt-1 text-xs text-slate-500">結果は 1〜7 キーで選択できます</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="flex-1 min-w-[100px] rounded border border-slate-300 px-3 py-2 text-sm"
-                onClick={() => void handleSaveRecord()}
-                disabled={isSaving}
-              >
-                {isSaving ? '保存中...' : '上書き保存'}
-              </button>
-              <button
-                type="button"
-                className="flex-1 min-w-[100px] rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white"
-                onClick={() => void handleSaveAndNext()}
-                disabled={isSaving}
-              >
-                {isSaving ? '保存中...' : '保存して次へ'}
-              </button>
-              <button
-                type="button"
-                className="flex-1 min-w-[80px] rounded border border-slate-300 px-3 py-2 text-sm"
-                onClick={handleNextCompany}
-              >
-                次へ
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded border border-slate-200 p-3">
-            <h2 className="text-sm font-semibold text-slate-700">BGM</h2>
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                className="rounded border border-slate-300 px-2 py-1 text-xs"
-                onClick={() => setIsMuted((prev) => !prev)}
-              >
-                {isMuted ? '🔇' : '🔊'}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={volume}
-                onChange={handleVolumeChange}
-                className="w-full"
-              />
-              <span className="w-10 text-right text-xs">{Math.round(volume * 100)}%</span>
-            </div>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                className="rounded border border-slate-300 px-2 py-1 text-xs"
-                onClick={handleStartBgm}
-              >
-                再生
-              </button>
-              <button
-                type="button"
-                className="rounded border border-slate-300 px-2 py-1 text-xs"
-                onClick={handleStopBgm}
-              >
-                停止
-              </button>
-            </div>
-          </div>
         </section>
 
-        <section className="w-3/5 min-w-[520px] flex flex-col rounded border border-slate-200 bg-white p-2 min-h-[480px]">
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-2">
-            {mainTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className={`rounded px-2 py-1 text-xs ${
-                  activeMainTabId === tab.id
-                    ? 'bg-blue-600 text-white'
-                    : 'border border-slate-300 text-slate-700'
-                }`}
-                onClick={() => handleMainTabChange(tab.id)}
-              >
-                {tab.name}
-              </button>
-            ))}
-            {mainTabs.length < 10 && (
-              <button
-                type="button"
-                className="rounded border border-dashed border-slate-400 px-2 py-1 text-xs"
-                onClick={handleAddCustomTab}
-              >
-                + タブ追加
-              </button>
-            )}
-          </div>
-          {subTabs.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 p-2">
-              {subTabs.map((sub) => (
-                <button
-                  key={sub.id}
-                  type="button"
-                  className={`rounded px-2 py-1 text-xs ${
-                    effectiveSubTabId === sub.id
-                      ? 'bg-slate-600 text-white'
-                      : 'border border-slate-300 text-slate-700'
-                  }`}
-                  onClick={() => setActiveSubTabId(sub.id)}
-                >
-                  {sub.name}
-                </button>
-              ))}
-            </div>
+        <section className="relative w-3/5 min-w-[520px] flex flex-col rounded border border-slate-200 bg-white p-2 min-h-[480px]">
+          {SHOW_SECTION_LABELS && (
+            <span className="absolute left-2 top-2 z-10 text-xs font-medium text-black">右メイン</span>
           )}
-          <div className="flex-1 flex flex-col min-h-0">
-            {isCompanyHpTab ? (
-              <>
+          <Group
+            orientation="vertical"
+            id="calling-right-panels"
+            defaultLayout={rightPanelsLayout.defaultLayout}
+            onLayoutChanged={rightPanelsLayout.onLayoutChanged}
+          >
+            <Panel id="calling-right-top" defaultSize={70} minSize={25}>
+              <div className="flex h-full flex-col min-h-0">
                 <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-2">
                   <input
                     type="url"
@@ -1294,7 +1428,7 @@ const CallingPage = () => {
                     外部リンクで開く
                   </a>
                 </div>
-                <div className="relative flex-1 min-h-[320px]">
+                <div className="relative flex-1 min-h-[200px]">
                   {!iframeLoaded && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center rounded border border-slate-200 bg-slate-50">
                       <div className="flex flex-col items-center gap-2 text-slate-600">
@@ -1306,15 +1440,65 @@ const CallingPage = () => {
                   <iframe
                     title="企業HP"
                     src={displayUrl}
-                    className="h-full w-full min-h-[320px]"
+                    className="h-full w-full min-h-[200px]"
                     onLoad={() => {
                       setIframeLoaded(true);
                       setStatusMessage('企業HPを表示しました。');
                     }}
                   />
                 </div>
-              </>
-            ) : isProductTab && isClientInfoSubTab ? (
+              </div>
+            </Panel>
+            <Separator className="h-3 min-h-[12px] shrink-0 bg-slate-200 hover:bg-slate-300 transition-colors" />
+            <Panel id="calling-right-bottom" defaultSize={30} minSize={15}>
+              <div className="flex h-full flex-col min-h-0">
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-2">
+                  {mainTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      className={`rounded px-2 py-1 text-xs ${
+                        activeMainTabId === tab.id
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-slate-300 text-slate-700'
+                      }`}
+                      onClick={() => handleMainTabChange(tab.id)}
+                    >
+                      {tab.name}
+                    </button>
+                  ))}
+                  {mainTabs.length < 10 && (
+                    <button
+                      type="button"
+                      className="rounded border border-dashed border-slate-400 px-2 py-1 text-xs"
+                      onClick={handleAddCustomTab}
+                    >
+                      + タブ追加
+                    </button>
+                  )}
+                </div>
+                {subTabs.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 p-2">
+                    {subTabs.map((sub) => (
+                      <button
+                        key={sub.id}
+                        type="button"
+                        className={`rounded px-2 py-1 text-xs ${
+                          effectiveSubTabId === sub.id
+                            ? 'bg-slate-600 text-white'
+                            : 'border border-slate-300 text-slate-700'
+                        }`}
+                        onClick={() => setActiveSubTabId(sub.id)}
+                      >
+                        {sub.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex-1 flex flex-col min-h-0 overflow-auto">
+                  {isCompanyHpTab ? (
+                    <p className="p-3 text-sm text-slate-500">企業HPは上で表示しています。</p>
+                  ) : isProductTab && isClientInfoSubTab ? (
               <div className="flex-1 overflow-y-auto p-3">
                 <h3 className="text-sm font-semibold text-slate-700">クライアント情報</h3>
                 <dl className="mt-2 space-y-1 text-sm text-slate-600">
@@ -1390,7 +1574,7 @@ const CallingPage = () => {
                       onChange={(event) =>
                         handleTabContentChange(scriptContentTab.id, event.target.value)
                       }
-                      className="h-36 w-full rounded border border-slate-300 p-2 text-sm"
+                      className="neo-trigger h-36 w-full rounded border border-slate-300 p-2 text-sm"
                       placeholder="自由書式のトークを入力"
                     />
                   </div>
@@ -1407,13 +1591,52 @@ const CallingPage = () => {
                 <p className="text-sm text-slate-500">コンテンツを選択してください。</p>
               </div>
             )}
-          </div>
+                </div>
+              </div>
+            </Panel>
+          </Group>
         </section>
       </div>
 
-      <p className="mt-2 rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-        ステータス: {statusMessage}
-      </p>
+      {/* フッタセクション（色分けしたセクションのみ） */}
+      <footer data-area="footer" className="mt-3 flex flex-wrap gap-2">
+        <section className="min-h-[48px] min-w-[120px] flex-1 rounded border border-slate-200 bg-blue-500/10 p-2" aria-label="フッタセクション1" />
+        <section className="min-h-[48px] min-w-[120px] flex-1 rounded border border-slate-200 bg-amber-500/10 p-2" aria-label="フッタセクション2" />
+        <section className="min-h-[48px] min-w-[120px] flex-1 rounded border border-slate-200 bg-emerald-500/10 p-2" aria-label="フッタセクション3" />
+      </footer>
+
+      {/* 着信POPUP：無音・右上固定・会社ステータス＋メインに表示ボタン */}
+      {showIncomingPopup && (
+        <div
+          className="fixed right-4 top-4 z-50 w-72 rounded-lg border border-slate-200 bg-white p-4 shadow-lg"
+          role="dialog"
+          aria-label="着信"
+        >
+          <p className="text-xs font-medium text-slate-500">着信</p>
+          <p className="mt-1 font-medium text-slate-800">{companyProfile.companyName}</p>
+          <p className="mt-0.5 text-sm text-slate-600">{companyProfile.companyPhone}</p>
+          <p className="mt-0.5 truncate text-xs text-slate-500">{companyProfile.targetUrl || '—'}</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+              onClick={() => setShowIncomingPopup(false)}
+            >
+              閉じる
+            </button>
+            <button
+              type="button"
+              className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+              onClick={() => {
+                setShowIncomingPopup(false);
+                setStatusMessage(`メインに表示: ${companyProfile.companyName}`);
+              }}
+            >
+              メインに表示
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 };

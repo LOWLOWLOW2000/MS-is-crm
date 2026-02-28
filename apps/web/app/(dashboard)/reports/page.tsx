@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { fetchReportSummary } from '@/lib/calling-api';
-import type { ReportPeriod, ReportSummary } from '@/lib/types';
+import { fetchReportByMember, fetchReportSummary } from '@/lib/calling-api';
+import type { ReportByMember, ReportPeriod, ReportSummary } from '@/lib/types';
 import { RoleBadge } from '../_components/role-badge';
 
 const PERIOD_OPTIONS: { value: ReportPeriod; label: string }[] = [
@@ -45,6 +45,7 @@ const ReportsPage = () => {
   const { data: session, status } = useSession();
   const [period, setPeriod] = useState<ReportPeriod>('daily');
   const [summary, setSummary] = useState<ReportSummary>(initialSummary);
+  const [byMember, setByMember] = useState<ReportByMember | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState('レポートを読み込み中です…。');
 
@@ -92,8 +93,12 @@ const ReportsPage = () => {
     const load = async (): Promise<void> => {
       setIsLoading(true);
       try {
-        const nextSummary = await fetchReportSummary(session.accessToken, period);
+        const [nextSummary, nextByMember] = await Promise.all([
+          fetchReportSummary(session.accessToken, period),
+          fetchReportByMember(session.accessToken, period),
+        ]);
         setSummary(nextSummary);
+        setByMember(nextByMember);
         if (nextSummary.totalCalls === 0) {
           setStatusMessage('対象期間のレポート対象データがありません。');
         } else {
@@ -221,6 +226,43 @@ const ReportsPage = () => {
             )}
           </div>
         </section>
+
+        {session.user.role !== 'is_member' && byMember && (
+          <section className="rounded border border-slate-200 bg-white p-4">
+            <h2 className="text-base font-semibold">ISメンバー別実績</h2>
+            <p className="mt-1 text-xs text-slate-500">同じ集計期間でのメンバー別架電数・接続率</p>
+            <div className="mt-3 overflow-x-auto rounded border border-slate-200">
+              <table className="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+                    <th className="px-3 py-2">名前</th>
+                    <th className="px-3 py-2">メール</th>
+                    <th className="px-3 py-2">架電数</th>
+                    <th className="px-3 py-2">接続数</th>
+                    <th className="px-3 py-2">接続率</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byMember.members.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-4 text-center text-slate-500">データがありません</td>
+                    </tr>
+                  ) : (
+                    byMember.members.map((m) => (
+                      <tr key={m.userId} className="border-b border-slate-100">
+                        <td className="px-3 py-2 font-medium">{m.name}</td>
+                        <td className="px-3 py-2 text-slate-600">{m.email}</td>
+                        <td className="px-3 py-2">{m.totalCalls}件</td>
+                        <td className="px-3 py-2">{m.connectedCount}件</td>
+                        <td className="px-3 py-2">{m.connectedRate}%</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         <p className="rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
           ステータス: {statusMessage}

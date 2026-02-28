@@ -4,7 +4,9 @@ import { AiModule } from './ai/ai.module';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
 import { CallingModule } from './calling/calling.module';
+import { DirectorModule } from './director/director.module';
 import { HealthModule } from './health/health.module';
+import { ListGenerationModule } from './list-generation/list-generation.module';
 import { ListsModule } from './lists/lists.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReportsModule } from './reports/reports.module';
@@ -20,6 +22,8 @@ import { ZoomModule } from './zoom/zoom.module';
     AuthModule,
     AiModule,
     CallingModule,
+    DirectorModule,
+    ListGenerationModule,
     ListsModule,
     ReportsModule,
     ScriptsModule,

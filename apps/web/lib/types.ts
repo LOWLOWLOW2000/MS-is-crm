@@ -129,7 +129,7 @@ export interface CallingList {
   id: string;
   tenantId: string;
   name: string;
-  sourceType: 'csv';
+  sourceType: 'csv' | 'auto';
   createdBy: string;
   createdAt: string;
   itemCount: number;
@@ -154,6 +154,35 @@ export interface ImportListResult {
   list: CallingList;
   importedCount: number;
   skippedCount: number;
+}
+
+/** リスト生成用マスタ（エリア・業種・キーワード） */
+export interface ListMasterItem {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+/** リスト生成リクエスト（履歴一覧用） */
+export interface ListGenerationRequest {
+  id: string;
+  status: string;
+  assignedToEmail: string;
+  resultListId: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  input: unknown;
+}
+
+/** AIアドバイス応答（ダミー実装） */
+export interface ListAdviceResponse {
+  advice: string;
+  suggestedActions: {
+    type: 'generate' | 'assign_existing';
+    title: string;
+    payload: Record<string, unknown>;
+  }[];
 }
 
 export interface ZoomCallLog {
@@ -192,6 +221,22 @@ export interface ReportSummary {
     result: string;
     count: number;
   }[];
+}
+
+export interface ReportByMemberItem {
+  userId: string;
+  email: string;
+  name: string;
+  totalCalls: number;
+  connectedCount: number;
+  connectedRate: number;
+}
+
+export interface ReportByMember {
+  period: ReportPeriod;
+  startAt: string;
+  endAt: string;
+  members: ReportByMemberItem[];
 }
 
 export interface CallingSettings {

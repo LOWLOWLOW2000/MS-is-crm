@@ -2,7 +2,7 @@ export interface CallingList {
   id: string;
   tenantId: string;
   name: string;
-  sourceType: 'csv';
+  sourceType: 'csv' | 'auto';
   createdBy: string;
   createdAt: string;
   itemCount: number;

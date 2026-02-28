@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   InternalServerErrorException,
   NotFoundException,
@@ -10,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
@@ -17,6 +19,7 @@ import { CallingService } from './calling.service';
 import { CreateCallingApprovalDto } from './dto/create-calling-approval.dto';
 import { CreateHelpRequestDto } from './dto/create-help-request.dto';
 import { CreateCallingRecordDto } from './dto/create-calling-record.dto';
+import { CreateTranscriptionDto } from './dto/create-transcription.dto';
 import { DialValidationResultDto } from './dto/dial-validation-result.dto';
 import { ValidateDialDto } from './dto/validate-dial.dto';
 import { CallingApproval } from './entities/calling-approval.entity';
@@ -35,6 +38,21 @@ export class CallingController {
     private readonly callingService: CallingService,
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
+
+  /** 文字起こし保存はバッチ用。developer / is_admin のみ */
+  private assertCanSaveTranscription = (user: JwtPayload): void => {
+    if (user.role !== UserRole.Developer && user.role !== UserRole.IsAdmin) {
+      throw new ForbiddenException('文字起こしの保存は管理者のみ可能です');
+    }
+  };
+
+  /** 参加・対応完了は director / is_admin / enterprise_admin / developer のみ */
+  private assertDirectorOrAdmin = (user: JwtPayload): void => {
+    const allowed = [UserRole.Director, UserRole.IsAdmin, UserRole.EnterpriseAdmin, UserRole.Developer];
+    if (!allowed.includes(user.role)) {
+      throw new ForbiddenException('ヘルプへの参加・対応完了はディレクターまたは管理者のみ可能です');
+    }
+  };
 
   @Post('approvals')
   async createCallingApproval(
@@ -86,6 +104,33 @@ export class CallingController {
     }
   }
 
+  /** Phase2: バッチが文字起こし結果を保存するエンドポイント */
+  @Post('transcriptions')
+  async createTranscription(@Req() req: JwtRequest, @Body() dto: CreateTranscriptionDto): Promise<{ id: string }> {
+    this.assertCanSaveTranscription(req.user);
+    try {
+      return await this.callingService.createTranscription(req.user, dto);
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('文字起こしの保存に失敗しました');
+    }
+  }
+
+  /** Phase2: 架電記録に紐づく文字起こしを1件取得 */
+  @Get('records/:callRecordId/transcription')
+  async getTranscription(
+    @Req() req: JwtRequest,
+    @Param('callRecordId') callRecordId: string,
+  ): Promise<{ id: string; callRecordId: string; transcriptionText: string; transcribedAt: string; durationSeconds: number | null } | null> {
+    try {
+      return await this.callingService.getTranscriptionByRecordId(req.user, callRecordId);
+    } catch {
+      throw new InternalServerErrorException('文字起こしの取得に失敗しました');
+    }
+  }
+
   @Post('help-requests')
   async createHelpRequest(@Req() req: JwtRequest, @Body() dto: CreateHelpRequestDto): Promise<CallingHelpRequest> {
     try {
@@ -113,6 +158,7 @@ export class CallingController {
     @Req() req: JwtRequest,
     @Param('requestId') requestId: string,
   ): Promise<CallingHelpRequest> {
+    this.assertDirectorOrAdmin(req.user);
     try {
       const request = await this.callingService.joinHelpRequest(req.user, requestId);
       this.notificationsGateway.emitDirectorJoined({
@@ -126,7 +172,7 @@ export class CallingController {
       this.notificationsGateway.emitQueueUpdated({ tenantId: req.user.tenantId, requests: queue });
       return request;
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
         throw error;
       }
       throw new InternalServerErrorException('ディレクター参加処理に失敗しました');
@@ -138,6 +184,7 @@ export class CallingController {
     @Req() req: JwtRequest,
     @Param('requestId') requestId: string,
   ): Promise<CallingHelpRequest> {
+    this.assertDirectorOrAdmin(req.user);
     try {
       const request = await this.callingService.closeHelpRequest(req.user, requestId);
       this.notificationsGateway.emitCallEnded({
@@ -149,7 +196,7 @@ export class CallingController {
       this.notificationsGateway.emitQueueUpdated({ tenantId: req.user.tenantId, requests: queue });
       return request;
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
         throw error;
       }
       throw new InternalServerErrorException('呼出対応完了処理に失敗しました');

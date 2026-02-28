@@ -10,12 +10,16 @@ import {
   Patch,
   Post,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import type { PdfExtractResultDto } from './dto/pdf-extract-result.dto';
 import { UpsertScriptTemplateDto } from './dto/upsert-script-template.dto';
 import { ScriptTemplate } from './entities/script-template.entity';
 import { ScriptsService } from './scripts.service';
@@ -45,6 +49,24 @@ export class ScriptsController {
         throw error;
       }
       throw new InternalServerErrorException('スクリプト一覧の取得に失敗しました');
+    }
+  }
+
+  /** Phase2: PDF取り込み（スタブ）。実際のテキスト抽出は Python/外部サービスで実装予定 */
+  @Post('upload-pdf')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadPdf(
+    @Req() req: JwtRequest,
+    @UploadedFile() file: { buffer?: Buffer; originalname?: string } | undefined,
+  ): Promise<PdfExtractResultDto> {
+    try {
+      this.assertNotIsMember(req.user);
+      return await this.scriptsService.extractTextFromPdf(file);
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('PDFの処理に失敗しました');
     }
   }
 

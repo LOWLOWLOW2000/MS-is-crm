@@ -9,6 +9,7 @@ import {
   DialValidationResult,
   ImportListResult,
   ListItem,
+  ReportByMember,
   ReportPeriod,
   ReportSummary,
   SaveCallingRecordInput,
@@ -179,6 +180,25 @@ export const closeHelpRequest = async (
   return (await response.json()) as CallingHelpRequest;
 };
 
+export const sendDirectorWhisper = async (
+  accessToken: string,
+  requestId: string,
+  message: string,
+): Promise<{ ok: true }> => {
+  const response = await fetch(`${apiBaseUrl}/director/whisper`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify({ requestId, message }),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('囁きの送信に失敗しました');
+  }
+
+  return (await response.json()) as { ok: true };
+};
+
 export const importCsvList = async (
   accessToken: string,
   input: { csvText: string; name?: string },
@@ -209,6 +229,28 @@ export const fetchCallingLists = async (accessToken: string): Promise<CallingLis
   }
 
   return (await response.json()) as CallingList[];
+};
+
+export type UserListItem = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  createdAt: string;
+};
+
+export const fetchUsers = async (accessToken: string): Promise<UserListItem[]> => {
+  const response = await fetch(`${apiBaseUrl}/users`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('ユーザー一覧の取得に失敗しました');
+  }
+
+  return (await response.json()) as UserListItem[];
 };
 
 export const fetchAssignedCallingLists = async (accessToken: string): Promise<CallingList[]> => {
@@ -275,6 +317,129 @@ export const unassignCallingList = async (
   return (await response.json()) as CallingList;
 };
 
+// -----------------------------
+// リスト生成（マスタ・生成・履歴・アドバイス）
+// -----------------------------
+
+export const fetchListAreaMasters = async (accessToken: string) => {
+  const response = await fetch(`${apiBaseUrl}/lists/masters/areas`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('エリアマスタの取得に失敗しました');
+  return (await response.json()) as { id: string; name: string; isActive: boolean }[];
+};
+
+export const fetchListIndustryMasters = async (accessToken: string) => {
+  const response = await fetch(`${apiBaseUrl}/lists/masters/industries`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('業種マスタの取得に失敗しました');
+  return (await response.json()) as { id: string; name: string; isActive: boolean }[];
+};
+
+export const fetchListKeywordMasters = async (accessToken: string) => {
+  const response = await fetch(`${apiBaseUrl}/lists/masters/keywords`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('キーワードマスタの取得に失敗しました');
+  return (await response.json()) as { id: string; name: string; isActive: boolean }[];
+};
+
+export const createListAreaMaster = async (
+  accessToken: string,
+  name: string,
+): Promise<{ id: string; name: string; isActive: boolean }> => {
+  const response = await fetch(`${apiBaseUrl}/lists/masters/areas`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify({ name }),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('エリアマスタの作成に失敗しました');
+  return (await response.json()) as { id: string; name: string; isActive: boolean };
+};
+
+export const createListIndustryMaster = async (
+  accessToken: string,
+  name: string,
+): Promise<{ id: string; name: string; isActive: boolean }> => {
+  const response = await fetch(`${apiBaseUrl}/lists/masters/industries`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify({ name }),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('業種マスタの作成に失敗しました');
+  return (await response.json()) as { id: string; name: string; isActive: boolean };
+};
+
+export const createListKeywordMaster = async (
+  accessToken: string,
+  name: string,
+): Promise<{ id: string; name: string; isActive: boolean }> => {
+  const response = await fetch(`${apiBaseUrl}/lists/masters/keywords`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify({ name }),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('キーワードマスタの作成に失敗しました');
+  return (await response.json()) as { id: string; name: string; isActive: boolean };
+};
+
+export const generateList = async (
+  accessToken: string,
+  input: { input: { areaId: string; industryId: string; keywordIds: string[]; limit?: number }; assigneeEmail: string; listName?: string },
+): Promise<{ requestId: string; status: string }> => {
+  const response = await fetch(`${apiBaseUrl}/lists/generate`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('リスト生成リクエストに失敗しました');
+  return (await response.json()) as { requestId: string; status: string };
+};
+
+export const fetchGenerationRequests = async (accessToken: string) => {
+  const response = await fetch(`${apiBaseUrl}/lists/generation-requests`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('生成履歴の取得に失敗しました');
+  return (await response.json()) as {
+    id: string;
+    status: string;
+    assignedToEmail: string;
+    resultListId: string | null;
+    errorMessage: string | null;
+    createdAt: string;
+    updatedAt: string;
+    input: unknown;
+  }[];
+};
+
+export const fetchListAdvice = async (
+  accessToken: string,
+  question: string,
+): Promise<{ advice: string; suggestedActions: { type: string; title: string; payload: Record<string, unknown> }[] }> => {
+  const response = await fetch(`${apiBaseUrl}/lists/advice`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify({ question }),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('AIアドバイスの取得に失敗しました');
+  return (await response.json()) as { advice: string; suggestedActions: { type: string; title: string; payload: Record<string, unknown> }[] };
+};
+
 export const fetchRecentZoomCalls = async (accessToken: string): Promise<ZoomCallLog[]> => {
   const response = await fetch(`${apiBaseUrl}/zoom/calls`, {
     method: 'GET',
@@ -323,6 +488,24 @@ export const fetchReportSummary = async (
   }
 
   return (await response.json()) as ReportSummary;
+};
+
+export const fetchReportByMember = async (
+  accessToken: string,
+  period: ReportPeriod,
+): Promise<ReportByMember> => {
+  const query = new URLSearchParams({ period }).toString();
+  const response = await fetch(`${apiBaseUrl}/reports/by-member?${query}`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('IS別実績の取得に失敗しました');
+  }
+
+  return (await response.json()) as ReportByMember;
 };
 
 /**

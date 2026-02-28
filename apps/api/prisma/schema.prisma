@@ -170,3 +170,124 @@ model CallingAiEvaluation {
   @@map("calling_ai_evaluations")
 }
 
+// Phase2: ZOOM録音バッチDL → Whisper文字起こし結果を保存（永続）。元音声は別ストレージで30日削除。
+model CallTranscription {
+  id               String   @id @default(cuid())
+  tenantId         String
+  callRecordId     String
+  zoomMeetingId    String?
+  recordingStorageUrl String?  // 参照用。実体はSupabase等で30日後に削除
+  durationSeconds  Int?
+  transcribedAt    String
+  transcriptionText String   @default("")
+  createdAt        String
+
+  @@index([tenantId])
+  @@index([callRecordId])
+  @@map("call_transcriptions")
+}
+
+// -----------------------------
+// List generation (Phase2+)
+// -----------------------------
+
+model ListAreaMaster {
+  id        String @id @default(cuid())
+  tenantId  String
+  name      String
+  isActive  Boolean @default(true)
+  createdAt String
+  updatedAt String
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("list_area_masters")
+}
+
+model ListIndustryMaster {
+  id        String @id @default(cuid())
+  tenantId  String
+  name      String
+  isActive  Boolean @default(true)
+  createdAt String
+  updatedAt String
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("list_industry_masters")
+}
+
+model ListKeywordMaster {
+  id        String @id @default(cuid())
+  tenantId  String
+  name      String
+  isActive  Boolean @default(true)
+  createdAt String
+  updatedAt String
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("list_keyword_masters")
+}
+
+model ListGenerationRequest {
+  id            String  @id @default(cuid())
+  tenantId      String
+  requestedBy   String
+  requestedByEmail String
+  assignedToEmail  String
+  // 構造化入力（まずは案A: 選択式マスタID + 追加条件をJsonで保持）
+  input         Json
+  status        String  // queued | running | completed | failed
+  resultListId  String?
+  errorMessage  String?
+  createdAt     String
+  updatedAt     String
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, assignedToEmail])
+  @@map("list_generation_requests")
+}
+
+// 運営側で集約する（PIIマスク済み）生成条件ログ
+// 注意: 本番SaaSでは別ストレージ/別DB等も検討余地あり。ここでは最小の箱だけ用意。
+model OperatorListGenerationLog {
+  id            String @id @default(cuid())
+  tenantId      String
+  requesterRole String
+  inputMasked   Json
+  createdAt     String
+
+  @@index([tenantId])
+  @@map("operator_list_generation_logs")
+}
+
+// -----------------------------
+// Phase4 雛形: テナント・プラン（マルチテナント化）
+// -----------------------------
+
+model Tenant {
+  id          String   @id @default(cuid())
+  name        String
+  planId      String?
+  isActive    Boolean  @default(true)
+  createdAt   String
+  updatedAt   String
+
+  @@index([planId])
+  @@map("tenants")
+}
+
+model Plan {
+  id          String   @id @default(cuid())
+  name        String
+  maxUsers    Int?
+  maxLists    Int?
+  features    Json?    // 機能フラグ等
+  createdAt   String
+  updatedAt   String
+
+  @@map("plans")
+}
+

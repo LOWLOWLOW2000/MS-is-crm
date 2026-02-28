@@ -10,31 +10,22 @@ export class SettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   getCallingSettings = async (user: JwtPayload): Promise<CallingSettings> => {
-    const row = await this.prisma.callingSettings.findUnique({
-      where: { tenantId: user.tenantId },
-    });
-    if (row) {
-      return {
-        tenantId: row.tenantId,
-        humanApprovalEnabled: row.humanApprovalEnabled,
-        updatedBy: row.updatedBy,
-        updatedAt: row.updatedAt,
-      };
-    }
     const now = new Date().toISOString();
-    await this.prisma.callingSettings.create({
-      data: {
+    const row = await this.prisma.callingSettings.upsert({
+      where: { tenantId: user.tenantId },
+      create: {
         tenantId: user.tenantId,
         humanApprovalEnabled: true,
         updatedBy: user.sub,
         updatedAt: now,
       },
+      update: {},
     });
     return {
-      tenantId: user.tenantId,
-      humanApprovalEnabled: true,
-      updatedBy: user.sub,
-      updatedAt: now,
+      tenantId: row.tenantId,
+      humanApprovalEnabled: row.humanApprovalEnabled,
+      updatedBy: row.updatedBy,
+      updatedAt: row.updatedAt,
     };
   };
 

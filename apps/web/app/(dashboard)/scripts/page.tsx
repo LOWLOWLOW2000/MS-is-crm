@@ -197,7 +197,7 @@ const ScriptsPage = () => {
 
         <section className="grid gap-4 lg:grid-cols-2">
           <article className="rounded border border-slate-200 bg-white p-4">
-            <h2 className="text-base font-semibold">テンプレート一覧</h2>
+            <h2 className="text-base font-semibold">テンプレート一覧（{templates.length}件）</h2>
             <div className="mt-3 space-y-2">
               {templates.length === 0 ? (
                 <p className="text-sm text-slate-500">登録されたテンプレートはありません</p>
@@ -269,6 +269,11 @@ const ScriptsPage = () => {
               </div>
             </div>
           </article>
+        </section>
+
+        <section className="rounded border border-slate-200 bg-slate-50 p-4">
+          <h2 className="text-base font-semibold text-slate-600">PDF取り込み</h2>
+          <p className="mt-1 text-sm text-slate-500">Phase2で実装予定。管理者がPDFをアップロードするとテキストを抽出してタブに反映します。</p>
         </section>
 
         <section className="rounded border border-slate-200 bg-white p-4">

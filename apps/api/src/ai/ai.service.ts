@@ -1,63 +1,91 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
-import type { CallingAiEvaluation } from '../calling/entities/calling-ai-evaluation.entity';
+import { PrismaService } from '../prisma/prisma.service';
 import type { BatchCallEvaluationsDto } from './dto/batch-evaluations.dto';
+import type { BatchTranscriptionsDto } from './dto/batch-transcriptions.dto';
 
+/**
+ * Phase2: AI評価バッチ・文字起こしバッチの受け口とDB永続化
+ */
 @Injectable()
 export class AiService {
-  private readonly evaluations: CallingAiEvaluation[] = [];
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * バッチAI評価結果をテナントごとに保存（メモリ上の簡易実装）
+   * バッチAI評価結果をDBに保存（Phase2）
+   * 同一 callRecordId は上書き（upsert）
    */
-  saveBatchEvaluations = (user: JwtPayload, dto: BatchCallEvaluationsDto): void => {
+  saveBatchEvaluations = async (
+    user: JwtPayload,
+    dto: BatchCallEvaluationsDto,
+  ): Promise<void> => {
     if (dto.tenantId !== user.tenantId) {
-      throw new BadRequestException('tenantId が一致しないためAI評価結果を保存できません');
+      throw new BadRequestException(
+        'tenantId が一致しないためAI評価結果を保存できません',
+      );
     }
 
-    dto.evaluations.forEach((item) => {
-      const existingIndex = this.evaluations.findIndex(
-        (evaluation) =>
-          evaluation.tenantId === user.tenantId && evaluation.callRecordId === item.callRecordId,
-      );
+    for (const item of dto.evaluations) {
+      const existing = await this.prisma.callingAiEvaluation.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          callRecordId: item.callRecordId,
+        },
+        select: { id: true },
+      });
 
-      const baseId =
-        existingIndex >= 0
-          ? this.evaluations[existingIndex].id
-          : `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-      const evaluation: CallingAiEvaluation = {
-        id: baseId,
-        tenantId: user.tenantId,
-        callRecordId: item.callRecordId,
-        zoomCallLogId: item.zoomCallLogId,
-        evaluatedAt: item.evaluatedAt,
-        categoryScores: item.categoryScores.map((score) => ({
-          category: score.category,
-          score: score.score,
-          tagCount: score.tagCount,
-          tags: score.tags.map((tag) => ({
-            tag: tag.tag,
-            value: tag.value,
-          })),
-        })),
-        summary: item.summary,
-        improvementPoints: item.improvementPoints,
-      };
-
-      if (existingIndex >= 0) {
-        this.evaluations[existingIndex] = evaluation;
+      if (existing) {
+        await this.prisma.callingAiEvaluation.update({
+          where: { id: existing.id },
+          data: {
+            evaluatedAt: item.evaluatedAt,
+            categoryScores: item.categoryScores as object,
+            summary: item.summary ?? null,
+            improvementPoints: item.improvementPoints ?? null,
+          },
+        });
       } else {
-        this.evaluations.push(evaluation);
+        await this.prisma.callingAiEvaluation.create({
+          data: {
+            tenantId: user.tenantId,
+            callRecordId: item.callRecordId,
+            evaluatedAt: item.evaluatedAt,
+            categoryScores: item.categoryScores as object,
+            summary: item.summary ?? null,
+            improvementPoints: item.improvementPoints ?? null,
+          },
+        });
       }
-    });
+    }
   };
 
   /**
-   * テナント単位でAI評価一覧を取得
+   * バッチ文字起こし結果をDBに保存（Phase2: Whisper 結果）
    */
-  getEvaluationsByTenant = (tenantId: string): CallingAiEvaluation[] => {
-    return this.evaluations.filter((evaluation) => evaluation.tenantId === tenantId);
+  saveBatchTranscriptions = async (
+    user: JwtPayload,
+    dto: BatchTranscriptionsDto,
+  ): Promise<void> => {
+    if (dto.tenantId !== user.tenantId) {
+      throw new BadRequestException(
+        'tenantId が一致しないため文字起こし結果を保存できません',
+      );
+    }
+
+    const now = new Date().toISOString();
+    for (const item of dto.transcriptions) {
+      await this.prisma.callTranscription.create({
+        data: {
+          tenantId: user.tenantId,
+          callRecordId: item.callRecordId,
+          zoomMeetingId: item.zoomMeetingId ?? null,
+          recordingStorageUrl: item.recordingStorageUrl ?? null,
+          durationSeconds: item.durationSeconds ?? null,
+          transcribedAt: item.transcribedAt,
+          transcriptionText: item.transcriptionText ?? '',
+          createdAt: now,
+        },
+      });
+    }
   };
 }
-

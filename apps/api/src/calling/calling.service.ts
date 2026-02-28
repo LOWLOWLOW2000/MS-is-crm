@@ -3,6 +3,7 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { CreateCallingApprovalDto } from './dto/create-calling-approval.dto';
 import { CreateHelpRequestDto } from './dto/create-help-request.dto';
 import { CreateCallingRecordDto } from './dto/create-calling-record.dto';
+import { CreateTranscriptionDto } from './dto/create-transcription.dto';
 import { DialValidationResultDto } from './dto/dial-validation-result.dto';
 import { ValidateDialDto } from './dto/validate-dial.dto';
 import { CallingApproval } from './entities/calling-approval.entity';
@@ -305,5 +306,57 @@ export class CallingService {
       orderBy: { nextCallAt: 'asc' },
     });
     return rows.map((r) => this.toRecord(r));
+  };
+
+  /** Phase2: バッチが文字起こし結果を保存。callRecordId は同一 tenant の既存レコードであること */
+  createTranscription = async (user: JwtPayload, dto: CreateTranscriptionDto): Promise<{ id: string }> => {
+    const record = await this.prisma.callingRecord.findFirst({
+      where: { id: dto.callRecordId, tenantId: user.tenantId },
+    });
+    if (!record) {
+      throw new NotFoundException('対象の架電記録が見つかりません');
+    }
+    const now = new Date().toISOString();
+    const transcribedAt = dto.transcribedAt?.trim() ? dto.transcribedAt : now;
+    const row = await this.prisma.callTranscription.create({
+      data: {
+        tenantId: user.tenantId,
+        callRecordId: dto.callRecordId,
+        zoomMeetingId: dto.zoomMeetingId?.trim() || null,
+        recordingStorageUrl: dto.recordingStorageUrl?.trim() || null,
+        durationSeconds: dto.durationSeconds ?? null,
+        transcribedAt,
+        transcriptionText: dto.transcriptionText ?? '',
+        createdAt: now,
+      },
+    });
+    return { id: row.id };
+  };
+
+  getTranscriptionByRecordId = async (user: JwtPayload, callRecordId: string): Promise<{
+    id: string;
+    callRecordId: string;
+    transcriptionText: string;
+    transcribedAt: string;
+    durationSeconds: number | null;
+  } | null> => {
+    const record = await this.prisma.callingRecord.findFirst({
+      where: { id: callRecordId, tenantId: user.tenantId },
+    });
+    if (!record) {
+      return null;
+    }
+    const row = await this.prisma.callTranscription.findFirst({
+      where: { callRecordId, tenantId: user.tenantId },
+      orderBy: { transcribedAt: 'desc' },
+    });
+    if (!row) return null;
+    return {
+      id: row.id,
+      callRecordId: row.callRecordId,
+      transcriptionText: row.transcriptionText,
+      transcribedAt: row.transcribedAt,
+      durationSeconds: row.durationSeconds,
+    };
   };
 }

@@ -116,19 +116,29 @@ const RecallPage = () => {
     return t.getTime();
   }, []);
 
-  /** 今日かかるべき（次回架電が今日または期限超過） */
+  /** 今日かかるべき（次回架電が今日または期限超過）。次回架電日時が近い順 */
   const todayRecords = useMemo(() => {
-    return filtered.filter((r) => {
+    const list = filtered.filter((r) => {
       if (!r.nextCallAt) return false;
       return new Date(r.nextCallAt).getTime() < tomorrowStart;
     });
+    return [...list].sort((a, b) => {
+      const ta = a.nextCallAt ? new Date(a.nextCallAt).getTime() : 0;
+      const tb = b.nextCallAt ? new Date(b.nextCallAt).getTime() : 0;
+      return ta - tb;
+    });
   }, [filtered, tomorrowStart]);
 
-  /** 今後の案件（次回架電が明日以降） */
+  /** 今後の案件（次回架電が明日以降）。次回架電日時が近い順 */
   const futureRecords = useMemo(() => {
-    return filtered.filter((r) => {
+    const list = filtered.filter((r) => {
       if (!r.nextCallAt) return false;
       return new Date(r.nextCallAt).getTime() >= tomorrowStart;
+    });
+    return [...list].sort((a, b) => {
+      const ta = a.nextCallAt ? new Date(a.nextCallAt).getTime() : 0;
+      const tb = b.nextCallAt ? new Date(b.nextCallAt).getTime() : 0;
+      return ta - tb;
     });
   }, [filtered, tomorrowStart]);
 

@@ -75,6 +75,16 @@ export interface ListUnassignedEvent {
   unassignedAt: string;
 }
 
+/** Phase2: ディレクター→IS へのテキスト囁き。toUserId で対象ISを指定し、クライアントでフィルタ */
+export interface DirectorWhisperEvent {
+  requestId: string;
+  tenantId: string;
+  toUserId: string;
+  fromUserId: string;
+  message: string;
+  sentAt: string;
+}
+
 @WebSocketGateway({
   cors: {
     origin: ['http://localhost:3000'],
@@ -120,6 +130,11 @@ export class NotificationsGateway implements OnModuleDestroy {
 
   emitListUnassigned = (event: ListUnassignedEvent): void => {
     this.server.emit('list:unassigned', event);
+  };
+
+  /** Phase2: ディレクターがISに送るテキスト囁き。クライアントは toUserId が自分なら表示 */
+  emitDirectorMessage = (event: DirectorWhisperEvent): void => {
+    this.server.emit('director:message', event);
   };
 
   scheduleRecallReminders = (record: CallingRecord): void => {
