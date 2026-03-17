@@ -16,13 +16,13 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CallingService } from './calling.service';
-import { CreateCallingApprovalDto } from './dto/create-calling-approval.dto';
+import { CreateListReviewCompletionDto } from './dto/create-list-review-completion.dto'
 import { CreateHelpRequestDto } from './dto/create-help-request.dto';
 import { CreateCallingRecordDto } from './dto/create-calling-record.dto';
 import { CreateTranscriptionDto } from './dto/create-transcription.dto';
 import { DialValidationResultDto } from './dto/dial-validation-result.dto';
 import { ValidateDialDto } from './dto/validate-dial.dto';
-import { CallingApproval } from './entities/calling-approval.entity';
+import { ListReviewCompletion } from './entities/list-review-completion.entity'
 import { CallingHelpRequest } from './entities/calling-help-request.entity';
 import { CallingSummaryDto } from './dto/calling-summary.dto';
 import { CallingRecord } from './entities/calling-record.entity';
@@ -54,15 +54,15 @@ export class CallingController {
     }
   };
 
-  @Post('approvals')
-  async createCallingApproval(
+  @Post('list-review-completions')
+  async createListReviewCompletion(
     @Req() req: JwtRequest,
-    @Body() dto: CreateCallingApprovalDto,
-  ): Promise<CallingApproval> {
+    @Body() dto: CreateListReviewCompletionDto,
+  ): Promise<ListReviewCompletion> {
     try {
-      return await this.callingService.createApproval(req.user, dto);
+      return await this.callingService.createListReviewCompletion(req.user, dto)
     } catch (error) {
-      throw new InternalServerErrorException('承認情報の保存に失敗しました');
+      throw new InternalServerErrorException('リスト精査終了の保存に失敗しました')
     }
   }
 

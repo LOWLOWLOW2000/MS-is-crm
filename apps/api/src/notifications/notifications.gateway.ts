@@ -138,7 +138,7 @@ export class NotificationsGateway implements OnModuleDestroy {
   };
 
   scheduleRecallReminders = (record: CallingRecord): void => {
-    const key = record.id;
+    const key = record.callingHistoryId;
     const existing = this.reminderTimers.get(key);
     if (existing) {
       existing.forEach((timer) => clearTimeout(timer));
@@ -167,7 +167,7 @@ export class NotificationsGateway implements OnModuleDestroy {
       return setTimeout(() => {
         this.emitRecallReminder({
           tenantId: record.tenantId,
-          recordId: record.id,
+          recordId: record.callingHistoryId,
           companyName: record.companyName,
           nextCallAt: record.nextCallAt ?? new Date(nextCallMs).toISOString(),
           reminderType,

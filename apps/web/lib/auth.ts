@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
+import MicrosoftProvider from 'next-auth/providers/azure-ad';
 import type { AuthResponse, UserRole } from './types';
 
 const apiBaseUrl = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
@@ -14,6 +15,7 @@ export const authOptions: NextAuthOptions = {
   },
   pages: {
     signIn: '/login',
+    error: '/login',
   },
   providers: [
     CredentialsProvider({
@@ -69,31 +71,56 @@ export const authOptions: NextAuthOptions = {
         },
       },
     }),
+    MicrosoftProvider({
+      clientId: process.env.AZURE_AD_CLIENT_ID ?? '',
+      clientSecret: process.env.AZURE_AD_CLIENT_SECRET ?? '',
+      authorization: {
+        params: {
+          scope: 'openid profile email',
+        },
+      },
+    }),
   ],
   callbacks: {
     async signIn({ account, profile, user }) {
-      if (account?.provider !== 'google') {
+      const oauthProviders = ['google', 'azure-ad'];
+      if (!account?.provider || !oauthProviders.includes(account.provider)) {
         return true;
       }
 
-      const email = profile?.email ?? user.email;
-      const name = profile?.name ?? user.name ?? email ?? '';
+      const email =
+        (profile as { email?: string })?.email ??
+        (user as { email?: string }).email ??
+        '';
+      const name =
+        (profile as { name?: string })?.name ??
+        (user as { name?: string }).name ??
+        email ??
+        '';
 
-      if (!email) {
+      if (!email && account.provider !== 'apple') {
         return false;
       }
 
-      const response = await fetch(`${apiBaseUrl}/auth/google/exchange`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          name,
-        }),
-        cache: 'no-store',
-      });
+      const exchangePath =
+        account.provider === 'azure-ad'
+          ? 'microsoft'
+          : account.provider;
+      const response = await fetch(
+        `${apiBaseUrl}/auth/${exchangePath}/exchange`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email,
+            name,
+            provider: account.provider,
+          }),
+          cache: 'no-store',
+        }
+      );
 
       if (!response.ok) {
         return false;
@@ -101,15 +128,17 @@ export const authOptions: NextAuthOptions = {
 
       const result = (await response.json()) as AuthResponse;
 
-      user.id = result.user.id;
+      (user as { id?: string }).id = result.user.id;
       user.name = result.user.name;
       user.email = result.user.email;
-      user.tenantId = result.user.tenantId;
-      user.role = result.user.role;
-      user.accessToken = result.accessToken;
-      user.refreshToken = result.refreshToken;
-      user.refreshExpiresAt = result.refreshExpiresAt;
-      user.accessTokenExpiresAt = Date.now() + ACCESS_TOKEN_EXPIRES_MS;
+      (user as { tenantId?: string }).tenantId = result.user.tenantId;
+      (user as { role?: UserRole }).role = result.user.role;
+      (user as { accessToken?: string }).accessToken = result.accessToken;
+      (user as { refreshToken?: string }).refreshToken = result.refreshToken;
+      (user as { refreshExpiresAt?: string }).refreshExpiresAt =
+        result.refreshExpiresAt;
+      (user as { accessTokenExpiresAt?: number }).accessTokenExpiresAt =
+        Date.now() + ACCESS_TOKEN_EXPIRES_MS;
 
       return true;
     },

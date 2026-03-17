@@ -1,7 +1,7 @@
 /** 設定ページで内容保存後に発火するイベント名（ウィジェットが購読して再読込） */
 export const NEO_POINTER_CONTENT_CHANGED = 'neo-pointer-content-changed';
 
-/** NEOポインタのON/OFFを localStorage で管理（ダッシュボード設定で切り替え） */
+/** NEOポインタのON/OFFを localStorage で管理（メニュー画面の設定で切り替え） */
 const NEO_POINTER_KEY = 'calling-neo-pointer-enabled';
 const NEO_POINTER_CLIPS_KEY = 'calling-neo-pointer-clips';
 const NEO_POINTER_TEMPLATES_KEY = 'calling-neo-pointer-templates';

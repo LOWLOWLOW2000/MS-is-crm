@@ -27,6 +27,10 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
+/**
+ * 汎用の架電結果（正のデータはこれのみ。DIP等は入力UX・エクスポート時にマッピング）。
+ * docs/dip-mvp-spec.md §5
+ */
 export type CallingResultType =
   | '担当者あり興味'
   | '担当者あり不要'
@@ -34,7 +38,11 @@ export type CallingResultType =
   | '番号違い'
   | '断り'
   | '折り返し依頼'
-  | '留守電';
+  | '留守電'
+  | '資料送付'
+  | 'アポ'
+  | 'リスト除外'
+  | '不通';
 
 export interface SaveCallingRecordInput {
   companyName: string;
@@ -49,7 +57,8 @@ export interface SaveCallingRecordInput {
 }
 
 export interface CallingRecord {
-  id: string;
+  /** 架電履歴ID（calling_records の一意識別子） */
+  callingHistoryId: string;
   tenantId: string;
   createdBy: string;
   companyName: string;
@@ -66,17 +75,82 @@ export interface CallingRecord {
   updatedAt: string;
 }
 
+/** L1: 企業グループ（Ultimate Parent） */
+export interface CompanyGroup {
+  id: string;
+  tenantId: string;
+  name: string;
+  listedFlag: string | null;
+  creditInfo: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** L2: 法人エンティティ（Legal Entity） */
+export interface LegalEntity {
+  id: string;
+  tenantId: string;
+  companyGroupId: string | null;
+  corporateNumber: string | null;
+  name: string;
+  headOfficeAddress: string | null;
+  establishedAt: string | null;
+  capital: string | null;
+  revenue: string | null;
+  operatingProfit: string | null;
+  fiscalYearEnd: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** L4: 組織・部署（Department） */
+export interface Department {
+  id: string;
+  tenantId: string;
+  legalEntityId: string;
+  name: string;
+  roleCategory: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** L5: 担当者・キーマン（Persona） */
+export interface Persona {
+  id: string;
+  tenantId: string;
+  legalEntityId: string;
+  departmentId: string | null;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  roleRank: string | null;
+  authority: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 企業詳細表示用：法人＋グループ＋担当者一覧 */
+export interface CompanyInfo {
+  legalEntity: LegalEntity;
+  companyGroup: CompanyGroup | null;
+  departments: Department[];
+  personas: Persona[];
+}
+
 export interface CallingSummary {
   totalCallsToday: number;
   connectedRate: number;
   recallScheduledCount: number;
 }
 
-export interface CallingApproval {
+/** リスト精査終了（リスト確認が承認終わった時点）。id = リスト精査終了ID、reviewCompletedAt = リスト精査終了日 */
+export interface ListReviewCompletion {
+  /** リスト精査終了ID */
   id: string;
   tenantId: string;
-  approvedBy: string;
-  approvedAt: string;
+  completedBy: string;
+  /** リスト精査終了日 */
+  reviewCompletedAt: string;
   targetUrl: string;
   companyName: string;
 }

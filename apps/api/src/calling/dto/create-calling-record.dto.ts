@@ -1,7 +1,8 @@
 import { IsBoolean, IsDateString, IsIn, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 import { CallingResultType } from '../entities/calling-record.entity';
 
-const callingResults: CallingResultType[] = [
+/** 汎用結果タイプのみ受け付ける（DIPの11種は保存しない。入力UIで汎用に変換して送る） */
+const GENERIC_RESULT_VALUES: CallingResultType[] = [
   '担当者あり興味',
   '担当者あり不要',
   '不在',
@@ -9,6 +10,10 @@ const callingResults: CallingResultType[] = [
   '断り',
   '折り返し依頼',
   '留守電',
+  '資料送付',
+  'アポ',
+  'リスト除外',
+  '不通',
 ];
 
 export class CreateCallingRecordDto {
@@ -34,7 +39,7 @@ export class CreateCallingRecordDto {
   @IsDateString()
   approvedAt?: string;
 
-  @IsIn(callingResults)
+  @IsIn(GENERIC_RESULT_VALUES)
   result!: CallingResultType;
 
   @IsOptional()

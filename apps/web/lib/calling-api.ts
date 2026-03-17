@@ -2,7 +2,7 @@ import {
   AiScorecardEntry,
   CallingList,
   CallingSettings,
-  CallingApproval,
+  ListReviewCompletion,
   CallingHelpRequest,
   CallingRecord,
   CallingSummary,
@@ -78,11 +78,11 @@ export const fetchRecallList = async (accessToken: string): Promise<CallingRecor
   return (await response.json()) as CallingRecord[];
 };
 
-export const createCallingApproval = async (
+export const createListReviewCompletion = async (
   accessToken: string,
   input: { companyName: string; targetUrl: string },
-): Promise<CallingApproval> => {
-  const response = await fetch(`${apiBaseUrl}/calling/approvals`, {
+): Promise<ListReviewCompletion> => {
+  const response = await fetch(`${apiBaseUrl}/calling/list-review-completions`, {
     method: 'POST',
     headers: createAuthHeaders(accessToken),
     body: JSON.stringify(input),
@@ -90,15 +90,15 @@ export const createCallingApproval = async (
   });
 
   if (!response.ok) {
-    throw new Error('承認情報の保存に失敗しました');
+    throw new Error('リスト精査終了の保存に失敗しました');
   }
 
-  return (await response.json()) as CallingApproval;
+  return (await response.json()) as ListReviewCompletion;
 };
 
 export const validateDialPermission = async (
   accessToken: string,
-  input: { approvalId: string; targetUrl: string },
+  input: { listReviewCompletionId: string; targetUrl: string },
 ): Promise<DialValidationResult> => {
   const response = await fetch(`${apiBaseUrl}/calling/dial-check`, {
     method: 'POST',

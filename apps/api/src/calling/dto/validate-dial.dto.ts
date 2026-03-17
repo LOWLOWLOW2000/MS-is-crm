@@ -1,11 +1,12 @@
-import { IsString, IsUrl, MaxLength } from 'class-validator';
+import { IsString, IsUrl, MaxLength } from 'class-validator'
 
+/** 発信可否チェック。listReviewCompletionId = リスト精査終了ID */
 export class ValidateDialDto {
   @IsString()
   @MaxLength(80)
-  approvalId!: string;
+  listReviewCompletionId!: string
 
   @IsUrl()
-  targetUrl!: string;
+  targetUrl!: string
 }
 

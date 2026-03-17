@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BatchCallEvaluationsDto } from './dto/batch-evaluations.dto';
@@ -41,7 +42,7 @@ export class AiService {
             evaluatedAt: item.evaluatedAt,
             categoryScores: item.categoryScores as object,
             summary: item.summary ?? null,
-            improvementPoints: item.improvementPoints ?? null,
+            improvementPoints: item.improvementPoints ?? Prisma.JsonNull,
           },
         });
       } else {
@@ -52,7 +53,7 @@ export class AiService {
             evaluatedAt: item.evaluatedAt,
             categoryScores: item.categoryScores as object,
             summary: item.summary ?? null,
-            improvementPoints: item.improvementPoints ?? null,
+            improvementPoints: item.improvementPoints ?? Prisma.JsonNull,
           },
         });
       }

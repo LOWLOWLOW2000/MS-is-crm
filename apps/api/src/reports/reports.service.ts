@@ -148,9 +148,9 @@ export class ReportsService {
     if (evals.length === 0) return [];
     const recordIds = [...new Set(evals.map((e) => e.callRecordId))];
     const records = await this.prisma.callingRecord.findMany({
-      where: { id: { in: recordIds }, tenantId: user.tenantId },
+      where: { callingHistoryId: { in: recordIds }, tenantId: user.tenantId },
     });
-    const recordMap = new Map(records.map((r) => [r.id, r]));
+    const recordMap = new Map(records.map((r) => [r.callingHistoryId, r]));
     const userIds = [...new Set(records.map((r) => r.createdBy))];
     const users = await this.prisma.user.findMany({
       where: { id: { in: userIds }, tenantId: user.tenantId },
@@ -178,7 +178,7 @@ export class ReportsService {
         improvementPoints: Array.isArray(e.improvementPoints) ? (e.improvementPoints as string[]) : null,
       };
       entries.push({
-        callRecordId: record.id,
+        callRecordId: record.callingHistoryId,
         tenantId: record.tenantId,
         companyName: record.companyName,
         isMemberEmail: emailByUserId.get(record.createdBy) ?? '',

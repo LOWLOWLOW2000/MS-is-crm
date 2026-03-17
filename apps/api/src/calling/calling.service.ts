@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
-import { CreateCallingApprovalDto } from './dto/create-calling-approval.dto';
+import { CreateListReviewCompletionDto } from './dto/create-list-review-completion.dto'
 import { CreateHelpRequestDto } from './dto/create-help-request.dto';
 import { CreateCallingRecordDto } from './dto/create-calling-record.dto';
 import { CreateTranscriptionDto } from './dto/create-transcription.dto';
 import { DialValidationResultDto } from './dto/dial-validation-result.dto';
 import { ValidateDialDto } from './dto/validate-dial.dto';
-import { CallingApproval } from './entities/calling-approval.entity';
+import { ListReviewCompletion } from './entities/list-review-completion.entity'
 import { CallingHelpRequest } from './entities/calling-help-request.entity';
 import { CallingSummaryDto } from './dto/calling-summary.dto';
 import { CallingRecord } from './entities/calling-record.entity';
@@ -49,14 +49,21 @@ export class CallingService {
     }
   };
 
-  private toApproval = (row: { id: string; tenantId: string; approvedBy: string; approvedAt: string; targetUrl: string; companyName: string }): CallingApproval => ({
+  private toListReviewCompletion = (row: {
+    id: string
+    tenantId: string
+    completedBy: string
+    reviewCompletedAt: string
+    targetUrl: string
+    companyName: string
+  }): ListReviewCompletion => ({
     id: row.id,
     tenantId: row.tenantId,
-    approvedBy: row.approvedBy,
-    approvedAt: row.approvedAt,
+    completedBy: row.completedBy,
+    reviewCompletedAt: row.reviewCompletedAt,
     targetUrl: row.targetUrl,
     companyName: row.companyName,
-  });
+  })
 
   private toHelpRequest = (row: {
     id: string;
@@ -87,7 +94,7 @@ export class CallingService {
   });
 
   private toRecord = (row: {
-    id: string;
+    callingHistoryId: string;
     tenantId: string;
     createdBy: string;
     companyName: string;
@@ -103,7 +110,7 @@ export class CallingService {
     createdAt: string;
     updatedAt: string;
   }): CallingRecord => ({
-    id: row.id,
+    callingHistoryId: row.callingHistoryId,
     tenantId: row.tenantId,
     createdBy: row.createdBy,
     companyName: row.companyName,
@@ -120,38 +127,41 @@ export class CallingService {
     updatedAt: row.updatedAt,
   });
 
-  createApproval = async (user: JwtPayload, dto: CreateCallingApprovalDto): Promise<CallingApproval> => {
-    const now = new Date().toISOString();
-    const row = await this.prisma.callingApproval.create({
+  createListReviewCompletion = async (
+    user: JwtPayload,
+    dto: CreateListReviewCompletionDto,
+  ): Promise<ListReviewCompletion> => {
+    const now = new Date().toISOString()
+    const row = await this.prisma.listReviewCompletion.create({
       data: {
         tenantId: user.tenantId,
-        approvedBy: user.sub,
-        approvedAt: now,
+        completedBy: user.sub,
+        reviewCompletedAt: now,
         targetUrl: dto.targetUrl,
         companyName: dto.companyName,
       },
-    });
-    return this.toApproval(row);
-  };
+    })
+    return this.toListReviewCompletion(row)
+  }
 
   validateDial = async (user: JwtPayload, dto: ValidateDialDto): Promise<DialValidationResultDto> => {
-    const matched = await this.prisma.callingApproval.findFirst({
+    const matched = await this.prisma.listReviewCompletion.findFirst({
       where: {
-        id: dto.approvalId,
+        id: dto.listReviewCompletionId,
         tenantId: user.tenantId,
         targetUrl: dto.targetUrl,
       },
-    });
+    })
 
     if (!matched) {
       return {
         canDial: false,
-        reason: '承認が未完了、または承認情報が一致しません',
-      };
+        reason: 'リスト精査が未完了、またはリスト精査終了情報が一致しません',
+      }
     }
 
-    return { canDial: true };
-  };
+    return { canDial: true }
+  }
 
   createHelpRequest = async (user: JwtPayload, dto: CreateHelpRequestDto): Promise<CallingHelpRequest> => {
     const waitingCount = await this.prisma.callingHelpRequest.count({
@@ -308,10 +318,10 @@ export class CallingService {
     return rows.map((r) => this.toRecord(r));
   };
 
-  /** Phase2: バッチが文字起こし結果を保存。callRecordId は同一 tenant の既存レコードであること */
+  /** Phase2: バッチが文字起こし結果を保存。callRecordId は架電履歴ID（同一 tenant の既存レコード） */
   createTranscription = async (user: JwtPayload, dto: CreateTranscriptionDto): Promise<{ id: string }> => {
     const record = await this.prisma.callingRecord.findFirst({
-      where: { id: dto.callRecordId, tenantId: user.tenantId },
+      where: { callingHistoryId: dto.callRecordId, tenantId: user.tenantId },
     });
     if (!record) {
       throw new NotFoundException('対象の架電記録が見つかりません');
@@ -341,7 +351,7 @@ export class CallingService {
     durationSeconds: number | null;
   } | null> => {
     const record = await this.prisma.callingRecord.findFirst({
-      where: { id: callRecordId, tenantId: user.tenantId },
+      where: { callingHistoryId: callRecordId, tenantId: user.tenantId },
     });
     if (!record) {
       return null;

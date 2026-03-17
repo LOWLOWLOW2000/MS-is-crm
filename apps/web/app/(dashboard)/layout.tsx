@@ -1,6 +1,12 @@
-import type { ReactNode } from 'react';
-import { DashboardShell } from './_components/DashboardShell';
+import type { ReactNode } from 'react'
+import { MockShell } from '@/components/MockShell'
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
-  return <DashboardShell>{children}</DashboardShell>;
+  return (
+    <MockShell>
+      <article className="flex min-h-0 flex-1 flex-col" aria-label="メインコンテンツ">
+        {children}
+      </article>
+    </MockShell>
+  )
 }

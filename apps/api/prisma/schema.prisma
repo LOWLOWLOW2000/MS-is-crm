@@ -44,37 +44,38 @@ model RefreshToken {
 }
 
 model CallingRecord {
-  id            String   @id @default(cuid())
-  tenantId      String
-  createdBy    String
-  companyName  String
-  companyPhone String
-  companyAddress String
-  targetUrl    String
-  approved     Boolean
-  approvedAt   String?
-  approvedBy   String?
-  result       String   // CallingResultType
-  memo         String   @default("")
-  nextCallAt   String?
-  createdAt    String
-  updatedAt    String
+  callingHistoryId String   @id @default(cuid()) @map("calling_history_id")
+  tenantId         String
+  createdBy       String
+  companyName     String
+  companyPhone    String
+  companyAddress  String
+  targetUrl       String
+  approved        Boolean
+  approvedAt      String?
+  approvedBy      String?
+  result          String   // CallingResultType
+  memo            String   @default("")
+  nextCallAt      String?
+  createdAt       String
+  updatedAt       String
 
   @@index([tenantId])
   @@index([tenantId, nextCallAt])
   @@map("calling_records")
 }
 
-model CallingApproval {
-  id          String @id @default(cuid())
-  tenantId    String
-  approvedBy  String
-  approvedAt String
-  targetUrl   String
-  companyName String
+/** リスト精査終了（リスト確認が承認終わった時点）。ID = リスト精査終了ID、日付 = リスト精査終了日 */
+model ListReviewCompletion {
+  id                String   @id @default(cuid()) // リスト精査終了ID
+  tenantId          String
+  completedBy       String
+  reviewCompletedAt String   // リスト精査終了日
+  targetUrl         String
+  companyName       String
 
   @@index([tenantId])
-  @@map("calling_approvals")
+  @@map("list_review_completions")
 }
 
 model CallingHelpRequest {
@@ -124,21 +125,130 @@ model CallingList {
 }
 
 model ListItem {
-  id           String   @id @default(cuid())
-  tenantId     String
-  listId       String
-  companyName  String
-  phone        String
-  address      String
-  targetUrl    String
-  industryTag  String?
-  createdAt    String
+  id             String   @id @default(cuid())
+  tenantId       String
+  listId         String
+  legalEntityId  String?  // L2 法人エンティティへの参照（企業ツリー）
+  companyName    String
+  phone          String
+  address        String
+  targetUrl      String
+  industryTag    String?
+  createdAt      String
 
-  list CallingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  list        CallingList  @relation(fields: [listId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([listId])
+  @@index([legalEntityId])
   @@map("list_items")
+}
+
+// -----------------------------
+// 企業データベース・論理ツリー（L1〜L5）
+// -----------------------------
+
+/** L1: 企業グループ（Ultimate Parent） */
+model CompanyGroup {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  listedFlag  String?  // 上場・非上場
+  creditInfo  String?  // グループ全体与信・系列情報（テキストまたはJSON）
+  createdAt   String
+  updatedAt   String
+
+  legalEntities LegalEntity[]
+
+  @@index([tenantId])
+  @@map("company_groups")
+}
+
+/** L2: 法人エンティティ（Legal Entity / 法人番号単位） */
+model LegalEntity {
+  id               String   @id @default(cuid())
+  tenantId         String
+  companyGroupId   String?
+  corporateNumber  String?  // 法人番号
+  name             String   // 商号
+  headOfficeAddress String?
+  establishedAt    String?
+  capital          String?  // 資本金（文字で保持）
+  revenue          String?  // 売上高
+  operatingProfit  String?  // 営業利益
+  fiscalYearEnd    String?  // 決算期
+  createdAt        String
+  updatedAt        String
+
+  companyGroup   CompanyGroup?   @relation(fields: [companyGroupId], references: [id], onDelete: SetNull)
+  establishments Establishment[]
+  departments    Department[]
+  personas       Persona[]
+  listItems      ListItem[]
+
+  @@index([tenantId])
+  @@index([companyGroupId])
+  @@map("legal_entities")
+}
+
+/** L3: 拠点・事業所（Establishment） */
+model Establishment {
+  id            String   @id @default(cuid())
+  tenantId      String
+  legalEntityId String
+  name          String
+  address       String?
+  type          String?  // 営業所・製造・R&D 等
+  createdAt     String
+  updatedAt     String
+
+  legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([legalEntityId])
+  @@map("establishments")
+}
+
+/** L4: 組織・部署（Department） */
+model Department {
+  id            String   @id @default(cuid())
+  tenantId      String
+  legalEntityId String
+  name          String   // 部署名
+  roleCategory  String?  // 営業・人事・情報システム 等
+  createdAt     String
+  updatedAt     String
+
+  legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  personas    Persona[]
+
+  @@index([tenantId])
+  @@index([legalEntityId])
+  @@map("departments")
+}
+
+/** L5: 担当者・キーマン（Persona） */
+model Persona {
+  id            String   @id @default(cuid())
+  tenantId      String
+  legalEntityId String
+  departmentId  String?
+  name          String   // 担当者名
+  phone         String?  // 電話番号
+  email         String?  // メールアドレス
+  roleRank      String?  // 役職ランク
+  authority     String?  // 決裁権限
+  createdAt     String
+  updatedAt     String
+
+  legalEntity LegalEntity  @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  department  Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([legalEntityId])
+  @@index([departmentId])
+  @@map("personas")
 }
 
 model ScriptTemplate {

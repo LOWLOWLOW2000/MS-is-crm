@@ -1,22 +1,20 @@
-import Link from 'next/link';
+import Link from 'next/link'
 
-const HomePage = () => {
+/**
+ * トップ。ヘッダー・フッター・サイドバーなし。メインのみ。
+ */
+export default function HomePage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-3xl font-bold">IS架電管理CRM</h1>
-      <p className="text-center text-gray-600">
-        Phase 1 雛形。認証はメール/パスワードとGoogle SSOに対応しています。
+    <div className="flex min-h-screen flex-col items-center justify-center bg-white text-center">
+      <p className="mb-8 text-xl text-gray-900 whitespace-pre-line text-center">
+        {'企業の最後の差別化要素は\n一次情報の差（アナタ）'}
       </p>
-      <div className="flex gap-4">
-        <Link href="/login" className="rounded bg-blue-600 px-4 py-2 text-white">
-          ログインへ
-        </Link>
-        <Link href="/dashboard" className="rounded border border-gray-300 px-4 py-2">
-          ダッシュボードへ
-        </Link>
-      </div>
-    </main>
-  );
-};
-
-export default HomePage;
+      <Link
+        href="/login"
+        className="rounded bg-gray-900 px-8 py-3 text-lg font-medium text-white hover:bg-gray-800"
+      >
+        MG_01入室
+      </Link>
+    </div>
+  )
+}

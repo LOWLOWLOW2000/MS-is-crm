@@ -6,19 +6,19 @@
   color-scheme: light;
 }
 
+/* ベースを確実に当てる（Tailwind 未読込時もレイアウトが崩れないように） */
+html {
+  height: 100%;
+}
 body {
-  @apply bg-gray-50 text-gray-900;
+  min-height: 100%;
+  margin: 0;
+  background-color: #fff;
+  color: #111827;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.4s ease-out;
+body * {
+  box-sizing: border-box;
 }
