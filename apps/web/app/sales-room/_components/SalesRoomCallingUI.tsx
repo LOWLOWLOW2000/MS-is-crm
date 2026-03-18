@@ -176,9 +176,11 @@ export function SalesRoomCallingUI({
       </div>
 
       <div className="flex w-[60%] min-w-0 flex-col min-h-0">
-        <PanelGroup
-          direction="vertical"
-          autoSaveId={RIGHT_PANE_STORAGE_ID}
+        <Group
+          id={RIGHT_PANE_STORAGE_ID}
+          orientation="vertical"
+          defaultLayout={defaultLayout}
+          onLayoutChanged={onLayoutChanged}
           className="flex-1 min-h-0"
         >
           <Panel defaultSize={70} minSize={20}>
@@ -196,11 +198,11 @@ export function SalesRoomCallingUI({
               </div>
             </div>
           </Panel>
-          <PanelResizeHandle className="group relative h-2 w-full shrink-0 bg-gray-200 hover:bg-blue-200 data-[resize-handle-active]:bg-blue-300">
+          <Separator className="group relative h-2 w-full shrink-0 bg-gray-200 hover:bg-blue-200 data-[resize-handle-active]:bg-blue-300">
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="h-1 w-8 rounded-full bg-gray-400 group-hover:bg-blue-500 transition-colors" />
             </div>
-          </PanelResizeHandle>
+          </Separator>
           <Panel defaultSize={30} minSize={15}>
             <div className="flex h-full min-h-0 flex-col">
               <div className="flex shrink-0 flex-wrap gap-1 border-b border-gray-200 bg-gray-50 px-2 py-1">
@@ -238,7 +240,7 @@ export function SalesRoomCallingUI({
               </div>
             </div>
           </Panel>
-        </PanelGroup>
+        </Group>
       </div>
     </div>
   )

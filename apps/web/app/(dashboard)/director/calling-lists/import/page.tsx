@@ -1,0 +1,205 @@
+ 'use client'
+
+import Link from 'next/link'
+import { useMemo, useRef, useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { importCsvList } from '@/lib/calling-api'
+
+type ImportResult = {
+  list: { id: string; name: string }
+  importedCount: number
+  skippedCount: number
+}
+
+const readTextFile = async (file: File): Promise<string> => {
+  const text = await file.text()
+  return text
+}
+
+export default function DirectorCallingListImportPage() {
+  const { data: session } = useSession()
+  const accessToken = session?.accessToken ?? ''
+
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [listName, setListName] = useState('')
+  const [csvText, setCsvText] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
+  const [result, setResult] = useState<ImportResult | null>(null)
+
+  const canSubmit = useMemo(() => {
+    return Boolean(accessToken) && csvText.trim().length > 0
+  }, [accessToken, csvText])
+
+  const handlePickFile = () => {
+    fileRef.current?.click()
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      const text = await readTextFile(file)
+      setCsvText(text)
+      setMessage(`読み込みました: ${file.name}`)
+    } catch {
+      setMessage('ファイルの読み込みに失敗しました')
+    }
+  }
+
+  const handleImport = async () => {
+    if (!canSubmit) return
+    setLoading(true)
+    setMessage('')
+    setResult(null)
+    try {
+      const res = await importCsvList(accessToken, { csvText, name: listName.trim() || undefined })
+      setResult(res as unknown as ImportResult)
+      setMessage(`格納しました: ${res.importedCount}件（スキップ ${res.skippedCount}件）`)
+    } catch (e) {
+      setMessage((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleLoadSample = () => {
+    setCsvText(
+      [
+        '会社名,電話番号,住所,企業URL,業種',
+        'サンプル株式会社,03-1234-5678,東京都千代田区1-1-1,https://example.com,IT',
+        'テスト合同会社,06-1234-0000,大阪府大阪市1-2-3,https://example.org,製造',
+      ].join('\n')
+    )
+    setMessage('サンプルCSVを入力しました')
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
+      <h1 className="text-xl font-bold text-gray-900">架電リストCSV格納</h1>
+      <p className="mt-2 text-sm text-gray-600">
+        CSV を取り込み、架電リストとして格納します（`/lists/import-csv`）。
+      </p>
+
+      {message && (
+        <div className="mt-4 rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          {message}
+        </div>
+      )}
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm lg:col-span-1">
+          <h2 className="text-sm font-semibold text-gray-900">設定</h2>
+          <div className="mt-3 space-y-3">
+            <label className="block text-xs font-medium text-gray-700">
+              リスト名（任意）
+              <input
+                value={listName}
+                onChange={(e) => setListName(e.target.value)}
+                placeholder="例: 3月_都内_IT"
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              />
+            </label>
+
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handlePickFile}
+                className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                CSVファイルを選ぶ
+              </button>
+              <button
+                type="button"
+                onClick={handleLoadSample}
+                className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                サンプル入力
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleImport}
+              disabled={!canSubmit || loading}
+              className="w-full rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {loading ? '格納中...' : '格納する'}
+            </button>
+
+            {!accessToken && (
+              <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                ログイン状態が必要です（accessTokenが取得できません）
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm lg:col-span-2">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-gray-900">CSV（貼り付け）</h2>
+            <span className="text-[11px] text-gray-500">会社名/電話/住所/URL は必須</span>
+          </div>
+          <textarea
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+            placeholder="ここにCSVを貼り付け"
+            className="mt-3 h-[340px] w-full rounded border border-gray-300 p-3 font-mono text-xs leading-relaxed"
+          />
+        </section>
+      </div>
+
+      <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-gray-900">取り込み結果</h2>
+          {result?.list?.id ? (
+            <Link
+              href={`/dashboard/director/calling-lists/distribute?listId=${encodeURIComponent(result.list.id)}`}
+              className="rounded bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              このリストを配布へ
+            </Link>
+          ) : null}
+        </div>
+        <div className="mt-3 overflow-x-auto rounded border border-gray-200">
+          <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 font-medium text-gray-900">listId</th>
+                <th className="px-3 py-2 font-medium text-gray-900">name</th>
+                <th className="px-3 py-2 font-medium text-gray-900">imported</th>
+                <th className="px-3 py-2 font-medium text-gray-900">skipped</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {result ? (
+                <tr>
+                  <td className="px-3 py-2 font-mono text-xs text-gray-700">{result.list.id}</td>
+                  <td className="px-3 py-2 text-gray-800">{result.list.name}</td>
+                  <td className="px-3 py-2 text-gray-800">{result.importedCount}</td>
+                  <td className="px-3 py-2 text-gray-800">{result.skippedCount}</td>
+                </tr>
+              ) : (
+                <tr>
+                  <td colSpan={4} className="px-3 py-6 text-center text-gray-500">
+                    まだ取り込み結果はありません
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+

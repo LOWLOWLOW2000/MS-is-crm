@@ -8,10 +8,12 @@ import { DirectorModule } from './director/director.module';
 import { HealthModule } from './health/health.module';
 import { ListGenerationModule } from './list-generation/list-generation.module';
 import { ListsModule } from './lists/lists.module';
+import { CompaniesModule } from './companies/companies.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReportsModule } from './reports/reports.module';
 import { ScriptsModule } from './scripts/scripts.module';
 import { SettingsModule } from './settings/settings.module';
+import { UsersModule } from './users/users.module';
 import { ZoomModule } from './zoom/zoom.module';
 
 @Module({
@@ -25,6 +27,8 @@ import { ZoomModule } from './zoom/zoom.module';
     DirectorModule,
     ListGenerationModule,
     ListsModule,
+    CompaniesModule,
+    UsersModule,
     ReportsModule,
     ScriptsModule,
     SettingsModule,

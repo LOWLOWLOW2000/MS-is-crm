@@ -134,6 +134,14 @@ model ListItem {
   address        String
   targetUrl      String
   industryTag    String?
+  /** 担当割当（User.id） */
+  assignedToUserId String?
+  assignedAt      String?
+  assignedByUserId String?
+  /** 進捗ステータス（unstarted|calling|done|excluded） */
+  status          String   @default("unstarted")
+  statusUpdatedAt String?
+  completedAt     String?
   createdAt      String
 
   list        CallingList  @relation(fields: [listId], references: [id], onDelete: Cascade)
@@ -142,6 +150,8 @@ model ListItem {
   @@index([tenantId])
   @@index([listId])
   @@index([legalEntityId])
+  @@index([tenantId, assignedToUserId])
+  @@index([tenantId, status])
   @@map("list_items")
 }
 
@@ -173,6 +183,8 @@ model LegalEntity {
   corporateNumber  String?  // 法人番号
   name             String   // 商号
   headOfficeAddress String?
+  /** 画面用ステータス（将来の精査/配布フローに利用） */
+  status           String?
   establishedAt    String?
   capital          String?  // 資本金（文字で保持）
   revenue          String?  // 売上高
@@ -186,10 +198,28 @@ model LegalEntity {
   departments    Department[]
   personas       Persona[]
   listItems      ListItem[]
+  snapshots      LegalEntitySnapshot[]
 
   @@index([tenantId])
   @@index([companyGroupId])
   @@map("legal_entities")
+}
+
+/** 会社情報の更新履歴（スナップショット）。更新前の状態を保存する。 */
+model LegalEntitySnapshot {
+  id            String   @id @default(cuid())
+  tenantId      String
+  legalEntityId String
+  snapshot      Json
+  createdBy     String
+  createdAt     String
+
+  legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([legalEntityId])
+  @@index([tenantId, legalEntityId, createdAt])
+  @@map("legal_entity_snapshots")
 }
 
 /** L3: 拠点・事業所（Establishment） */

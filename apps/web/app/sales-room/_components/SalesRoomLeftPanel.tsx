@@ -43,6 +43,8 @@ export function SalesRoomLeftPanel() {
     setRecallPage(0)
   }, [listType])
 
+  const recallTotalPages = Math.max(1, Math.ceil(recallItems.length / RECALL_LIST_PAGE_SIZE))
+
   useEffect(() => {
     if (recallItems.length > 0 && recallPage >= recallTotalPages) setRecallPage(recallTotalPages - 1)
   }, [recallItems.length, recallPage, recallTotalPages])
@@ -56,7 +58,6 @@ export function SalesRoomLeftPanel() {
     )
   }, [searchQuery])
 
-  const recallTotalPages = Math.max(1, Math.ceil(recallItems.length / RECALL_LIST_PAGE_SIZE))
   const recallPageItems = useMemo(
     () =>
       recallItems.slice(

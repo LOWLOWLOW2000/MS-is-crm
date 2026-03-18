@@ -13,10 +13,14 @@ import {
   ReportPeriod,
   ReportSummary,
   SaveCallingRecordInput,
+  ListItemStatus,
   ScriptTab,
   ScriptTemplate,
   ZoomDialSession,
   ZoomCallLog,
+  CompanyDetailResponse,
+  UpdateCompanyInput,
+  UpdateCompanyResult,
 } from './types';
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.API_BASE_URL ?? 'http://localhost:3001';
@@ -31,6 +35,56 @@ const createAuthHeaders = (accessToken: string): HeadersInit => {
 export const getApiBaseUrl = (): string => {
   return apiBaseUrl;
 };
+
+export const fetchCompany = async (accessToken: string, legalEntityId: string): Promise<CompanyDetailResponse> => {
+  const response = await fetch(`${apiBaseUrl}/companies/${legalEntityId}`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('企業情報の取得に失敗しました')
+  }
+
+  return (await response.json()) as CompanyDetailResponse
+}
+
+export const updateCompany = async (
+  accessToken: string,
+  legalEntityId: string,
+  input: UpdateCompanyInput,
+): Promise<UpdateCompanyResult> => {
+  const response = await fetch(`${apiBaseUrl}/companies/${legalEntityId}`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('企業情報の保存に失敗しました')
+  }
+
+  return (await response.json()) as UpdateCompanyResult
+}
+
+export const restoreLatestCompanySnapshot = async (
+  accessToken: string,
+  legalEntityId: string,
+): Promise<UpdateCompanyResult> => {
+  const response = await fetch(`${apiBaseUrl}/companies/${legalEntityId}/restore-latest`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('企業情報の復元に失敗しました')
+  }
+
+  return (await response.json()) as UpdateCompanyResult
+}
 
 export const saveCallingRecord = async (
   accessToken: string,
@@ -280,6 +334,80 @@ export const fetchListItems = async (accessToken: string, listId: string): Promi
 
   return (await response.json()) as ListItem[];
 };
+
+export const distributeListItemsEven = async (
+  accessToken: string,
+  listId: string,
+  input: { assigneeUserIds: string[] },
+): Promise<{ updatedCount: number }> => {
+  const response = await fetch(`${apiBaseUrl}/lists/${listId}/items/distribute-even`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('配布に失敗しました')
+  }
+
+  return (await response.json()) as { updatedCount: number }
+}
+
+export const recallListItems = async (
+  accessToken: string,
+  listId: string,
+  input: { assigneeUserId?: string; mode?: 'all' | 'unstartedOnly' | 'callingOnly' },
+): Promise<{ updatedCount: number }> => {
+  const response = await fetch(`${apiBaseUrl}/lists/${listId}/items/recall`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('引き上げに失敗しました')
+  }
+
+  return (await response.json()) as { updatedCount: number }
+}
+
+export const updateListItemStatus = async (
+  accessToken: string,
+  itemId: string,
+  status: ListItemStatus,
+): Promise<ListItem> => {
+  const response = await fetch(`${apiBaseUrl}/lists/items/${itemId}/status`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify({ status }),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('ステータス更新に失敗しました')
+  }
+
+  return (await response.json()) as ListItem
+}
+
+export const fetchListKpiByAssignee = async (
+  accessToken: string,
+  listId: string,
+): Promise<{ assigneeUserId: string | null; status: string; count: number }[]> => {
+  const response = await fetch(`${apiBaseUrl}/lists/${listId}/kpi/by-assignee`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('KPIの取得に失敗しました')
+  }
+
+  return (await response.json()) as { assigneeUserId: string | null; status: string; count: number }[]
+}
 
 export const assignCallingList = async (
   accessToken: string,

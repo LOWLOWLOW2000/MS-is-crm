@@ -7,6 +7,7 @@ import { CompanyDetailTemplate } from './CompanyDetailTemplate'
 import { SalesRoomActionResultPanel } from './SalesRoomActionResultPanel'
 import { RecallReminderBanner } from './RecallReminderBanner'
 import { useTalkScriptStore } from '@/lib/stores/talk-script-store'
+import { NotionBlockEditor } from './NotionBlockEditor'
 
 /** トーク用サブタブ：管理職がセット / 自分で書く */
 const TALK_SUB_TABS = [
@@ -27,7 +28,6 @@ const TAB_ITEMS: { key: string; label: string }[] = [
   { key: 'rules', label: '案件ルール' },
   { key: 'kpi', label: 'KPI' },
   { key: 'daily', label: '日報' },
-  { key: 'memo-p', label: '自由メモ（個人）' },
   { key: 'memo-c', label: '自由メモ（案件）' },
 ]
 
@@ -411,12 +411,12 @@ export function SalesRoomContent() {
           </div>
         )}
 
-        {['memo-p', 'memo-c'].includes(activeTab) && (
-          <div className="shrink-0 rounded-md border border-gray-200 bg-white p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">{activeLabel}</h2>
-            <p className="mt-2 text-sm text-gray-500">
-              {activeTab === 'memo-p' ? '個人用の自由メモです。' : '案件（PJ）用の自由メモです。'}
-            </p>
+        {activeTab === 'memo-c' && (
+          <div className="shrink-0">
+            <NotionBlockEditor
+              title={activeLabel}
+              storageKey={`memo-c:${searchParams.get('company') ?? 'default'}`}
+            />
           </div>
         )}
       </div>

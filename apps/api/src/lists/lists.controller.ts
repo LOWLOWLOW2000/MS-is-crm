@@ -18,6 +18,9 @@ import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ImportListCsvDto } from './dto/import-list-csv.dto';
 import { ImportListResultDto } from './dto/import-list-result.dto';
 import { AssignListDto } from './dto/assign-list.dto';
+import { DistributeListItemsDto } from './dto/distribute-list-items.dto';
+import { RecallListItemsDto } from './dto/recall-list-items.dto';
+import { UpdateListItemStatusDto } from './dto/update-list-item-status.dto';
 import { CallingList } from './entities/calling-list.entity';
 import { ListItem } from './entities/list-item.entity';
 import { ListsService } from './lists.service';
@@ -37,6 +40,17 @@ export class ListsController {
   private assertListManageRole = (user: JwtPayload): void => {
     if (user.role === UserRole.IsMember) {
       throw new ForbiddenException('is_member はリスト管理にアクセスできません');
+    }
+  };
+
+  private assertDirectorRole = (user: JwtPayload): void => {
+    const ok =
+      user.role === UserRole.Developer ||
+      user.role === UserRole.EnterpriseAdmin ||
+      user.role === UserRole.IsAdmin ||
+      user.role === UserRole.Director;
+    if (!ok) {
+      throw new ForbiddenException('ディレクター権限が必要です');
     }
   };
 
@@ -95,6 +109,75 @@ export class ListsController {
         throw error;
       }
       throw new InternalServerErrorException('リスト明細の取得に失敗しました');
+    }
+  }
+
+  @Post(':listId/items/distribute-even')
+  async distributeEven(
+    @Req() req: JwtRequest,
+    @Param('listId') listId: string,
+    @Body() dto: DistributeListItemsDto,
+  ): Promise<{ updatedCount: number }> {
+    try {
+      this.assertDirectorRole(req.user);
+      return await this.listsService.distributeListItemsEven(req.user, listId, dto.assigneeUserIds);
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('配布に失敗しました');
+    }
+  }
+
+  @Post(':listId/items/recall')
+  async recall(
+    @Req() req: JwtRequest,
+    @Param('listId') listId: string,
+    @Body() dto: RecallListItemsDto,
+  ): Promise<{ updatedCount: number }> {
+    try {
+      this.assertDirectorRole(req.user);
+      return await this.listsService.recallListItems(req.user, listId, {
+        assigneeUserId: dto.assigneeUserId,
+        mode: dto.mode,
+      });
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('引き上げに失敗しました');
+    }
+  }
+
+  @Post('items/:itemId/status')
+  async updateItemStatus(
+    @Req() req: JwtRequest,
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateListItemStatusDto,
+  ): Promise<ListItem> {
+    try {
+      return await this.listsService.updateListItemStatus(req.user, itemId, dto.status);
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('ステータス更新に失敗しました');
+    }
+  }
+
+  @Get(':listId/kpi/by-assignee')
+  async kpiByAssignee(
+    @Req() req: JwtRequest,
+    @Param('listId') listId: string,
+  ): Promise<{ assigneeUserId: string | null; status: string; count: number }[]> {
+    try {
+      this.assertDirectorRole(req.user);
+      return await this.listsService.getListKpiByAssignee(req.user, listId);
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('KPIの取得に失敗しました');
     }
   }
 

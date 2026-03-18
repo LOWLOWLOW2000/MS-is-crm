@@ -5,6 +5,7 @@ import { ImportListResultDto } from './dto/import-list-result.dto';
 import { CallingList } from './entities/calling-list.entity';
 import { ListItem } from './entities/list-item.entity';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserRole } from '../common/enums/user-role.enum';
 
 interface ParsedCsvRow {
   companyName: string;
@@ -127,6 +128,12 @@ export class ListsService {
     address: string;
     targetUrl: string;
     industryTag: string | null;
+    assignedToUserId: string | null;
+    assignedAt: string | null;
+    assignedByUserId: string | null;
+    status: string;
+    statusUpdatedAt: string | null;
+    completedAt: string | null;
     createdAt: string;
   }): ListItem => ({
     id: row.id,
@@ -137,6 +144,12 @@ export class ListsService {
     address: row.address,
     targetUrl: row.targetUrl,
     industryTag: row.industryTag,
+    assignedToUserId: row.assignedToUserId,
+    assignedAt: row.assignedAt,
+    assignedByUserId: row.assignedByUserId,
+    status: row.status,
+    statusUpdatedAt: row.statusUpdatedAt,
+    completedAt: row.completedAt,
     createdAt: row.createdAt,
   });
 
@@ -189,6 +202,7 @@ export class ListsService {
             address: row.address,
             targetUrl: row.targetUrl,
             industryTag: row.industryTag,
+            status: 'unstarted',
             createdAt: nowIso,
           })),
         },
@@ -236,10 +250,148 @@ export class ListsService {
       throw new ForbiddenException('配布対象外のリストです');
     }
     const rows = await this.prisma.listItem.findMany({
-      where: { tenantId: user.tenantId, listId },
+      where: { tenantId: user.tenantId, listId, assignedToUserId: user.sub },
       orderBy: { createdAt: 'asc' },
     });
     return rows.map((r) => this.toItem(r));
+  };
+
+  distributeListItemsEven = async (
+    user: JwtPayload,
+    listId: string,
+    assigneeUserIds: string[],
+  ): Promise<{ updatedCount: number }> => {
+    const list = await this.prisma.callingList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!list) {
+      throw new NotFoundException('対象リストが見つかりません');
+    }
+
+    const ids = assigneeUserIds.map((x) => x.trim()).filter((x) => x.length > 0);
+    if (ids.length === 0) {
+      throw new NotFoundException('配布先ユーザーが指定されていません');
+    }
+
+    const targets = await this.prisma.listItem.findMany({
+      where: { tenantId: user.tenantId, listId, status: 'unstarted' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (targets.length === 0) {
+      return { updatedCount: 0 };
+    }
+
+    const nowIso = new Date().toISOString();
+    const updates = targets.map((t, i) => ({ id: t.id, assigneeUserId: ids[i % ids.length] }));
+
+    await this.prisma.$transaction(
+      updates.map((u) =>
+        this.prisma.listItem.update({
+          where: { id: u.id },
+          data: {
+            tenantId: user.tenantId,
+            assignedToUserId: u.assigneeUserId,
+            assignedAt: nowIso,
+            assignedByUserId: user.sub,
+            statusUpdatedAt: nowIso,
+          },
+        }),
+      ),
+    );
+
+    return { updatedCount: updates.length };
+  };
+
+  recallListItems = async (
+    user: JwtPayload,
+    listId: string,
+    input: { assigneeUserId?: string; mode?: 'all' | 'unstartedOnly' | 'callingOnly' },
+  ): Promise<{ updatedCount: number }> => {
+    const list = await this.prisma.callingList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!list) {
+      throw new NotFoundException('対象リストが見つかりません');
+    }
+
+    const mode = input.mode ?? 'unstartedOnly';
+    const whereStatus =
+      mode === 'all' ? undefined : mode === 'callingOnly' ? 'calling' : 'unstarted';
+    const nowIso = new Date().toISOString();
+
+    const result = await this.prisma.listItem.updateMany({
+      where: {
+        tenantId: user.tenantId,
+        listId,
+        ...(input.assigneeUserId ? { assignedToUserId: input.assigneeUserId } : {}),
+        ...(whereStatus ? { status: whereStatus } : {}),
+      },
+      data: {
+        assignedToUserId: null,
+        assignedAt: null,
+        assignedByUserId: user.sub,
+        statusUpdatedAt: nowIso,
+      },
+    });
+
+    return { updatedCount: result.count };
+  };
+
+  updateListItemStatus = async (
+    user: JwtPayload,
+    itemId: string,
+    status: 'unstarted' | 'calling' | 'done' | 'excluded',
+  ): Promise<ListItem> => {
+    const nowIso = new Date().toISOString();
+    const item = await this.prisma.listItem.findFirst({
+      where: { id: itemId, tenantId: user.tenantId },
+    });
+    if (!item) {
+      throw new NotFoundException('対象の企業が見つかりません');
+    }
+
+    if (user.role === UserRole.IsMember && item.assignedToUserId !== user.sub) {
+      throw new ForbiddenException('割り当てられていない企業は更新できません');
+    }
+
+    const updated = await this.prisma.listItem.update({
+      where: { id: itemId },
+      data: {
+        tenantId: user.tenantId,
+        status,
+        statusUpdatedAt: nowIso,
+        completedAt: status === 'done' ? nowIso : null,
+      },
+    });
+    return this.toItem(updated);
+  };
+
+  getListKpiByAssignee = async (
+    user: JwtPayload,
+    listId: string,
+  ): Promise<{ assigneeUserId: string | null; status: string; count: number }[]> => {
+    const list = await this.prisma.callingList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!list) {
+      throw new NotFoundException('対象リストが見つかりません');
+    }
+
+    const rows = await this.prisma.listItem.groupBy({
+      by: ['assignedToUserId', 'status'],
+      where: { tenantId: user.tenantId, listId },
+      _count: { _all: true },
+    });
+
+    return rows.map((r) => ({
+      assigneeUserId: r.assignedToUserId ?? null,
+      status: r.status,
+      count: r._count._all,
+    }));
   };
 
   getAssignedLists = async (user: JwtPayload): Promise<CallingList[]> => {

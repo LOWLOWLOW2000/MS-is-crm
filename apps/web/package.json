@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@carbon/icons-react": "^11.76.0",
+    "lucide-react": "^0.577.0",
     "next": "14.2.6",
     "next-auth": "^4.24.7",
     "react": "18.3.1",

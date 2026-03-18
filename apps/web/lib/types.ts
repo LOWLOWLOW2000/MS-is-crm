@@ -94,11 +94,25 @@ export interface LegalEntity {
   corporateNumber: string | null;
   name: string;
   headOfficeAddress: string | null;
+  /** 画面用ステータス（精査/配布フローで利用想定） */
+  status?: string | null;
   establishedAt: string | null;
   capital: string | null;
   revenue: string | null;
   operatingProfit: string | null;
   fiscalYearEnd: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** L3: 拠点・事業所（Establishment） */
+export interface Establishment {
+  id: string;
+  tenantId: string;
+  legalEntityId: string;
+  name: string;
+  address: string | null;
+  type: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -135,6 +149,37 @@ export interface CompanyInfo {
   companyGroup: CompanyGroup | null;
   departments: Department[];
   personas: Persona[];
+}
+
+export interface CompanyDetailResponse {
+  id: string;
+  tenantId: string;
+  companyGroupId: string | null;
+  corporateNumber: string | null;
+  name: string;
+  headOfficeAddress: string | null;
+  status?: string | null;
+  establishedAt: string | null;
+  capital: string | null;
+  revenue: string | null;
+  operatingProfit: string | null;
+  fiscalYearEnd: string | null;
+  createdAt: string;
+  updatedAt: string;
+  establishments: Establishment[];
+  departments: Department[];
+  personas: (Persona & { department?: Department | null })[];
+}
+
+export type UpdateCompanyInput = {
+  legalEntity: { name: string; headOfficeAddress?: string; status?: string };
+  establishments: { name: string; address?: string; type?: string }[];
+  personas: { name: string; departmentName?: string; phone?: string; email?: string }[];
+}
+
+export type UpdateCompanyResult = {
+  company: CompanyDetailResponse;
+  canUndo: boolean;
 }
 
 export interface CallingSummary {
@@ -221,8 +266,16 @@ export interface ListItem {
   address: string;
   targetUrl: string;
   industryTag: string | null;
+  assignedToUserId?: string | null;
+  assignedAt?: string | null;
+  assignedByUserId?: string | null;
+  status?: 'unstarted' | 'calling' | 'done' | 'excluded' | string;
+  statusUpdatedAt?: string | null;
+  completedAt?: string | null;
   createdAt: string;
 }
+
+export type ListItemStatus = 'unstarted' | 'calling' | 'done' | 'excluded'
 
 export interface ImportListResult {
   list: CallingList;

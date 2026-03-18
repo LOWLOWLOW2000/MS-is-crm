@@ -21,6 +21,8 @@ export const MOCK_NAV_ITEMS: MockNavItem[] = [
   { label: 'プロジェクトKPI', href: '/dashboard/director/kpi', layer: 'director' },
   { label: 'AIレポート', href: '/dashboard/director/ai-report', layer: 'director' },
   { label: '日報BOX', href: '/dashboard/director/daily-box', layer: 'director' },
+  { label: '架電リストCSV格納', href: '/dashboard/director/calling-lists/import', layer: 'director' },
+  { label: '担当へ配布', href: '/dashboard/director/calling-lists/distribute', layer: 'director' },
   { label: '管理レイヤ', href: '/dashboard/admin', layer: 'director' },
   { label: 'Teams表', href: '/dashboard/teams', layer: 'director' },
   { label: '出勤管理表＆報酬計算', href: '/dashboard/attendance-payroll', layer: 'director' },
@@ -29,10 +31,10 @@ export const MOCK_NAV_ITEMS: MockNavItem[] = [
 /** 現在のユーザーのレイヤー権限。Tier2でセッション・ロールに連動させる想定。 */
 const CURRENT_USER_LAYER: NavLayer | 'all' = 'all'
 
-function canSeeItem(itemLayer: NavLayer): boolean {
+function canSeeItem(item: MockNavItem): boolean {
   if (CURRENT_USER_LAYER === 'all') return true
-  if (itemLayer === 'common') return true
-  return itemLayer === CURRENT_USER_LAYER
+  if (item.layer === 'common') return true
+  return item.layer === CURRENT_USER_LAYER
 }
 
 /**
