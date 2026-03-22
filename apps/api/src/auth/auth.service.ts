@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -6,10 +7,13 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
+import { effectiveRolesFromUserRow, primaryRole } from '../common/auth/role-utils';
 import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { upsertProjectMembershipInTx } from '../users/project-membership.helper';
 import { LoginDto } from './dto/login.dto';
+import { RegisterCompanyDto } from './dto/register-company.dto';
 import { AuthUser } from './entities/auth-user.entity';
 import { GoogleAuthProfile } from './strategies/google.strategy';
 
@@ -22,13 +26,22 @@ export class AuthService {
     private readonly prisma: PrismaService,
   ) {}
 
-  private toAuthUser(row: { id: string; tenantId: string; email: string; name: string; role: string }): AuthUser {
+  private toAuthUser(row: {
+    id: string;
+    tenantId: string;
+    email: string;
+    name: string;
+    role: string;
+    roles: string[];
+  }): AuthUser {
+    const roles = effectiveRolesFromUserRow(row);
     return {
       id: row.id,
       tenantId: row.tenantId,
       email: row.email,
       name: row.name,
-      role: row.role as UserRole,
+      roles,
+      role: primaryRole(roles),
     };
   }
 
@@ -37,6 +50,7 @@ export class AuthService {
       sub: user.id,
       tenantId: user.tenantId,
       role: user.role,
+      roles: user.roles,
       email: user.email,
     };
   }
@@ -78,20 +92,50 @@ export class AuthService {
     return { refreshToken: plain, refreshExpiresAt: expiresAt };
   }
 
+  /** ヘッダー用：所属企業名・PJ表示名（テナント未登録や空は「未設定」） */
+  private async tenantHeaderFields(tenantId: string): Promise<{
+    tenantCompanyName: string;
+    tenantProjectName: string;
+  }> {
+    const t = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { companyName: true, name: true, projectDisplayName: true },
+    });
+    const companyRaw = (t?.companyName ?? t?.name ?? '').trim();
+    const projectRaw = (t?.projectDisplayName ?? '').trim();
+    return {
+      tenantCompanyName: companyRaw.length > 0 ? companyRaw : '未設定',
+      tenantProjectName: projectRaw.length > 0 ? projectRaw : '未設定',
+    };
+  }
+
   private async toResponse(user: AuthUser, includeRefresh = true): Promise<{
     accessToken: string;
     refreshToken?: string;
     refreshExpiresAt?: string;
-    user: { id: string; tenantId: string; role: UserRole; email: string; name: string };
+    user: {
+      id: string;
+      tenantId: string;
+      role: UserRole;
+      roles: UserRole[];
+      email: string;
+      name: string;
+      tenantCompanyName: string;
+      tenantProjectName: string;
+    };
   }> {
+    const { tenantCompanyName, tenantProjectName } = await this.tenantHeaderFields(user.tenantId);
     const base = {
       accessToken: this.sign(user),
       user: {
         id: user.id,
         tenantId: user.tenantId,
         role: user.role,
+        roles: user.roles,
         email: user.email,
         name: user.name,
+        tenantCompanyName,
+        tenantProjectName,
       },
     };
 
@@ -103,9 +147,73 @@ export class AuthService {
     return { ...base, refreshToken, refreshExpiresAt };
   }
 
-  async loginWithPassword(loginDto: LoginDto): Promise<ReturnType<AuthService['toResponse']>> {
+  /** 招待承諾後など、ユーザー ID からトークン一式を発行 */
+  async issueTokensForUser(userId: string): Promise<Awaited<ReturnType<AuthService['toResponse']>>> {
+    const row = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!row) {
+      throw new NotFoundException('ユーザーが見つかりません');
+    }
+    return this.toResponse(this.toAuthUser(row));
+  }
+
+  /** 初回企業作成：テナント＋企業管理者＋ディレクター */
+  async registerCompany(dto: RegisterCompanyDto): Promise<Awaited<ReturnType<AuthService['toResponse']>>> {
+    const emailNorm = dto.email.trim().toLowerCase();
+    const dup = await this.prisma.user.findFirst({
+      where: { email: emailNorm },
+    });
+    if (dup) {
+      throw new ConflictException('このメールアドレスは既に登録されています');
+    }
+
+    const roles: UserRole[] = [UserRole.EnterpriseAdmin, UserRole.Director];
+    const pr = primaryRole(roles);
+    const now = new Date().toISOString();
+    const passwordHash =
+      dto.password && dto.password.length > 0
+        ? await bcrypt.hash(dto.password, 10)
+        : null;
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({
+        data: {
+          name: dto.companyName,
+          companyName: dto.companyName,
+          headOfficeAddress: dto.headOfficeAddress,
+          headOfficePhone: dto.headOfficePhone,
+          representativeName: dto.representativeName,
+          accountStatus: 'active',
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const u = await tx.user.create({
+        data: {
+          tenantId: tenant.id,
+          email: emailNorm,
+          name: dto.name,
+          passwordHash,
+          role: pr,
+          roles: roles as unknown as string[],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      await upsertProjectMembershipInTx(tx, {
+        tenantId: tenant.id,
+        userId: u.id,
+        roles,
+      });
+      return u;
+    });
+
+    return this.toResponse(this.toAuthUser(user));
+  }
+
+  async loginWithPassword(loginDto: LoginDto): Promise<Awaited<ReturnType<AuthService['toResponse']>>> {
     const row = await this.prisma.user.findFirst({
-      where: { email: loginDto.email },
+      where: { email: loginDto.email.trim().toLowerCase() },
     });
 
     if (!row?.passwordHash) {
@@ -121,9 +229,10 @@ export class AuthService {
     return this.toResponse(user);
   }
 
-  async loginWithGoogle(profile: GoogleAuthProfile): Promise<ReturnType<AuthService['toResponse']>> {
+  async loginWithGoogle(profile: GoogleAuthProfile): Promise<Awaited<ReturnType<AuthService['toResponse']>>> {
+    const emailNorm = profile.email.trim().toLowerCase();
     const existing = await this.prisma.user.findFirst({
-      where: { email: profile.email },
+      where: { email: emailNorm },
     });
 
     if (existing) {
@@ -132,21 +241,38 @@ export class AuthService {
 
     const tenantId = this.resolveTenantId(profile.email);
     const now = new Date().toISOString();
-    const newRow = await this.prisma.user.create({
-      data: {
+    const roles: UserRole[] = [UserRole.IsMember];
+    const newRow = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.user.create({
+        data: {
+          tenantId,
+          email: emailNorm,
+          name: profile.name ?? profile.email,
+          role: UserRole.IsMember,
+          roles: roles as unknown as string[],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      await upsertProjectMembershipInTx(tx, {
         tenantId,
-        email: profile.email,
-        name: profile.name ?? profile.email,
-        role: UserRole.IsMember,
-        createdAt: now,
-        updatedAt: now,
-      },
+        userId: row.id,
+        roles,
+      });
+      return row;
     });
 
     return this.toResponse(this.toAuthUser(newRow));
   }
 
-  async getProfile(payload: JwtPayload): Promise<{ id: string; tenantId: string; role: UserRole; email: string; name: string }> {
+  async getProfile(payload: JwtPayload): Promise<{
+    id: string;
+    tenantId: string;
+    role: UserRole;
+    roles: UserRole[];
+    email: string;
+    name: string;
+  }> {
     const row = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
@@ -155,17 +281,19 @@ export class AuthService {
       throw new NotFoundException('ユーザーが見つかりません');
     }
 
+    const roles = effectiveRolesFromUserRow(row);
     return {
       id: row.id,
       tenantId: row.tenantId,
-      role: row.role as UserRole,
+      role: primaryRole(roles),
+      roles,
       email: row.email,
       name: row.name,
     };
   }
 
   /** Refresh Token で新しい accessToken と refreshToken を発行する。古い refresh は削除（ローテーション）。 */
-  async refreshTokens(refreshTokenPlain: string): Promise<ReturnType<AuthService['toResponse']>> {
+  async refreshTokens(refreshTokenPlain: string): Promise<Awaited<ReturnType<AuthService['toResponse']>>> {
     const hash = this.hashRefreshToken(refreshTokenPlain);
     const now = new Date().toISOString();
 

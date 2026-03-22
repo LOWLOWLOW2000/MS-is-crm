@@ -1,15 +1,10 @@
 'use client'
 
-import { useEffect } from 'react'
 import Link from 'next/link'
 
 export default function Error(props: { error: Error & { digest?: string }; reset: () => void }) {
   const { error, reset } = props
   const isDev = process.env.NODE_ENV === 'development'
-
-  useEffect(() => {
-    console.error(error)
-  }, [error])
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6">

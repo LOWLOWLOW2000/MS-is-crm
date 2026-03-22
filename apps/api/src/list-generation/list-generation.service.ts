@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserRole } from '../common/enums/user-role.enum';
+import { isRestrictedMember } from '../common/auth/role-utils';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateMasterDto } from './dto/create-master.dto';
@@ -20,7 +20,7 @@ export class ListGenerationService {
   constructor(private readonly prisma: PrismaService) {}
 
   private assertListGenerationRole = (user: JwtPayload): void => {
-    if (user.role === UserRole.IsMember) {
+    if (isRestrictedMember(user)) {
       throw new ForbiddenException(
         'is_member はリスト生成・マスタにアクセスできません',
       );

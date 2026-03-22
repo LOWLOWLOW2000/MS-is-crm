@@ -8,6 +8,7 @@ import {
   CallingSummary,
   DialValidationResult,
   ImportListResult,
+  ListIndustryMasterRow,
   ListItem,
   ReportByMember,
   ReportPeriod,
@@ -290,7 +291,18 @@ export type UserListItem = {
   email: string;
   name: string;
   role: string;
+  roles?: string[];
+  profileImageUrl: string | null;
+  countryCode: string | null;
+  prefecture: string | null;
+  mobilePhone: string | null;
   createdAt: string;
+  /** テナント既定PJ（1テナント1件）への配役。API が project_memberships と同期して返す */
+  projectAssignment?: {
+    projectId: string;
+    projectName: string;
+    pjRole: 'director' | 'is_member';
+  } | null;
 };
 
 export const fetchUsers = async (accessToken: string): Promise<UserListItem[]> => {
@@ -301,10 +313,67 @@ export const fetchUsers = async (accessToken: string): Promise<UserListItem[]> =
   });
 
   if (!response.ok) {
-    throw new Error('ユーザー一覧の取得に失敗しました');
+    const text = await response.text();
+    let detail = '';
+    try {
+      const j = JSON.parse(text) as { message?: string | string[] };
+      if (typeof j.message === 'string') {
+        detail = j.message;
+      } else if (Array.isArray(j.message)) {
+        detail = j.message.join('; ');
+      }
+    } catch {
+      if (text.trim().length > 0) {
+        detail = text.trim().slice(0, 240);
+      }
+    }
+    throw new Error(
+      detail.length > 0
+        ? `ユーザー一覧の取得に失敗しました: ${detail}`
+        : 'ユーザー一覧の取得に失敗しました',
+    );
   }
 
   return (await response.json()) as UserListItem[];
+};
+
+/** 管理画面 BOX: director（Tier1）/ is（Tier2）に応じて director・is_member を切替 */
+export const assignUserTierBox = async (
+  accessToken: string,
+  userId: string,
+  box: 'director' | 'is',
+): Promise<UserListItem> => {
+  const response = await fetch(`${apiBaseUrl}/users/${encodeURIComponent(userId)}/tier`, {
+    method: 'PATCH',
+    headers: {
+      ...createAuthHeaders(accessToken),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ box }),
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err || 'ロールの更新に失敗しました');
+  }
+  return (await response.json()) as UserListItem;
+};
+
+/** 既定PJから除名（director / is_member を外し project_memberships を削除） */
+export const removeUserFromPj = async (
+  accessToken: string,
+  userId: string,
+): Promise<UserListItem> => {
+  const response = await fetch(`${apiBaseUrl}/users/${encodeURIComponent(userId)}/pj-membership`, {
+    method: 'DELETE',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err || 'PJからの除名に失敗しました');
+  }
+  return (await response.json()) as UserListItem;
 };
 
 export const fetchAssignedCallingLists = async (accessToken: string): Promise<CallingList[]> => {
@@ -335,15 +404,91 @@ export const fetchListItems = async (accessToken: string, listId: string): Promi
   return (await response.json()) as ListItem[];
 };
 
+export type DistributeListFilters = {
+  addressContains?: string
+  cityContains?: string
+  industryTagContains?: string
+  callProgress?: 'unstarted' | 'contacted' | 'any'
+  aiTiers?: ('A' | 'B' | 'C')[]
+}
+
+const appendDistributeFilterParams = (params: URLSearchParams, filters: DistributeListFilters): void => {
+  const addr = filters.addressContains?.trim()
+  const city = filters.cityContains?.trim()
+  const tag = filters.industryTagContains?.trim()
+  if (addr) params.set('addressContains', addr)
+  if (city) params.set('cityContains', city)
+  if (tag) params.set('industryTagContains', tag)
+  if (filters.callProgress) params.set('callProgress', filters.callProgress)
+  for (const t of filters.aiTiers ?? []) {
+    params.append('aiTiers', t)
+  }
+}
+
+const distributeFilterBody = (
+  assigneeUserIds: string[],
+  filters: DistributeListFilters,
+): Record<string, unknown> => {
+  const body: Record<string, unknown> = { assigneeUserIds }
+  const addr = filters.addressContains?.trim()
+  const city = filters.cityContains?.trim()
+  const tag = filters.industryTagContains?.trim()
+  if (addr) body.addressContains = addr
+  if (city) body.cityContains = city
+  if (tag) body.industryTagContains = tag
+  if (filters.callProgress) body.callProgress = filters.callProgress
+  if (filters.aiTiers && filters.aiTiers.length > 0) body.aiTiers = filters.aiTiers
+  return body
+}
+
+export const fetchListIndustryMasters = async (
+  accessToken: string,
+): Promise<ListIndustryMasterRow[]> => {
+  const response = await fetch(`${apiBaseUrl}/lists/masters/industries`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('業種マスタの取得に失敗しました')
+  }
+
+  return (await response.json()) as ListIndustryMasterRow[]
+}
+
+export const previewDistributeEvenMatch = async (
+  accessToken: string,
+  listId: string,
+  filters: DistributeListFilters,
+): Promise<{ matchCount: number }> => {
+  const params = new URLSearchParams()
+  appendDistributeFilterParams(params, filters)
+  const qs = params.toString()
+  const url = `${apiBaseUrl}/lists/${listId}/items/distribute-even/preview${qs ? `?${qs}` : ''}`
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('配布対象件数の取得に失敗しました')
+  }
+
+  return (await response.json()) as { matchCount: number }
+}
+
 export const distributeListItemsEven = async (
   accessToken: string,
   listId: string,
-  input: { assigneeUserIds: string[] },
+  input: { assigneeUserIds: string[] } & DistributeListFilters,
 ): Promise<{ updatedCount: number }> => {
+  const { assigneeUserIds, ...filters } = input
   const response = await fetch(`${apiBaseUrl}/lists/${listId}/items/distribute-even`, {
     method: 'POST',
     headers: createAuthHeaders(accessToken),
-    body: JSON.stringify(input),
+    body: JSON.stringify(distributeFilterBody(assigneeUserIds, filters)),
     cache: 'no-store',
   })
 
@@ -456,16 +601,6 @@ export const fetchListAreaMasters = async (accessToken: string) => {
     cache: 'no-store',
   });
   if (!response.ok) throw new Error('エリアマスタの取得に失敗しました');
-  return (await response.json()) as { id: string; name: string; isActive: boolean }[];
-};
-
-export const fetchListIndustryMasters = async (accessToken: string) => {
-  const response = await fetch(`${apiBaseUrl}/lists/masters/industries`, {
-    method: 'GET',
-    headers: createAuthHeaders(accessToken),
-    cache: 'no-store',
-  });
-  if (!response.ok) throw new Error('業種マスタの取得に失敗しました');
   return (await response.json()) as { id: string; name: string; isActive: boolean }[];
 };
 

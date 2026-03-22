@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { hasRole } from '../common/auth/role-utils';
 import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { UpdateCallingSettingsDto } from './dto/update-calling-settings.dto';
@@ -54,6 +55,6 @@ export class SettingsService {
   };
 
   canUpdateCallingSettings = (user: JwtPayload): boolean => {
-    return user.role === UserRole.Developer;
+    return hasRole(user, UserRole.Developer);
   };
 }

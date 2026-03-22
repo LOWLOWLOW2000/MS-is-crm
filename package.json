@@ -4,6 +4,7 @@
   "scripts": {
     "dev:api": "cd apps/api && npm run start:dev",
     "dev:web": "cd apps/web && npm run dev",
+    "dev:web:clean": "cd apps/web && rm -rf .next && npm run dev",
     "mock": "serve docs/html-mock -l 5123",
     "start:dev": "node -e \"require(require('path').join(process.env.npm_config_local_prefix||process.cwd(),'run-start-dev.js'))\"",
     "restart:dev": "bash scripts/restart-dev.sh",

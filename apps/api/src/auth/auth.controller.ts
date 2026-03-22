@@ -16,6 +16,7 @@ import { AuthResponseDto } from './dto/auth-response.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RegisterCompanyDto } from './dto/register-company.dto';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
@@ -61,6 +62,23 @@ export class AuthController {
       email: googleLoginDto.email,
       name: googleLoginDto.name ?? googleLoginDto.email,
     });
+  }
+
+  /** NextAuth（Microsoft / Azure AD）用：Google と同じペイロード */
+  @Post('microsoft/exchange')
+  async loginWithMicrosoftExchange(
+    @Body() dto: GoogleLoginDto,
+  ): Promise<AuthResponseDto> {
+    return this.authService.loginWithGoogle({
+      email: dto.email,
+      name: dto.name ?? dto.email,
+    });
+  }
+
+  /** 初回：企業テナント作成＋企業管理者＋ディレクター */
+  @Post('register-company')
+  async registerCompany(@Body() dto: RegisterCompanyDto): Promise<AuthResponseDto> {
+    return this.authService.registerCompany(dto);
   }
 
   @Get('google')

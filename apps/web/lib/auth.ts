@@ -9,7 +9,45 @@ const DEFAULT_USER_ROLE: UserRole = 'is_member';
 const ACCESS_TOKEN_EXPIRES_MS = 24 * 60 * 60 * 1000;
 const REFRESH_THRESHOLD_MS = 60 * 1000;
 
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() ?? ''
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() ?? ''
+const azureClientId = process.env.AZURE_AD_CLIENT_ID?.trim() ?? ''
+const azureClientSecret = process.env.AZURE_AD_CLIENT_SECRET?.trim() ?? ''
+
+const oauthProviders = [
+  ...(googleClientId && googleClientSecret
+    ? [
+        GoogleProvider({
+          clientId: googleClientId,
+          clientSecret: googleClientSecret,
+          authorization: {
+            params: {
+              prompt: 'consent',
+              access_type: 'offline',
+              response_type: 'code',
+            },
+          },
+        }),
+      ]
+    : []),
+  ...(azureClientId && azureClientSecret
+    ? [
+        MicrosoftProvider({
+          clientId: azureClientId,
+          clientSecret: azureClientSecret,
+          authorization: {
+            params: {
+              scope: 'openid profile email',
+            },
+          },
+        }),
+      ]
+    : []),
+]
+
 export const authOptions: NextAuthOptions = {
+  /** dev でポートやホストがずれるときの CSRF / URL 警告を緩和 */
+  trustHost: true,
   session: {
     strategy: 'jwt',
   },
@@ -53,6 +91,9 @@ export const authOptions: NextAuthOptions = {
           email: result.user.email,
           tenantId: result.user.tenantId,
           role: result.user.role,
+          roles: result.user.roles ?? [result.user.role],
+          tenantCompanyName: result.user.tenantCompanyName ?? '',
+          tenantProjectName: result.user.tenantProjectName ?? '',
           accessToken: result.accessToken,
           refreshToken: result.refreshToken,
           refreshExpiresAt: result.refreshExpiresAt,
@@ -60,26 +101,7 @@ export const authOptions: NextAuthOptions = {
         };
       },
     }),
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? '',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
-      authorization: {
-        params: {
-          prompt: 'consent',
-          access_type: 'offline',
-          response_type: 'code',
-        },
-      },
-    }),
-    MicrosoftProvider({
-      clientId: process.env.AZURE_AD_CLIENT_ID ?? '',
-      clientSecret: process.env.AZURE_AD_CLIENT_SECRET ?? '',
-      authorization: {
-        params: {
-          scope: 'openid profile email',
-        },
-      },
-    }),
+    ...oauthProviders,
   ],
   callbacks: {
     async signIn({ account, profile, user }) {
@@ -133,6 +155,11 @@ export const authOptions: NextAuthOptions = {
       user.email = result.user.email;
       (user as { tenantId?: string }).tenantId = result.user.tenantId;
       (user as { role?: UserRole }).role = result.user.role;
+      (user as { roles?: UserRole[] }).roles = result.user.roles ?? [result.user.role];
+      (user as { tenantCompanyName?: string }).tenantCompanyName =
+        result.user.tenantCompanyName ?? '';
+      (user as { tenantProjectName?: string }).tenantProjectName =
+        result.user.tenantProjectName ?? '';
       (user as { accessToken?: string }).accessToken = result.accessToken;
       (user as { refreshToken?: string }).refreshToken = result.refreshToken;
       (user as { refreshExpiresAt?: string }).refreshExpiresAt =
@@ -149,6 +176,9 @@ export const authOptions: NextAuthOptions = {
         token.email = user.email;
         token.tenantId = user.tenantId;
         token.role = user.role;
+        token.roles = (user as { roles?: UserRole[] }).roles ?? [user.role as UserRole];
+        token.tenantCompanyName = (user as { tenantCompanyName?: string }).tenantCompanyName ?? '';
+        token.tenantProjectName = (user as { tenantProjectName?: string }).tenantProjectName ?? '';
         token.accessToken = user.accessToken;
         token.refreshToken = user.refreshToken;
         token.refreshExpiresAt = user.refreshExpiresAt;
@@ -175,6 +205,10 @@ export const authOptions: NextAuthOptions = {
             token.accessTokenExpiresAt = Date.now() + ACCESS_TOKEN_EXPIRES_MS;
             token.refreshToken = data.refreshToken ?? token.refreshToken;
             token.refreshExpiresAt = data.refreshExpiresAt ?? token.refreshExpiresAt;
+            token.role = data.user.role;
+            token.roles = data.user.roles ?? [data.user.role];
+            token.tenantCompanyName = data.user.tenantCompanyName ?? token.tenantCompanyName;
+            token.tenantProjectName = data.user.tenantProjectName ?? token.tenantProjectName;
           }
         } catch {
           // ネットワークエラー時はそのまま返す（次回リトライ）
@@ -190,6 +224,9 @@ export const authOptions: NextAuthOptions = {
         session.user.email = token.email ?? '';
         session.user.tenantId = (token.tenantId as string | undefined) ?? '';
         session.user.role = token.role ?? DEFAULT_USER_ROLE;
+        session.user.roles = (token.roles as UserRole[] | undefined) ?? [session.user.role];
+        session.user.tenantCompanyName = (token.tenantCompanyName as string | undefined) ?? '';
+        session.user.tenantProjectName = (token.tenantProjectName as string | undefined) ?? '';
       }
 
       session.accessToken = (token.accessToken as string | undefined) ?? '';

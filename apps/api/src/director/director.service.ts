@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CallingService } from '../calling/calling.service';
 import { CallingHelpRequest } from '../calling/entities/calling-help-request.entity';
+import { hasAnyRole } from '../common/auth/role-utils';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { UserRole } from '../common/enums/user-role.enum';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
@@ -16,7 +17,13 @@ export class DirectorService {
   ) {}
 
   private assertDirectorRole = (user: JwtPayload): void => {
-    if (user.role !== UserRole.Director && user.role !== UserRole.IsAdmin && user.role !== UserRole.Developer && user.role !== UserRole.EnterpriseAdmin) {
+    const ok = hasAnyRole(user, [
+      UserRole.Director,
+      UserRole.IsAdmin,
+      UserRole.Developer,
+      UserRole.EnterpriseAdmin,
+    ]);
+    if (!ok) {
       throw new ForbiddenException('ディレクターダッシュボードには director / is_admin / enterprise_admin / developer のみアクセスできます');
     }
   };

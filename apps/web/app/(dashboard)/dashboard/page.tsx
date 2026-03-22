@@ -13,10 +13,10 @@ export default function DashboardPage() {
           <h2 className="mb-2 text-sm font-semibold text-gray-500">共通・IS</h2>
           <ul className="list-none space-y-1">
             <li>
-              <Link href="/dashboard/kpi" className="text-blue-600 no-underline hover:underline">KPIページ</Link>
+              <Link href="/kpi" className="text-blue-600 no-underline hover:underline">KPIページ</Link>
             </li>
             <li>
-              <Link href="/dashboard/ai-daily" className="text-blue-600 no-underline hover:underline">AI日報</Link>
+              <Link href="/ai-daily" className="text-blue-600 no-underline hover:underline">AI日報</Link>
             </li>
             <li>
               <Link href="/sales-room" className="text-blue-600 no-underline hover:underline">インサイドセールス（IS UI）</Link>
@@ -25,7 +25,7 @@ export default function DashboardPage() {
               <Link href="/sales-room/refinement" className="text-blue-600 no-underline hover:underline">未調査リスト精査</Link>
             </li>
             <li>
-              <Link href="/dashboard/corporate" className="text-blue-600 no-underline hover:underline">企業管理者</Link>
+              <Link href="/corporate" className="text-blue-600 no-underline hover:underline">企業管理者</Link>
             </li>
           </ul>
         </section>
@@ -33,16 +33,16 @@ export default function DashboardPage() {
           <h2 className="mb-2 text-sm font-semibold text-gray-500">ディレクター・企業アカウント専用</h2>
           <ul className="list-none space-y-1">
             <li>
-              <Link href="/dashboard/director" className="text-blue-600 no-underline hover:underline">ディレクター</Link>
+              <Link href="/director" className="text-blue-600 no-underline hover:underline">ディレクター</Link>
             </li>
             <li>
-              <Link href="/dashboard/director/kpi" className="text-blue-600 no-underline hover:underline">プロジェクトKPI</Link>
+              <Link href="/director/kpi" className="text-blue-600 no-underline hover:underline">プロジェクトKPI</Link>
             </li>
             <li>
-              <Link href="/dashboard/director/ai-report" className="text-blue-600 no-underline hover:underline">AIレポート</Link>
+              <Link href="/director/ai-report" className="text-blue-600 no-underline hover:underline">AIレポート</Link>
             </li>
             <li>
-              <Link href="/dashboard/director/daily-box" className="text-blue-600 no-underline hover:underline">日報BOX</Link>
+              <Link href="/director/daily-box" className="text-blue-600 no-underline hover:underline">日報BOX</Link>
             </li>
           </ul>
         </section>

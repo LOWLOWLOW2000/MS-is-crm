@@ -14,17 +14,17 @@ export default function DirectorPage() {
         <h2 className="text-base font-semibold text-gray-900">メニュー</h2>
         <ul className="mt-4 space-y-2">
           <li>
-            <Link href="/dashboard/director/kpi" className="block rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-100">
+            <Link href="/director/kpi" className="block rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-100">
               プロジェクトKPI
             </Link>
           </li>
           <li>
-            <Link href="/dashboard/director/ai-report" className="block rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-100">
+            <Link href="/director/ai-report" className="block rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-100">
               AIレポート
             </Link>
           </li>
           <li>
-            <Link href="/dashboard/director/daily-box" className="block rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-100">
+            <Link href="/director/daily-box" className="block rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-100">
               日報BOX
             </Link>
           </li>

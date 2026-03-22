@@ -13,5 +13,7 @@ export interface ListItem {
   status: string;
   statusUpdatedAt: string | null;
   completedAt: string | null;
+  /** AIリスト判定 A|B|C */
+  aiListTier: string | null;
   createdAt: string;
 }

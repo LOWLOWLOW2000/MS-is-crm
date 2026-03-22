@@ -16,8 +16,13 @@ export interface AuthUser {
   id: string;
   tenantId: string;
   role: UserRole;
+  roles: UserRole[];
   email: string;
   name: string;
+  /** API が付与。表示は companyName 優先のテナント名 */
+  tenantCompanyName?: string;
+  /** テナントの PJ 表示名 */
+  tenantProjectName?: string;
 }
 
 export interface AuthResponse {
@@ -266,6 +271,7 @@ export interface ListItem {
   address: string;
   targetUrl: string;
   industryTag: string | null;
+  aiListTier?: string | null;
   assignedToUserId?: string | null;
   assignedAt?: string | null;
   assignedByUserId?: string | null;
@@ -288,6 +294,13 @@ export interface ListMasterItem {
   id: string;
   name: string;
   isActive: boolean;
+}
+
+/** 配布画面: 業種マスタ（大分類ラベル付き） */
+export interface ListIndustryMasterRow {
+  id: string;
+  name: string;
+  groupLabel: string | null;
 }
 
 /** リスト生成リクエスト（履歴一覧用） */

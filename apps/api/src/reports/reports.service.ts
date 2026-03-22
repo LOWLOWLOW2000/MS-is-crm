@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { effectiveConnectionCountForRecords } from '../calling/calling-result-rules';
 import { CallingService } from '../calling/calling.service';
 import { CallingRecord } from '../calling/entities/calling-record.entity';
 import type { AiCategoryScore } from '../calling/entities/calling-ai-evaluation.entity';
@@ -58,9 +59,13 @@ export class ReportsService {
       return createdMs >= startMs && createdMs <= endMs;
     });
 
-    const connectedCount = periodRecords.filter((record: CallingRecord) => {
-      return record.result === '担当者あり興味' || record.result === '担当者あり不要';
-    }).length;
+    const connectedCount = effectiveConnectionCountForRecords(
+      periodRecords.map((r: CallingRecord) => ({
+        result: r.result,
+        targetUrl: r.targetUrl,
+        companyPhone: r.companyPhone,
+      })),
+    );
 
     const resultCounter = new Map<string, number>();
     periodRecords.forEach((record: CallingRecord) => {

@@ -162,7 +162,7 @@ export default function DirectorCallingListImportPage() {
           <h2 className="text-sm font-semibold text-gray-900">取り込み結果</h2>
           {result?.list?.id ? (
             <Link
-              href={`/dashboard/director/calling-lists/distribute?listId=${encodeURIComponent(result.list.id)}`}
+              href={`/director/calling-lists/distribute?listId=${encodeURIComponent(result.list.id)}`}
               className="rounded bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
             >
               このリストを配布へ

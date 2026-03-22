@@ -3,7 +3,6 @@
 import type React from 'react'
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
-import { useSearchParams } from 'next/navigation'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { SalesRoomActionResultPanel } from './SalesRoomActionResultPanel'
 import { fetchCompany, restoreLatestCompanySnapshot, updateCompany, updateListItemStatus } from '@/lib/calling-api'
@@ -35,13 +34,18 @@ const SAMPLE_PERSONAS = [
 export interface CompanyDetailTemplateProps {
   /** 互換性維持用。今回の実装では内部で固定レイアウトにするため未使用 */
   centerPanel?: React.ReactNode
+  /** 親で useSearchParams から解決して渡す（ネストした useSearchParams による RSC 500 を避ける） */
+  legalEntityId?: string
+  listItemId?: string
 }
 
-export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = () => {
+export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
+  legalEntityId: legalEntityIdProp = '',
+  listItemId: listItemIdProp = '',
+}) => {
   const { data: session } = useSession()
-  const searchParams = useSearchParams()
-  const legalEntityId = searchParams.get('legalEntityId') ?? searchParams.get('company') ?? ''
-  const listItemId = searchParams.get('listItemId') ?? ''
+  const legalEntityId = legalEntityIdProp
+  const listItemId = listItemIdProp
 
   /** 架電状態 */
   const [isCallActive, setIsCallActive] = useState(false)

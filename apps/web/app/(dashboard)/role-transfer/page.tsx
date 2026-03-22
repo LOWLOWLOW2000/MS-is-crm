@@ -9,7 +9,7 @@ export default function RoleTransferPage() {
     { href: '/dashboard', label: 'メニュー', description: 'ダッシュボードハブ' },
     { href: '/dashboard/calendar', label: 'カレンダー', description: '予定・稼働・外部カレンダー連携' },
     { href: '/ops/members', label: 'メンバー・ロール管理', description: 'ユーザー一覧・ロール・有効/無効' },
-    { href: '/dashboard/corporate', label: '個人アカウント', description: '個人設定・アカウント' },
+    { href: '/corporate', label: '個人アカウント', description: '個人設定・アカウント' },
   ] as const
 
   return (

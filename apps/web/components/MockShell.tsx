@@ -2,9 +2,12 @@
 
 import { useRef, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { MockNav } from './MockNav'
 import { FooterChatRollup } from './FooterChatRollup'
 import { DailyKpiSection } from './DailyKpiSection'
+import { formatHeaderRolesJa } from '@/lib/role-labels'
+import type { UserRole } from '@/lib/types'
 
 export interface MockShellProps {
   children: React.ReactNode
@@ -15,9 +18,10 @@ export interface MockShellProps {
 }
 
 /**
- * モック（docs/html-mock）準拠の共通シェル。ヘッダー（IS UI・プロフアイコン）＋当日KPIセクション＋左ナビ＋メイン＋フッター。
+ * モック（docs/html-mock）準拠の共通シェル。ヘッダー（所属企業・PJ名・自分名・役職／プロフ）＋当日KPI＋左ナビ＋メイン＋フッター。
  */
 export function MockShell({ children, leftPanelBelowNav, isFreeTier = true }: MockShellProps) {
+  const { data: session, status } = useSession()
   const leftColWidth = leftPanelBelowNav ? 'w-72' : 'w-52'
   const [profilePopupOpen, setProfilePopupOpen] = useState(false)
   const [kpiAdDismissed, setKpiAdDismissed] = useState(false)
@@ -35,15 +39,48 @@ export function MockShell({ children, leftPanelBelowNav, isFreeTier = true }: Mo
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
-      {/* 上部ヘッダー一列固定：IS UI | 当日KPI（個人・チーム・PJ） | プロフ。無料時はKPI部分に広告オーバーレイ＋× */}
-      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-4 border-b border-gray-200 bg-white px-4">
-        <div className="shrink-0">
-          <Link
-            href="/dashboard"
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            IS UI
-          </Link>
+      {/* 上部ヘッダー一列固定：所属企業・PJ名・自分名・役職 | 当日KPI | プロフ */}
+      <header className="sticky top-0 z-30 flex min-h-14 shrink-0 items-center gap-4 border-b border-gray-200 bg-white px-4 py-1.5">
+        <div className="min-w-0 max-w-[min(100%,18rem)] shrink-0 sm:max-w-md">
+          {status === 'loading' ? (
+            <div className="h-14 w-44 animate-pulse rounded-md bg-gray-100" aria-hidden />
+          ) : session?.user ? (
+            <Link
+              href="/dashboard"
+              className="flex min-w-0 flex-col justify-center gap-0.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-left leading-snug hover:bg-gray-100"
+              title="ダッシュボードへ"
+            >
+              <span className="truncate text-[11px] text-gray-800">
+                <span className="font-medium text-gray-500">所属企業</span>
+                <span className="mx-0.5 text-gray-400">：</span>
+                <span>{session.user.tenantCompanyName || '未設定'}</span>
+              </span>
+              <span className="truncate text-[11px] text-gray-800">
+                <span className="font-medium text-gray-500">PJ名</span>
+                <span className="mx-0.5 text-gray-400">：</span>
+                <span>{session.user.tenantProjectName || '未設定'}</span>
+              </span>
+              <span className="truncate text-[11px] text-gray-800">
+                <span className="font-medium text-gray-500">自分名</span>
+                <span className="mx-0.5 text-gray-400">：</span>
+                <span className="font-semibold text-gray-900">{session.user.name}</span>
+              </span>
+              <span className="truncate text-[11px] text-gray-800">
+                <span className="font-medium text-gray-500">役職</span>
+                <span className="mx-0.5 text-gray-400">：</span>
+                <span>
+                  {formatHeaderRolesJa((session.user.roles ?? [session.user.role]) as UserRole[])}
+                </span>
+              </span>
+            </Link>
+          ) : (
+            <Link
+              href="/login"
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              ログイン
+            </Link>
+          )}
         </div>
         <div className="relative flex min-w-0 flex-1 items-center">
           <DailyKpiSection inline />
@@ -106,8 +143,8 @@ export function MockShell({ children, leftPanelBelowNav, isFreeTier = true }: Mo
         </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col pb-12">
-        <div className="flex min-h-0 flex-1">
-          <div className={`flex shrink-0 flex-col min-h-0 border-r border-gray-200 bg-white ${leftColWidth}`}>
+        <div className="flex min-h-[calc(100dvh-3.5rem)] flex-1">
+          <div className={`flex min-h-0 shrink-0 flex-col border-r border-gray-200 bg-white ${leftColWidth}`}>
             <MockNav />
             {leftPanelBelowNav != null ? (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -115,10 +152,8 @@ export function MockShell({ children, leftPanelBelowNav, isFreeTier = true }: Mo
               </div>
             ) : null}
           </div>
-          <main className="flex min-h-0 flex-1 flex-col overflow-auto bg-gray-50 p-6 min-w-0">
-            <div className="flex min-h-0 flex-1 flex-col">
-              {children}
-            </div>
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-gray-50 p-6">
+            <div className="flex min-h-0 flex-1 flex-col">{children}</div>
           </main>
           <aside className="w-0 shrink-0" aria-hidden />
         </div>

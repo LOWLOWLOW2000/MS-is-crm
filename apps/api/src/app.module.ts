@@ -15,6 +15,7 @@ import { ScriptsModule } from './scripts/scripts.module';
 import { SettingsModule } from './settings/settings.module';
 import { UsersModule } from './users/users.module';
 import { ZoomModule } from './zoom/zoom.module';
+import { InvitationsModule } from './invitations/invitations.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ZoomModule } from './zoom/zoom.module';
     PrismaModule,
     HealthModule,
     AuthModule,
+    InvitationsModule,
     AiModule,
     CallingModule,
     DirectorModule,

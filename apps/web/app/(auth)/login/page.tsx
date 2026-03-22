@@ -7,6 +7,21 @@ import { signIn } from 'next-auth/react'
 /**
  * ログイン画面。認証で一般的な要素を網羅。データ取り扱い同意・アカウント作成はストレージ接続必須。
  */
+/** callbackUrl が同一オリジンならリダイレクト先に使う（オープンリダイレクト防止） */
+const safeCallbackPath = (raw: string | null): string | null => {
+  if (!raw || raw.length === 0) return null
+  try {
+    if (raw.startsWith('/')) {
+      return raw.startsWith('//') ? null : raw
+    }
+    const u = new URL(raw)
+    if (typeof window !== 'undefined' && u.origin !== window.location.origin) return null
+    return `${u.pathname}${u.search}${u.hash}`
+  } catch {
+    return null
+  }
+}
+
 export default function LoginPage() {
   const [dataUsageAgreed, setDataUsageAgreed] = useState(false)
   const [email, setEmail] = useState('')
@@ -30,8 +45,23 @@ export default function LoginPage() {
     e.preventDefault()
     setLoginError(null)
     setIsSubmitting(true)
-    // 開発用：実際の認証は API 連携時に実装
-    await new Promise((r) => setTimeout(r, 500))
+    try {
+      const result = await signIn('credentials', {
+        email: email.trim(),
+        password,
+        redirect: false,
+      })
+      if (result?.error) {
+        setLoginError('メールまたはパスワードが正しくありません')
+        setIsSubmitting(false)
+        return
+      }
+      const q = new URLSearchParams(window.location.search)
+      const fromQuery = safeCallbackPath(q.get('callbackUrl'))
+      window.location.href = fromQuery ?? '/dashboard'
+    } catch {
+      setLoginError('ログインに失敗しました')
+    }
     setIsSubmitting(false)
   }
 
@@ -141,7 +171,7 @@ export default function LoginPage() {
           <div className="flex flex-col gap-2">
             <button
               type="button"
-              onClick={() => signIn('google', { callbackUrl: '/office' })}
+              onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
@@ -154,7 +184,7 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              onClick={() => signIn('azure-ad', { callbackUrl: '/office' })}
+              onClick={() => signIn('azure-ad', { callbackUrl: '/dashboard' })}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
@@ -169,10 +199,10 @@ export default function LoginPage() {
         </div>
 
         <p className="mb-6 text-center text-xs text-gray-500">
-          アカウントをお持ちでない方は
-          <a href="#account-create-heading" className="text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500">
-            こちら（アカウント作成）
-          </a>
+          新規で企業アカウントを作る方は{' '}
+          <Link href="/register-company" className="text-blue-600 hover:underline">
+            企業登録（管理者＋ディレクター）
+          </Link>
         </p>
         <div className="mb-8 flex gap-4">
           <Link

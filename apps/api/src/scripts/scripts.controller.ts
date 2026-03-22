@@ -17,7 +17,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { UserRole } from '../common/enums/user-role.enum';
+import { isRestrictedMember } from '../common/auth/role-utils';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import type { PdfExtractResultDto } from './dto/pdf-extract-result.dto';
 import { UpsertScriptTemplateDto } from './dto/upsert-script-template.dto';
@@ -34,7 +34,7 @@ export class ScriptsController {
   constructor(private readonly scriptsService: ScriptsService) {}
 
   private assertNotIsMember = (user: JwtPayload): void => {
-    if (user.role === UserRole.IsMember) {
+    if (isRestrictedMember(user)) {
       throw new ForbiddenException('is_member はスクリプト管理にアクセスできません');
     }
   };

@@ -45,7 +45,7 @@ export function DashboardMenuLinks() {
           </li>
           {canSeeTier1Or2 && (
             <li>
-              <Link href="/dashboard/role-transfer" className="text-blue-600 hover:underline">
+              <Link href="/role-transfer" className="text-blue-600 hover:underline">
                 権限委任ページ
               </Link>
             </li>
@@ -57,7 +57,7 @@ export function DashboardMenuLinks() {
           </li>
           {canSeeTier1Or2 && (
             <li>
-              <Link href="/dashboard/list-distribution" className="text-blue-600 hover:underline">
+              <Link href="/list-distribution" className="text-blue-600 hover:underline">
                 リスト配布
               </Link>
             </li>

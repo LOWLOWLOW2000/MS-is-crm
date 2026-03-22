@@ -1,6 +1,9 @@
 import { Suspense } from 'react'
 import { SalesRoomContent } from './_components/SalesRoomContent'
 
+/** プリレンダーと RSC キャッシュの取り違いによる開発時 500 を減らす */
+export const dynamic = 'force-dynamic'
+
 /**
  * 営業ルーム。useSearchParams を使うため Suspense でラップ（表示されない問題を回避）。
  */

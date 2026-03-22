@@ -2,12 +2,19 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { CompanyDetailTemplate } from './CompanyDetailTemplate'
 import { SalesRoomActionResultPanel } from './SalesRoomActionResultPanel'
 import { RecallReminderBanner } from './RecallReminderBanner'
 import { useTalkScriptStore } from '@/lib/stores/talk-script-store'
 import { NotionBlockEditor } from './NotionBlockEditor'
+import {
+  fetchAssignedCallingLists,
+  fetchCallingLists,
+  fetchListItems,
+} from '@/lib/calling-api'
+import type { ListItem } from '@/lib/types'
 
 /** トーク用サブタブ：管理職がセット / 自分で書く */
 const TALK_SUB_TABS = [
@@ -43,6 +50,47 @@ const TIME_SLOT_OPTIONS = [
   { key: '14-18', label: '14–18時' },
 ] as const
 
+const SEED_LIST_ID = 'seed-calling-list-distribute-demo'
+
+/** 未ログイン・API 空時の一覧用デモ行（DB シードと近い見た目） */
+const buildDemoListItems = (): ListItem[] => {
+  const ts = new Date().toISOString()
+  return [
+    {
+      id: 'local-demo-1',
+      tenantId: 'tenant-demo-01',
+      listId: 'local-demo',
+      companyName: 'デモ飲食 銀座（ローカル表示）',
+      phone: '03-0000-0001',
+      address: '東京都中央区銀座1-1-1',
+      targetUrl: 'https://example.com',
+      industryTag: '飲食・レストラン',
+      aiListTier: 'A',
+      status: 'unstarted',
+      createdAt: ts,
+    },
+    {
+      id: 'local-demo-2',
+      tenantId: 'tenant-demo-01',
+      listId: 'local-demo',
+      companyName: 'デモIT 渋谷（ローカル表示）',
+      phone: '03-1000-0001',
+      address: '東京都渋谷区神南1-1-1',
+      targetUrl: 'https://example.com',
+      industryTag: 'IT・ソフトウェア',
+      aiListTier: 'B',
+      status: 'unstarted',
+      createdAt: ts,
+    },
+  ]
+}
+
+const prefectureFromAddress = (address: string): string => {
+  const m = address.match(/^(.+?[都道府県])/)
+  if (m?.[1]) return m[1]
+  return address.length > 0 ? address.slice(0, 6) : '—'
+}
+
 function loadTabOrder(baseKeys: string[]): string[] {
   if (typeof window === 'undefined') return [...baseKeys]
   try {
@@ -62,7 +110,12 @@ function loadTabOrder(baseKeys: string[]): string[] {
  * 営業ルームメイン。上＝タブナビ（並び替え可・クリックでアクティブ色）、下＝選択タブの結果表示。
  */
 export function SalesRoomContent() {
+  const router = useRouter()
+  const { data: session, status: sessionStatus } = useSession()
   const searchParams = useSearchParams()
+  const legalEntityIdFromUrl =
+    searchParams.get('legalEntityId') ?? searchParams.get('company') ?? ''
+  const listItemIdFromUrl = searchParams.get('listItemId') ?? ''
   const tabKeys = ['list', ...TAB_KEYS_BASE]
   const tabMap: Record<string, string> = { list: '一覧', ...TAB_MAP }
   const tab = searchParams.get('tab') ?? DEFAULT_TAB
@@ -81,9 +134,90 @@ export function SalesRoomContent() {
   const updateSelfTabContent = useTalkScriptStore((s) => s.updateSelfTabContent)
   const addSelfTab = useTalkScriptStore((s) => s.addSelfTab)
 
+  const [callingRows, setCallingRows] = useState<ListItem[]>([])
+  const [callingListSource, setCallingListSource] = useState<'api' | 'demo'>('demo')
+  const [callingListHint, setCallingListHint] = useState<string | null>(
+    'ログイン後、配布リストの明細を表示します。未ログイン時はデモ行です。',
+  )
+  const [callingListLoading, setCallingListLoading] = useState(false)
+
   useEffect(() => {
     setTabOrder(loadTabOrder(tabKeys))
   }, [tabKeys.join(',')])
+
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (sessionStatus === 'loading') return
+      if (!session?.accessToken) {
+        if (!cancelled) {
+          setCallingRows(buildDemoListItems())
+          setCallingListSource('demo')
+          setCallingListHint('ログイン後、API の配布リストが表示されます（未ログイン時はデモ行）。')
+          setCallingListLoading(false)
+        }
+        return
+      }
+      setCallingListLoading(true)
+      setCallingListHint(null)
+      try {
+        const role = session.user?.role
+        let listId: string | null = null
+        if (role === 'is_member') {
+          const assigned = await fetchAssignedCallingLists(session.accessToken)
+          listId = assigned[0]?.id ?? null
+        } else {
+          const all = await fetchCallingLists(session.accessToken)
+          const seed = all.find((l) => l.id === SEED_LIST_ID)
+          listId = seed?.id ?? all[0]?.id ?? null
+        }
+        if (!listId) {
+          if (!cancelled) {
+            setCallingRows(buildDemoListItems())
+            setCallingListSource('demo')
+            setCallingListHint(
+              '配布リストが見つかりません。`npm run db:seed`（API）でシードするか、ディレクターがリストを配布してください。',
+            )
+          }
+          return
+        }
+        const items = await fetchListItems(session.accessToken, listId)
+        if (cancelled) return
+        if (items.length > 0) {
+          setCallingRows(items)
+          setCallingListSource('api')
+          setCallingListHint(null)
+        } else {
+          setCallingRows(buildDemoListItems())
+          setCallingListSource('demo')
+          setCallingListHint('リスト明細が空です。シードの再実行または配布を確認してください。')
+        }
+      } catch {
+        if (!cancelled) {
+          setCallingRows(buildDemoListItems())
+          setCallingListSource('demo')
+          setCallingListHint('一覧の取得に失敗しました。API 起動とログインを確認してください。')
+        }
+      } finally {
+        if (!cancelled) setCallingListLoading(false)
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [session?.accessToken, session?.user?.role, sessionStatus])
+
+  const openCompanyFromRow = useCallback(
+    (item: ListItem) => {
+      if (callingListSource === 'api') {
+        router.push(`/sales-room?tab=company&listItemId=${encodeURIComponent(item.id)}`)
+        return
+      }
+      router.push('/sales-room?tab=company')
+    },
+    [callingListSource, router],
+  )
 
   const persistOrder = useCallback((next: string[]) => {
     setTabOrder(next)
@@ -198,7 +332,21 @@ export function SalesRoomContent() {
           <div className="shrink-0 space-y-4">
             <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
               <h2 className="text-base font-semibold text-gray-900">架電一覧（時間帯別）</h2>
-              <p className="mt-1 text-sm text-gray-500">時間帯で絞り込み。行クリックで企業詳細へ。</p>
+              <p className="mt-1 text-sm text-gray-500">
+                時間帯は今後フィルタ連携予定。行クリックで企業詳細へ。
+                {callingListSource === 'demo' && (
+                  <span className="ml-1 font-medium text-amber-800">（デモ表示）</span>
+                )}
+                {callingListSource === 'api' && (
+                  <span className="ml-1 font-medium text-green-800">（API）</span>
+                )}
+              </p>
+              {callingListHint != null && (
+                <p className="mt-2 text-xs text-gray-600">{callingListHint}</p>
+              )}
+              {callingListLoading && (
+                <p className="mt-2 text-xs text-gray-500">一覧を読み込み中…</p>
+              )}
               <div className="mt-4 flex flex-wrap gap-2">
                 {TIME_SLOT_OPTIONS.map(({ key, label }) => (
                   <button
@@ -228,11 +376,39 @@ export function SalesRoomContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
-                    <tr>
-                      <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
-                        リスト連携後に表示されます。（{TIME_SLOT_OPTIONS.find((o) => o.key === timeSlot)?.label ?? timeSlot}）
-                      </td>
-                    </tr>
+                    {callingRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
+                          表示する行がありません。（
+                          {TIME_SLOT_OPTIONS.find((o) => o.key === timeSlot)?.label ?? timeSlot}）
+                        </td>
+                      </tr>
+                    ) : (
+                      callingRows.map((item, idx) => (
+                        <tr
+                          key={item.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openCompanyFromRow(item)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              openCompanyFromRow(item)
+                            }
+                          }}
+                          className="cursor-pointer hover:bg-blue-50/80"
+                        >
+                          <td className="px-3 py-2 text-gray-700">{idx + 1}</td>
+                          <td className="px-3 py-2 font-medium text-gray-900">{item.companyName}</td>
+                          <td className="px-3 py-2 text-gray-700">{item.phone}</td>
+                          <td className="px-3 py-2 text-gray-600">{item.aiListTier ?? '—'}</td>
+                          <td className="px-3 py-2 text-gray-600">{prefectureFromAddress(item.address)}</td>
+                          <td className="px-3 py-2 text-gray-600">{item.industryTag ?? '—'}</td>
+                          <td className="px-3 py-2 text-gray-500">—</td>
+                          <td className="px-3 py-2 text-gray-500">—</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -242,7 +418,10 @@ export function SalesRoomContent() {
 
         {activeTab === 'company' && (
           <div className="shrink-0 space-y-2">
-            <CompanyDetailTemplate />
+            <CompanyDetailTemplate
+              legalEntityId={legalEntityIdFromUrl}
+              listItemId={listItemIdFromUrl}
+            />
           </div>
         )}
 

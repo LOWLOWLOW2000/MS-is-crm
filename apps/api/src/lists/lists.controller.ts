@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -7,18 +8,22 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserRole } from '../common/enums/user-role.enum';
+import { hasAnyRole, isRestrictedMember } from '../common/auth/role-utils';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ImportListCsvDto } from './dto/import-list-csv.dto';
 import { ImportListResultDto } from './dto/import-list-result.dto';
 import { AssignListDto } from './dto/assign-list.dto';
 import { DistributeListItemsDto } from './dto/distribute-list-items.dto';
+import { ListIndustryMasterRowDto } from './dto/list-industry-master-row.dto';
+import type { ListItemDistributeFilters } from './lists.service';
 import { RecallListItemsDto } from './dto/recall-list-items.dto';
 import { UpdateListItemStatusDto } from './dto/update-list-item-status.dto';
 import { CallingList } from './entities/calling-list.entity';
@@ -38,20 +43,40 @@ export class ListsController {
   ) {}
 
   private assertListManageRole = (user: JwtPayload): void => {
-    if (user.role === UserRole.IsMember) {
+    if (isRestrictedMember(user)) {
       throw new ForbiddenException('is_member はリスト管理にアクセスできません');
     }
   };
 
   private assertDirectorRole = (user: JwtPayload): void => {
-    const ok =
-      user.role === UserRole.Developer ||
-      user.role === UserRole.EnterpriseAdmin ||
-      user.role === UserRole.IsAdmin ||
-      user.role === UserRole.Director;
+    const ok = hasAnyRole(user, [
+      UserRole.Developer,
+      UserRole.EnterpriseAdmin,
+      UserRole.IsAdmin,
+      UserRole.Director,
+    ]);
     if (!ok) {
       throw new ForbiddenException('ディレクター権限が必要です');
     }
+  };
+
+  private parseCallProgressQuery = (raw?: string): ListItemDistributeFilters['callProgress'] => {
+    if (raw === undefined || raw === '') {
+      return undefined;
+    }
+    if (raw === 'unstarted' || raw === 'contacted' || raw === 'any') {
+      return raw;
+    }
+    throw new BadRequestException('callProgress は unstarted / contacted / any のみ指定できます');
+  };
+
+  private parseAiTiersQuery = (raw?: string | string[]): string[] | undefined => {
+    if (raw === undefined) {
+      return undefined;
+    }
+    const arr = Array.isArray(raw) ? raw : [raw];
+    const ok = arr.filter((x): x is 'A' | 'B' | 'C' => x === 'A' || x === 'B' || x === 'C');
+    return ok.length > 0 ? ok : undefined;
   };
 
   @Post('import-csv')
@@ -97,10 +122,57 @@ export class ListsController {
     }
   }
 
+  @Get('masters/industries')
+  async getIndustryMasters(@Req() req: JwtRequest): Promise<ListIndustryMasterRowDto[]> {
+    try {
+      this.assertDirectorRole(req.user);
+      return await this.listsService.getIndustryMasters(req.user);
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('業種マスタの取得に失敗しました');
+    }
+  }
+
+  /** 条件付き均等配布の対象件数プレビュー（:listId/items より先に登録） */
+  @Get(':listId/items/distribute-even/preview')
+  async previewDistributeEven(
+    @Req() req: JwtRequest,
+    @Param('listId') listId: string,
+    @Query('addressContains') addressContains?: string,
+    @Query('cityContains') cityContains?: string,
+    @Query('industryTagContains') industryTagContains?: string,
+    @Query('callProgress') callProgressRaw?: string,
+    @Query('aiTiers') aiTiersRaw?: string | string[],
+  ): Promise<{ matchCount: number }> {
+    try {
+      this.assertDirectorRole(req.user);
+      const callProgress = this.parseCallProgressQuery(callProgressRaw);
+      const aiTiers = this.parseAiTiersQuery(aiTiersRaw);
+      return await this.listsService.previewDistributeListItemsEven(req.user, listId, {
+        addressContains,
+        cityContains,
+        industryTagContains,
+        callProgress,
+        aiTiers,
+      });
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException('配布対象件数の取得に失敗しました');
+    }
+  }
+
   @Get(':listId/items')
   async getListItems(@Req() req: JwtRequest, @Param('listId') listId: string): Promise<ListItem[]> {
     try {
-      if (req.user.role === UserRole.IsMember) {
+      if (isRestrictedMember(req.user)) {
         return await this.listsService.getAssignedListItems(req.user, listId);
       }
       return await this.listsService.getListItems(req.user, listId);
@@ -120,7 +192,13 @@ export class ListsController {
   ): Promise<{ updatedCount: number }> {
     try {
       this.assertDirectorRole(req.user);
-      return await this.listsService.distributeListItemsEven(req.user, listId, dto.assigneeUserIds);
+      return await this.listsService.distributeListItemsEven(req.user, listId, dto.assigneeUserIds, {
+        addressContains: dto.addressContains,
+        cityContains: dto.cityContains,
+        industryTagContains: dto.industryTagContains,
+        callProgress: dto.callProgress,
+        aiTiers: dto.aiTiers,
+      });
     } catch (error) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException) {
         throw error;

@@ -12,20 +12,21 @@ export type MockNavItem = {
   layer: NavLayer
 }
 
+/** App Router の実パス（(dashboard) は URL に含まれない。/dashboard はトップのみ） */
 export const MOCK_NAV_ITEMS: MockNavItem[] = [
-  { label: 'KPIページ（AI診断）', href: '/dashboard/kpi', layer: 'common' },
-  { label: 'AI日報', href: '/dashboard/ai-daily', layer: 'common' },
-  { label: 'MYデスク', href: '/sales-room', layer: 'is' },
-  { label: 'タイムカード＆請求書・領収書', href: '/dashboard/timecard-invoice', layer: 'common' },
-  { label: 'ディレクター', href: '/dashboard/director', layer: 'director' },
-  { label: 'プロジェクトKPI', href: '/dashboard/director/kpi', layer: 'director' },
-  { label: 'AIレポート', href: '/dashboard/director/ai-report', layer: 'director' },
-  { label: '日報BOX', href: '/dashboard/director/daily-box', layer: 'director' },
-  { label: '架電リストCSV格納', href: '/dashboard/director/calling-lists/import', layer: 'director' },
-  { label: '担当へ配布', href: '/dashboard/director/calling-lists/distribute', layer: 'director' },
-  { label: '管理レイヤ', href: '/dashboard/admin', layer: 'director' },
-  { label: 'Teams表', href: '/dashboard/teams', layer: 'director' },
-  { label: '出勤管理表＆報酬計算', href: '/dashboard/attendance-payroll', layer: 'director' },
+  { label: 'KPIページ（AI診断）', href: '/kpi', layer: 'common' },
+  { label: 'AI日報', href: '/ai-daily', layer: 'common' },
+  { label: '架電ルーム', href: '/sales-room', layer: 'is' },
+  { label: 'タイムカード＆請求書・領収書', href: '/timecard-invoice', layer: 'common' },
+  { label: 'ディレクター', href: '/director', layer: 'director' },
+  { label: 'プロジェクトKPI', href: '/director/kpi', layer: 'director' },
+  { label: 'AIレポート', href: '/director/ai-report', layer: 'director' },
+  { label: '日報BOX', href: '/director/daily-box', layer: 'director' },
+  { label: '架電リストCSV格納', href: '/director/calling-lists/import', layer: 'director' },
+  { label: '担当へ配布', href: '/director/calling-lists/distribute', layer: 'director' },
+  { label: '役職変更・メンバー招待', href: '/admin', layer: 'director' },
+  { label: 'Teams表', href: '/teams', layer: 'director' },
+  { label: '出勤管理表＆報酬計算', href: '/attendance-payroll', layer: 'director' },
 ]
 
 /** 現在のユーザーのレイヤー権限。Tier2でセッション・ロールに連動させる想定。 */

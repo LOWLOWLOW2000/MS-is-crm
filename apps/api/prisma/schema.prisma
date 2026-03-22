@@ -1,12 +1,13 @@
 // IS-CRM Prisma Schema
 // 全テーブルに tenantId 必須（マルチテナント）
 generator client {
-  provider = "prisma-client-js"
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -15,11 +16,23 @@ model User {
   email        String
   name         String
   passwordHash String?
-  role         String    // UserRole
+  /** 後方互換・単一ロール参照用（JWT の主ロール計算にも利用） */
+  role         String
+  /** 複数ロール（空のときは role を1件として扱う） */
+  roles        String[]  @default([])
+  /** プロフィール画像 URL（任意） */
+  profileImageUrl String?
+  /** ISO 3166-1 alpha-2（未設定時は UI で JP 扱い可） */
+  countryCode  String?
+  /** 住所表示用・都道府県（日本想定） */
+  prefecture   String?
+  /** 携帯電話番号 */
+  mobilePhone  String?
   createdAt    String
   updatedAt    String
 
-  refreshTokens RefreshToken[]
+  refreshTokens        RefreshToken[]
+  projectMemberships ProjectMembership[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -142,6 +155,8 @@ model ListItem {
   status          String   @default("unstarted")
   statusUpdatedAt String?
   completedAt     String?
+  /** AIリスト判定ティア（A|B|C）。未設定可 */
+  aiListTier      String?
   createdAt      String
 
   list        CallingList  @relation(fields: [listId], references: [id], onDelete: Cascade)
@@ -345,12 +360,14 @@ model ListAreaMaster {
 }
 
 model ListIndustryMaster {
-  id        String @id @default(cuid())
-  tenantId  String
-  name      String
-  isActive  Boolean @default(true)
-  createdAt String
-  updatedAt String
+  id         String @id @default(cuid())
+  tenantId   String
+  name       String
+  /** UIグループ（大分類ラベル）。中カテゴリは name で表現 */
+  groupLabel String?
+  isActive   Boolean @default(true)
+  createdAt  String
+  updatedAt  String
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -408,15 +425,79 @@ model OperatorListGenerationLog {
 // -----------------------------
 
 model Tenant {
-  id          String   @id @default(cuid())
-  name        String
-  planId      String?
-  isActive    Boolean  @default(true)
-  createdAt   String
-  updatedAt   String
+  id                 String   @id @default(cuid())
+  name               String
+  planId             String?
+  isActive           Boolean  @default(true)
+  /** 企業プロフィール（ステータス登録） */
+  companyName        String?
+  headOfficeAddress  String?
+  headOfficePhone    String?
+  representativeName String?
+  accountStatus      String   @default("active")
+  /** ヘッダー等に出すPJ名（任意・未設定時は UI で「未設定」） */
+  projectDisplayName String?
+  createdAt          String
+  updatedAt          String
+
+  invitations TenantInvitation[]
+  project     Project?
 
   @@index([planId])
   @@map("tenants")
+}
+
+/** テナントあたり1件の既定PJ（ヘッダー projectDisplayName と連動した表示名） */
+model Project {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  name      String
+  createdAt String
+  updatedAt String
+
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships ProjectMembership[]
+
+  @@index([tenantId])
+  @@map("projects")
+}
+
+/** PJ単位の配役（User の director / is_member と同一トランザクションで更新） */
+model ProjectMembership {
+  id        String   @id @default(cuid())
+  tenantId  String
+  projectId String
+  userId    String
+  pjRole    String
+  createdAt String
+  updatedAt String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("project_memberships")
+}
+
+/** 企業への招待（メール URL・3日・1回限り） */
+model TenantInvitation {
+  id               String   @id @default(cuid())
+  tenantId         String
+  email            String
+  tokenHash        String   @unique
+  invitedRoles     Json
+  invitedByUserId  String
+  expiresAt        String
+  consumedAt       String?
+  createdAt        String
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, email])
+  @@map("tenant_invitations")
 }
 
 model Plan {

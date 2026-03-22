@@ -1,4 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { isRestrictedMember } from '../common/auth/role-utils';
+import { Prisma } from '../generated/prisma/client';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ImportListCsvDto } from './dto/import-list-csv.dto';
 import { ImportListResultDto } from './dto/import-list-result.dto';
@@ -20,9 +22,70 @@ interface UnassignListResult {
   previousAssigneeEmail: string | null;
 }
 
+export type ListItemDistributeFilters = {
+  addressContains?: string;
+  cityContains?: string;
+  industryTagContains?: string;
+  /** 未指定時は unstarted（後方互換） */
+  callProgress?: 'unstarted' | 'contacted' | 'any';
+  aiTiers?: string[];
+};
+
 @Injectable()
 export class ListsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** 均等配布・プレビュー共通の ListItem where（tenantId / listId 必須） */
+  private buildDistributeTargetWhere = (
+    user: JwtPayload,
+    listId: string,
+    filters?: ListItemDistributeFilters,
+  ): Prisma.ListItemWhereInput => {
+    const where: Prisma.ListItemWhereInput = {
+      tenantId: user.tenantId,
+      listId,
+    };
+    const progress = filters?.callProgress ?? 'unstarted';
+    if (progress === 'unstarted') {
+      where.status = 'unstarted';
+    } else if (progress === 'contacted') {
+      where.status = { in: ['calling', 'done'] };
+    }
+    const andAddr: Prisma.ListItemWhereInput[] = [];
+    const pref = filters?.addressContains?.trim();
+    if (pref) {
+      andAddr.push({ address: { contains: pref, mode: 'insensitive' } });
+    }
+    const city = filters?.cityContains?.trim();
+    if (city) {
+      andAddr.push({ address: { contains: city, mode: 'insensitive' } });
+    }
+    if (andAddr.length > 0) {
+      where.AND = andAddr;
+    }
+    const tag = filters?.industryTagContains?.trim();
+    if (tag) {
+      where.industryTag = { contains: tag, mode: 'insensitive' };
+    }
+    const tiers = filters?.aiTiers?.filter((t) => t === 'A' || t === 'B' || t === 'C');
+    if (tiers && tiers.length > 0) {
+      where.aiListTier = { in: tiers };
+    }
+    return where;
+  };
+
+  getIndustryMasters = async (
+    user: JwtPayload,
+  ): Promise<{ id: string; name: string; groupLabel: string | null }[]> => {
+    const rows = await this.prisma.listIndustryMaster.findMany({
+      where: { tenantId: user.tenantId, isActive: true },
+      select: { id: true, name: true, groupLabel: true },
+    });
+    return rows.sort(
+      (a, b) =>
+        (a.groupLabel ?? '').localeCompare(b.groupLabel ?? '', 'ja') || a.name.localeCompare(b.name, 'ja'),
+    );
+  };
 
   private parseCsvLine = (line: string): string[] => {
     const values: string[] = [];
@@ -134,6 +197,7 @@ export class ListsService {
     status: string;
     statusUpdatedAt: string | null;
     completedAt: string | null;
+    aiListTier: string | null;
     createdAt: string;
   }): ListItem => ({
     id: row.id,
@@ -150,6 +214,7 @@ export class ListsService {
     status: row.status,
     statusUpdatedAt: row.statusUpdatedAt,
     completedAt: row.completedAt,
+    aiListTier: row.aiListTier,
     createdAt: row.createdAt,
   });
 
@@ -203,6 +268,7 @@ export class ListsService {
             targetUrl: row.targetUrl,
             industryTag: row.industryTag,
             status: 'unstarted',
+            aiListTier: null,
             createdAt: nowIso,
           })),
         },
@@ -256,10 +322,28 @@ export class ListsService {
     return rows.map((r) => this.toItem(r));
   };
 
+  previewDistributeListItemsEven = async (
+    user: JwtPayload,
+    listId: string,
+    filters?: ListItemDistributeFilters,
+  ): Promise<{ matchCount: number }> => {
+    const list = await this.prisma.callingList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!list) {
+      throw new NotFoundException('対象リストが見つかりません');
+    }
+    const where = this.buildDistributeTargetWhere(user, listId, filters);
+    const matchCount = await this.prisma.listItem.count({ where });
+    return { matchCount };
+  };
+
   distributeListItemsEven = async (
     user: JwtPayload,
     listId: string,
     assigneeUserIds: string[],
+    filters?: ListItemDistributeFilters,
   ): Promise<{ updatedCount: number }> => {
     const list = await this.prisma.callingList.findFirst({
       where: { id: listId, tenantId: user.tenantId },
@@ -274,8 +358,9 @@ export class ListsService {
       throw new NotFoundException('配布先ユーザーが指定されていません');
     }
 
+    const where = this.buildDistributeTargetWhere(user, listId, filters);
     const targets = await this.prisma.listItem.findMany({
-      where: { tenantId: user.tenantId, listId, status: 'unstarted' },
+      where,
       orderBy: { createdAt: 'asc' },
       select: { id: true },
     });
@@ -353,7 +438,7 @@ export class ListsService {
       throw new NotFoundException('対象の企業が見つかりません');
     }
 
-    if (user.role === UserRole.IsMember && item.assignedToUserId !== user.sub) {
+    if (isRestrictedMember(user) && item.assignedToUserId !== user.sub) {
       throw new ForbiddenException('割り当てられていない企業は更新できません');
     }
 

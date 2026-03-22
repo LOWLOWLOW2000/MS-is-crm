@@ -11,10 +11,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { hasAnyRole } from '../common/auth/role-utils';
 import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
+import {
+  ALL_CALLING_RESULTS,
+  CALLING_RESULTS_EXCEPT_ABSENT,
+  VOICEMAIL_UNREACHABLE_ANSWERED_THRESHOLD,
+} from './calling-result-rules';
 import { CallingService } from './calling.service';
 import { CreateListReviewCompletionDto } from './dto/create-list-review-completion.dto'
 import { CreateHelpRequestDto } from './dto/create-help-request.dto';
@@ -41,7 +47,7 @@ export class CallingController {
 
   /** 文字起こし保存はバッチ用。developer / is_admin のみ */
   private assertCanSaveTranscription = (user: JwtPayload): void => {
-    if (user.role !== UserRole.Developer && user.role !== UserRole.IsAdmin) {
+    if (!hasAnyRole(user, [UserRole.Developer, UserRole.IsAdmin])) {
       throw new ForbiddenException('文字起こしの保存は管理者のみ可能です');
     }
   };
@@ -49,7 +55,7 @@ export class CallingController {
   /** 参加・対応完了は director / is_admin / enterprise_admin / developer のみ */
   private assertDirectorOrAdmin = (user: JwtPayload): void => {
     const allowed = [UserRole.Director, UserRole.IsAdmin, UserRole.EnterpriseAdmin, UserRole.Developer];
-    if (!allowed.includes(user.role)) {
+    if (!hasAnyRole(user, allowed)) {
       throw new ForbiddenException('ヘルプへの参加・対応完了はディレクターまたは管理者のみ可能です');
     }
   };
@@ -93,6 +99,20 @@ export class CallingController {
     } catch (error) {
       throw new InternalServerErrorException('架電サマリーの取得に失敗しました');
     }
+  }
+
+  /** KPI/画面用: 結果フラグ集合と留守電+不通ルール閾値 */
+  @Get('result-rules')
+  getResultRules(): {
+    allResults: readonly string[];
+    exceptAbsent: readonly string[];
+    voicemailUnreachableAnsweredThreshold: number;
+  } {
+    return {
+      allResults: ALL_CALLING_RESULTS,
+      exceptAbsent: CALLING_RESULTS_EXCEPT_ABSENT,
+      voicemailUnreachableAnsweredThreshold: VOICEMAIL_UNREACHABLE_ANSWERED_THRESHOLD,
+    };
   }
 
   @Get('recall')
