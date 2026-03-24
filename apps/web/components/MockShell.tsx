@@ -128,7 +128,7 @@ export function MockShell({ children, leftPanelBelowNav, isFreeTier = true }: Mo
                 role="menuitem"
                 onClick={() => setProfilePopupOpen(false)}
               >
-                プロフィールページ
+                プロフィール設定
               </Link>
               <Link
                 href="/login"

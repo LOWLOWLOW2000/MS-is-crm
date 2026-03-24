@@ -1,7 +1,7 @@
  'use client'
 
 import Link from 'next/link'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { importCsvList } from '@/lib/calling-api'
 
@@ -17,8 +17,30 @@ const readTextFile = async (file: File): Promise<string> => {
 }
 
 export default function DirectorCallingListImportPage() {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const accessToken = session?.accessToken ?? ''
+
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7694/ingest/2c3781ca-fbdf-4289-a7bb-2c29cef5514a', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a931fb' },
+      body: JSON.stringify({
+        sessionId: 'a931fb',
+        location: 'import/page.tsx:useEffect',
+        message: 'import page client mounted',
+        data: {
+          hypothesisId: 'H6-RSC',
+          nextAuthStatus: status,
+          hasAccessToken: Boolean(accessToken),
+          accessTokenLength: accessToken?.length ?? 0,
+        },
+        timestamp: Date.now(),
+        runId: 'pre-fix',
+      }),
+    }).catch(() => {})
+    // #endregion
+  }, [accessToken, status])
 
   const fileRef = useRef<HTMLInputElement>(null)
   const [listName, setListName] = useState('')
@@ -54,6 +76,24 @@ export default function DirectorCallingListImportPage() {
     setMessage('')
     setResult(null)
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7694/ingest/2c3781ca-fbdf-4289-a7bb-2c29cef5514a', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a931fb' },
+        body: JSON.stringify({
+          sessionId: 'a931fb',
+          location: 'import/page.tsx:handleImport',
+          message: 'before importCsvList',
+          data: {
+            hypothesisId: 'H1',
+            tokenLength: accessToken?.length ?? 0,
+            csvCharLength: csvText.length,
+          },
+          timestamp: Date.now(),
+          runId: 'pre-fix',
+        }),
+      }).catch(() => {})
+      // #endregion
       const res = await importCsvList(accessToken, { csvText, name: listName.trim() || undefined })
       setResult(res as unknown as ImportResult)
       setMessage(`格納しました: ${res.importedCount}件（スキップ ${res.skippedCount}件）`)
@@ -79,7 +119,8 @@ export default function DirectorCallingListImportPage() {
     <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
       <h1 className="text-xl font-bold text-gray-900">架電リストCSV格納</h1>
       <p className="mt-2 text-sm text-gray-600">
-        CSV を取り込み、架電リストとして格納します（`/lists/import-csv`）。
+        CSV を取り込み、架電リストとして格納します（`/lists/import-csv`）。ディレクター・管理者ロールが必要です（is_member
+        のみのアカウントでは API が拒否します）。
       </p>
 
       {message && (

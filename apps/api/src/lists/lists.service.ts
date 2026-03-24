@@ -189,6 +189,7 @@ export class ListsService {
     companyName: string;
     phone: string;
     address: string;
+    legalEntityId: string | null;
     targetUrl: string;
     industryTag: string | null;
     assignedToUserId: string | null;
@@ -206,6 +207,7 @@ export class ListsService {
     companyName: row.companyName,
     phone: row.phone,
     address: row.address,
+    legalEntityId: row.legalEntityId,
     targetUrl: row.targetUrl,
     industryTag: row.industryTag,
     assignedToUserId: row.assignedToUserId,
@@ -452,6 +454,21 @@ export class ListsService {
       },
     });
     return this.toItem(updated);
+  };
+
+  getListItemById = async (user: JwtPayload, itemId: string): Promise<ListItem> => {
+    const item = await this.prisma.listItem.findFirst({
+      where: { id: itemId, tenantId: user.tenantId },
+    });
+    if (!item) {
+      throw new NotFoundException('対象の企業が見つかりません');
+    }
+
+    if (isRestrictedMember(user) && item.assignedToUserId !== user.sub) {
+      throw new ForbiddenException('割り当てられていない企業は参照できません');
+    }
+
+    return this.toItem(item);
   };
 
   getListKpiByAssignee = async (

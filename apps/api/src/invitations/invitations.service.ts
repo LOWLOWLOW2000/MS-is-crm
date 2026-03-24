@@ -161,6 +161,34 @@ export class InvitationsService {
     });
   };
 
+  /**
+   * 未使用招待のみ削除（使用済みは対象外）。トークンは以後無効。
+   */
+  revokeInvitations = async (
+    jwt: JwtPayload,
+    tenantId: string,
+    invitationIds: string[],
+  ): Promise<{ revoked: number }> => {
+    if (jwt.tenantId !== tenantId) {
+      throw new ForbiddenException('テナントが一致しません');
+    }
+    if (!hasRole(jwt, UR.EnterpriseAdmin)) {
+      throw new ForbiddenException('企業管理者のみ招待を取り消せます');
+    }
+    const unique = [...new Set(invitationIds)].filter((id) => id.length > 0);
+    if (unique.length === 0) {
+      throw new BadRequestException('取り消し対象のIDがありません');
+    }
+    const result = await this.prisma.tenantInvitation.deleteMany({
+      where: {
+        tenantId,
+        id: { in: unique },
+        consumedAt: null,
+      },
+    });
+    return { revoked: result.count };
+  };
+
   async validateToken(plainToken: string): Promise<{
     tenantId: string;
     tenantName: string;

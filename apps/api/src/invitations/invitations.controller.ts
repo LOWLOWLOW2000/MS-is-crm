@@ -3,6 +3,7 @@ import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
+import { RevokeInvitationsDto } from './dto/revoke-invitations.dto';
 import { InvitationsService } from './invitations.service';
 
 interface JwtRequest extends Request {
@@ -31,5 +32,15 @@ export class InvitationsController {
     @Body() dto: CreateInvitationDto,
   ): Promise<{ id: string; expiresAt: string }> {
     return this.invitationsService.createInvitation(req.user, tenantId, dto);
+  }
+
+  /** 企業管理者：未使用（有効・期限切れ問わず consumedAt なし）招待の取り消し */
+  @Post('invitations/revoke')
+  async revokeInvitations(
+    @Req() req: JwtRequest,
+    @Param('tenantId') tenantId: string,
+    @Body() dto: RevokeInvitationsDto,
+  ): Promise<{ revoked: number }> {
+    return this.invitationsService.revokeInvitations(req.user, tenantId, dto.invitationIds);
   }
 }

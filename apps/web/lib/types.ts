@@ -269,6 +269,8 @@ export interface ListItem {
   companyName: string;
   phone: string;
   address: string;
+  /** 企業（Legal Entity）ID。persona（担当者）を紐付ける */
+  legalEntityId?: string | null;
   targetUrl: string;
   industryTag: string | null;
   aiListTier?: string | null;

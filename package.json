@@ -2,11 +2,12 @@
   "name": "is-crm",
   "private": true,
   "scripts": {
+    "preflight": "bash scripts/check-ports.sh",
     "dev:api": "cd apps/api && npm run start:dev",
     "dev:web": "cd apps/web && npm run dev",
     "dev:web:clean": "cd apps/web && rm -rf .next && npm run dev",
     "mock": "serve docs/html-mock -l 5123",
-    "start:dev": "node -e \"require(require('path').join(process.env.npm_config_local_prefix||process.cwd(),'run-start-dev.js'))\"",
+    "start:dev": "npm run preflight && node -e \"require(require('path').join(process.env.npm_config_local_prefix||process.cwd(),'run-start-dev.js'))\"",
     "restart:dev": "bash scripts/restart-dev.sh",
     "db:push": "cd apps/api && npm run db:push",
     "db:migrate": "cd apps/api && npm run db:migrate",

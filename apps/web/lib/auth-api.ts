@@ -103,3 +103,28 @@ export const fetchTenantInvitations = async (
   }
   return res.json() as Promise<TenantInvitationRow[]>
 }
+
+/** 未使用招待の取り消し（使用済みはAPI側でスキップ） */
+export const revokeTenantInvitations = async (
+  accessToken: string,
+  tenantId: string,
+  invitationIds: string[],
+): Promise<{ revoked: number }> => {
+  const res = await fetch(
+    `${apiBaseUrl}/tenants/${encodeURIComponent(tenantId)}/invitations/revoke`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ invitationIds }),
+      cache: 'no-store',
+    },
+  )
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err || '招待の取り消しに失敗しました')
+  }
+  return res.json() as Promise<{ revoked: number }>
+}

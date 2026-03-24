@@ -4,6 +4,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpException,
   InternalServerErrorException,
   NotFoundException,
   Param,
@@ -93,10 +94,23 @@ export class ListsController {
       });
       return result;
     } catch (error) {
-      if (error instanceof ForbiddenException) {
+      if (error instanceof HttpException) {
         throw error;
       }
+      console.error('[lists.importCsv]', error);
       throw new InternalServerErrorException('CSVインポートに失敗しました');
+    }
+  }
+
+  @Get('items/:itemId')
+  async getListItemById(@Req() req: JwtRequest, @Param('itemId') itemId: string): Promise<ListItem> {
+    try {
+      return await this.listsService.getListItemById(req.user, itemId);
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error
+      }
+      throw new InternalServerErrorException('リスト明細の取得に失敗しました')
     }
   }
 

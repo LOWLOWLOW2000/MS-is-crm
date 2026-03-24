@@ -33,6 +33,22 @@ const createAuthHeaders = (accessToken: string): HeadersInit => {
   };
 };
 
+/** Nest の { message: string | string[] } を人が読める1行にする */
+const readApiErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+  try {
+    const data = (await response.json()) as { message?: string | string[] }
+    if (Array.isArray(data.message)) {
+      return data.message.join(' ')
+    }
+    if (typeof data.message === 'string' && data.message.trim()) {
+      return data.message
+    }
+  } catch {
+    // body が JSON でない場合はフォールバック
+  }
+  return fallback
+}
+
 export const getApiBaseUrl = (): string => {
   return apiBaseUrl;
 };
@@ -265,8 +281,35 @@ export const importCsvList = async (
     cache: 'no-store',
   });
 
+  // #region agent log
+  fetch('http://127.0.0.1:7694/ingest/2c3781ca-fbdf-4289-a7bb-2c29cef5514a', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a931fb' },
+    body: JSON.stringify({
+      sessionId: 'a931fb',
+      location: 'calling-api.ts:importCsvList',
+      message: 'import-csv response',
+      data: {
+        hypothesisId: 'H1-H4',
+        apiBaseHost: (() => {
+          try {
+            return new URL(apiBaseUrl).host
+          } catch {
+            return 'invalid-url'
+          }
+        })(),
+        tokenLength: accessToken?.length ?? 0,
+        status: response.status,
+        ok: response.ok,
+      },
+      timestamp: Date.now(),
+      runId: 'pre-fix',
+    }),
+  }).catch(() => {})
+  // #endregion
+
   if (!response.ok) {
-    throw new Error('CSVインポートに失敗しました');
+    throw new Error(await readApiErrorMessage(response, 'CSVインポートに失敗しました'))
   }
 
   return (await response.json()) as ImportListResult;
@@ -359,7 +402,7 @@ export const assignUserTierBox = async (
   return (await response.json()) as UserListItem;
 };
 
-/** 既定PJから除名（director / is_member を外し project_memberships を削除） */
+/** 既定PJから除名（project_memberships のみ削除） */
 export const removeUserFromPj = async (
   accessToken: string,
   userId: string,
@@ -402,6 +445,20 @@ export const fetchListItems = async (accessToken: string, listId: string): Promi
   }
 
   return (await response.json()) as ListItem[];
+};
+
+export const fetchListItemById = async (accessToken: string, itemId: string): Promise<ListItem> => {
+  const response = await fetch(`${apiBaseUrl}/lists/items/${itemId}`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('リスト明細の取得に失敗しました')
+  }
+
+  return (await response.json()) as ListItem
 };
 
 export type DistributeListFilters = {

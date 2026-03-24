@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import {
   createTenantInvitation,
   fetchTenantInvitations,
+  revokeTenantInvitations,
   type TenantInvitationRow,
 } from '@/lib/auth-api'
 import {
@@ -23,6 +24,9 @@ const TIER_ORDER_STORAGE_KEY = 'is-crm-admin-tier-order'
 
 type TierKey = 'director' | 'is'
 
+/** 一括「付与区分」: ディレクター / IS / PJ除名（メンバーシップ削除のみ） */
+type BulkPjChoice = 'director' | 'is' | 'remove'
+
 /** 横並び時の既定: 左 ディレクター → 右 ISメンバー（つまみで入れ替え可） */
 const DEFAULT_TIER_ORDER: TierKey[] = ['director', 'is']
 
@@ -33,13 +37,13 @@ const TIER_META: Record<
   director: {
     title: 'ディレクター',
     badge: 'Tier 1',
-    body: 'プロジェクト配下の指示・リスト配布・ISサポートなど現場管理です。',
+    body: '',
     ringClass: 'ring-amber-400/80',
   },
   is: {
     title: 'ISメンバー',
     badge: 'Tier 2',
-    body: '架電ルーム・リスト実行・日報などオペレーション中心です。',
+    body: '',
     ringClass: 'ring-sky-400/80',
   },
 }
@@ -49,6 +53,9 @@ const INVITE_STATUS_LABEL: Record<TenantInvitationRow['status'], string> = {
   expired: '期限切れ',
   used: '利用済み',
 }
+
+/** 使用済み以外は未消費のため取り消しAPIの対象になり得る */
+const canRevokeInvitationRow = (row: TenantInvitationRow): boolean => row.status !== 'used'
 
 const loadTierOrder = (): TierKey[] => {
   if (typeof window === 'undefined') return DEFAULT_TIER_ORDER
@@ -100,11 +107,30 @@ const inferPjTierForBulkRow = (m: UserListItem): TierKey => {
   return 'director'
 }
 
-/** PJ除名後にシステムロールが残らない場合は API と同様に不可 */
-const wouldBecomeRolelessAfterPjRemove = (m: UserListItem): boolean => {
-  const eff = effectiveRolesFromListItem(m)
-  const next = eff.filter((r) => r !== 'director' && r !== 'is_member')
-  return next.length === 0
+const isEnterpriseAdminMember = (m: UserListItem): boolean =>
+  effectiveRolesFromListItem(m).includes('enterprise_admin')
+
+const isPjRemovalProtectedMember = (m: UserListItem): boolean =>
+  effectiveRolesFromListItem(m).includes('enterprise_admin')
+
+/** PJ未アサインなら除名、それ以外は membership の pjRole を優先 */
+const inferBulkPjChoice = (m: UserListItem): BulkPjChoice => {
+  if (isEnterpriseAdminMember(m)) {
+    return inferPjTierForBulkRow(m)
+  }
+  if (m.projectAssignment == null) {
+    return 'remove'
+  }
+  return m.projectAssignment.pjRole === 'is_member' ? 'is' : 'director'
+}
+
+const compareMemberOrder = (a: UserListItem, b: UserListItem): number => {
+  const pa = isEnterpriseAdminMember(a) ? 0 : 1
+  const pb = isEnterpriseAdminMember(b) ? 0 : 1
+  if (pa !== pb) return pa - pb
+  const an = (a.name ?? '').trim().toLowerCase()
+  const bn = (b.name ?? '').trim().toLowerCase()
+  return an.localeCompare(bn, 'ja')
 }
 
 /**
@@ -135,15 +161,18 @@ export const AdminWorkspace = () => {
 
   /** 企業管理者: 所属メンバー一括で director / is_member 相当を PATCH */
   const [bulkJoinSelected, setBulkJoinSelected] = useState<Record<string, boolean>>({})
-  const [bulkJoinTier, setBulkJoinTier] = useState<Record<string, TierKey>>({})
+  const [bulkJoinChoice, setBulkJoinChoice] = useState<Record<string, BulkPjChoice>>({})
   const [bulkJoinLoading, setBulkJoinLoading] = useState(false)
   const [bulkJoinMessage, setBulkJoinMessage] = useState('')
   const [bulkJoinError, setBulkJoinError] = useState('')
-  const [removingPjUserId, setRemovingPjUserId] = useState<string | null>(null)
 
   const [invitations, setInvitations] = useState<TenantInvitationRow[]>([])
   const [invListLoading, setInvListLoading] = useState(false)
   const [invListError, setInvListError] = useState('')
+  const [inviteRevokeSelected, setInviteRevokeSelected] = useState<Record<string, boolean>>({})
+  const [inviteRevokeLoading, setInviteRevokeLoading] = useState(false)
+  const [inviteRevokeMessage, setInviteRevokeMessage] = useState('')
+  const [inviteRevokeError, setInviteRevokeError] = useState('')
 
   const [members, setMembers] = useState<UserListItem[]>([])
   const [membersLoading, setMembersLoading] = useState(false)
@@ -217,13 +246,24 @@ export const AdminWorkspace = () => {
     void refreshInvitations()
   }, [refreshInvitations])
 
+  useEffect(() => {
+    setInviteRevokeSelected((prev) => {
+      const ids = new Set(invitations.map((r) => r.id))
+      const next = { ...prev }
+      for (const k of Object.keys(next)) {
+        if (!ids.has(k)) delete next[k]
+      }
+      return next
+    })
+  }, [invitations])
+
   const refreshMembers = useCallback(async () => {
     if (!accessToken) return
     setMembersLoading(true)
     setMembersError('')
     try {
       const rows = await fetchUsers(accessToken)
-      setMembers(rows)
+      setMembers([...rows].sort(compareMemberOrder))
     } catch (e) {
       setMembersError((e as Error).message)
       setMembers([])
@@ -237,13 +277,13 @@ export const AdminWorkspace = () => {
   }, [refreshMembers])
 
   useEffect(() => {
-    setBulkJoinTier((prev) => {
+    setBulkJoinChoice((prev) => {
       const next = { ...prev }
       const seen = new Set<string>()
       for (const m of members) {
         seen.add(m.id)
         if (next[m.id] === undefined) {
-          next[m.id] = inferPjTierForBulkRow(m)
+          next[m.id] = inferBulkPjChoice(m)
         }
       }
       for (const id of Object.keys(next)) {
@@ -394,6 +434,33 @@ export const AdminWorkspace = () => {
     }
   }
 
+  const handleInviteRevokeExecute = async () => {
+    setInviteRevokeError('')
+    setInviteRevokeMessage('')
+    if (!accessToken || !tenantId) {
+      setInviteRevokeError('ログイン情報が不足しています')
+      return
+    }
+    const ids = invitations
+      .filter((r) => inviteRevokeSelected[r.id] && canRevokeInvitationRow(r))
+      .map((r) => r.id)
+    if (ids.length === 0) {
+      setInviteRevokeError('取り消し対象にチェックを入れてください')
+      return
+    }
+    setInviteRevokeLoading(true)
+    try {
+      const { revoked } = await revokeTenantInvitations(accessToken, tenantId, ids)
+      setInviteRevokeMessage(`${revoked}件の招待を取り消しました`)
+      setInviteRevokeSelected({})
+      await refreshInvitations()
+    } catch (e) {
+      setInviteRevokeError((e as Error).message)
+    } finally {
+      setInviteRevokeLoading(false)
+    }
+  }
+
   const handleBulkJoinApply = async () => {
     setBulkJoinMessage('')
     setBulkJoinError('')
@@ -409,16 +476,39 @@ export const AdminWorkspace = () => {
     setBulkJoinLoading(true)
     let touchedSelf = false
     try {
+      let assignCount = 0
+      let removeCount = 0
       for (const m of targets) {
-        const box = bulkJoinTier[m.id] ?? inferPjTierForBulkRow(m)
-        await assignUserTierBox(accessToken, m.id, box)
+        if (!canDragMemberForTierChange(m)) {
+          throw new Error(
+            `${m.name?.trim() || m.email}: このメンバーの配役は変更できません`,
+          )
+        }
+        const choice = bulkJoinChoice[m.id] ?? inferBulkPjChoice(m)
+        if (choice === 'remove') {
+          if (isPjRemovalProtectedMember(m)) {
+            throw new Error('企業管理者はPJから除名できません')
+          }
+          await removeUserFromPj(accessToken, m.id)
+          removeCount += 1
+        } else {
+          await assignUserTierBox(accessToken, m.id, choice)
+          assignCount += 1
+        }
         if (m.id === session?.user?.id) {
           touchedSelf = true
         }
       }
       await refreshMembers()
+      const parts: string[] = []
+      if (assignCount > 0) {
+        parts.push(`アサイン ${assignCount}名`)
+      }
+      if (removeCount > 0) {
+        parts.push(`PJ除名 ${removeCount}名`)
+      }
       setBulkJoinMessage(
-        `${targets.length}名のPJロール（ディレクター / ISメンバー）を反映しました`,
+        parts.length > 0 ? `${parts.join('、')}を反映しました` : '反映しました',
       )
       setBulkJoinSelected({})
       if (touchedSelf) {
@@ -430,33 +520,6 @@ export const AdminWorkspace = () => {
       setBulkJoinError((e as Error).message)
     } finally {
       setBulkJoinLoading(false)
-    }
-  }
-
-  const handleRemoveFromPj = async (m: UserListItem) => {
-    if (!accessToken || !canDragMemberForTierChange(m)) return
-    if (wouldBecomeRolelessAfterPjRemove(m)) return
-    setBulkJoinError('')
-    setBulkJoinMessage('')
-    setTierAssignError('')
-    setRemovingPjUserId(m.id)
-    let touchedSelf = false
-    try {
-      await removeUserFromPj(accessToken, m.id)
-      if (m.id === session?.user?.id) {
-        touchedSelf = true
-      }
-      await refreshMembers()
-      setBulkJoinMessage(`${m.name?.trim() || m.email} をPJから除名しました`)
-      if (touchedSelf) {
-        setSelfTierChangeHint(
-          '自分のPJ配役を外しました。トークン反映のため再ログインしてください。',
-        )
-      }
-    } catch (e) {
-      setBulkJoinError((e as Error).message)
-    } finally {
-      setRemovingPjUserId(null)
     }
   }
 
@@ -482,13 +545,6 @@ export const AdminWorkspace = () => {
 
       <div className="mt-6 space-y-6">
         <section aria-label="権限変更">
-          <h2 className="text-sm font-semibold text-gray-900">権限変更</h2>
-          <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-gray-600">
-            <li>ドラッグ＆ドロップで役職変更できます。</li>
-            <li>
-              企業アカウント管理者は Master 権限を持っているので、役職は自由です。
-            </li>
-          </ul>
           {selfTierChangeHint ? (
             <p className="mt-2 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900" role="status">
               {selfTierChangeHint}
@@ -528,7 +584,9 @@ export const AdminWorkspace = () => {
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <h3 className="text-base font-bold text-gray-900">{meta.title}</h3>
-                        <p className="mt-1 text-xs text-gray-600">{meta.body}</p>
+                        {meta.body ? (
+                          <p className="mt-1 text-xs text-gray-600">{meta.body}</p>
+                        ) : null}
                       </div>
                       <span className="shrink-0 rounded-full bg-gray-900 px-2.5 py-0.5 text-xs font-semibold text-white">
                         {meta.badge}
@@ -543,7 +601,11 @@ export const AdminWorkspace = () => {
                       ) : tierList.length === 0 ? (
                         <p className="text-xs text-gray-500">該当のメンバーはいません</p>
                       ) : (
-                        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                        <ul
+                          className={`min-h-0 space-y-2 pr-1 ${
+                            tierList.length > 5 ? 'max-h-[23rem] overflow-y-auto' : ''
+                          }`}
+                        >
                           {tierList.map((m) => {
                             const rowDraggable = canDragMemberForTierChange(m)
                             return (
@@ -560,7 +622,10 @@ export const AdminWorkspace = () => {
                                 }
                                 className={`rounded-lg ${rowDraggable ? 'cursor-grab active:cursor-grabbing' : ''} ${assigningUserId === m.id ? 'opacity-50' : ''}`}
                               >
-                                <MemberProfileRow member={m} />
+                                <MemberProfileRow
+                                  member={m}
+                                  emphasized={isEnterpriseAdminMember(m)}
+                                />
                               </li>
                             )
                           })}
@@ -657,26 +722,19 @@ export const AdminWorkspace = () => {
                 ※強制アサイン — 本人の許可なくアサインします。
               </p>
               <p className="mt-2 text-xs text-gray-500">
-                「対象に含める」で選び、ディレクター／ISはどちらか一方のみ。API はドラッグ移動と同じ{' '}
+                「対象に含める」で選び、付与区分は <strong className="font-medium text-gray-800">ディレクター</strong> /{' '}
+                <strong className="font-medium text-gray-800">IS</strong> /{' '}
+                <strong className="font-medium text-gray-800">PJから除名</strong> のいずれか1つだけ。
+                PJアサインはドラッグ移動と同じ{' '}
                 <code className="rounded bg-gray-100 px-0.5">PATCH /users/:id/tier</code>
-                。上位数ロールは維持したまま <code className="rounded bg-gray-100 px-0.5">director</code> /{' '}
-                <code className="rounded bg-gray-100 px-0.5">is_member</code> を切り替えます。
+                、除名は <code className="rounded bg-gray-100 px-0.5">DELETE /users/:id/pj-membership</code>{' '}
+                （メンバーシップのみ削除・ロールは維持）。企業管理者行に「PJから除名」はありません。
               </p>
-              <div
-                className="my-4 border-t border-dashed border-gray-200 pt-3"
-                role="separator"
-                aria-label="区切り"
-              >
-                <p className="text-xs font-semibold text-gray-900">追加機能</p>
-                <p className="mt-1 text-xs text-gray-600">
-                  メンバーをPJから除名（ディレクター以上が実行可能）。<code className="rounded bg-gray-100 px-0.5">DELETE /users/:id/pj-membership</code>
-                </p>
-              </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
                   disabled={
-                    membersLoading || members.length === 0 || bulkJoinLoading || removingPjUserId !== null
+                    membersLoading || members.length === 0 || bulkJoinLoading
                   }
                   onClick={() => {
                     const all: Record<string, boolean> = {}
@@ -691,7 +749,7 @@ export const AdminWorkspace = () => {
                 </button>
                 <button
                   type="button"
-                  disabled={bulkJoinLoading || removingPjUserId !== null}
+                  disabled={bulkJoinLoading}
                   onClick={() => setBulkJoinSelected({})}
                   className="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
                 >
@@ -726,24 +784,23 @@ export const AdminWorkspace = () => {
                         <th className="min-w-[8rem] px-3 py-2 font-semibold" scope="col">
                           現在のロール
                         </th>
-                        <th className="min-w-[12rem] px-3 py-2 font-semibold" scope="col">
-                          付与区分（チェックは一方のみ）
-                        </th>
-                        <th className="min-w-[7rem] px-3 py-2 font-semibold" scope="col">
-                          PJから除名
+                        <th className="min-w-[14rem] px-3 py-2 font-semibold" scope="col">
+                          付与区分（いずれか1つのみ）
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
                       {members.map((m) => {
-                        const tier = bulkJoinTier[m.id] ?? inferPjTierForBulkRow(m)
+                        const choice = bulkJoinChoice[m.id] ?? inferBulkPjChoice(m)
                         const rolesJa = formatRolesJa(
                           effectiveRolesFromListItem(m) as UserRole[],
                         )
-                        const canPjRemove =
-                          canDragMemberForTierChange(m) && !wouldBecomeRolelessAfterPjRemove(m)
+                        const rowEditable = canDragMemberForTierChange(m)
                         return (
-                          <tr key={m.id}>
+                          <tr
+                            key={m.id}
+                            className={isEnterpriseAdminMember(m) ? 'bg-sky-50/70' : undefined}
+                          >
                             <td className="px-2 py-2 align-top">
                               <input
                                 type="checkbox"
@@ -754,7 +811,7 @@ export const AdminWorkspace = () => {
                                     [m.id]: e.target.checked,
                                   }))
                                 }
-                                disabled={bulkJoinLoading || removingPjUserId !== null}
+                                disabled={bulkJoinLoading}
                                 className="rounded border-gray-300"
                                 aria-label={`${m.name || m.email}を一括反映の対象に含める`}
                               />
@@ -768,58 +825,66 @@ export const AdminWorkspace = () => {
                             <td className="px-3 py-2 align-top text-gray-700">{rolesJa}</td>
                             <td className="px-3 py-2 align-top">
                               <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:gap-3">
-                                <label className="flex cursor-pointer items-center gap-1.5 font-normal">
+                                <label
+                                  className={`flex items-center gap-1.5 font-normal ${
+                                    rowEditable ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                                  }`}
+                                >
                                   <input
                                     type="checkbox"
-                                    checked={tier === 'director'}
-                                    onChange={(e) =>
-                                      setBulkJoinTier((p) => ({
+                                    checked={choice === 'director'}
+                                    onChange={() =>
+                                      setBulkJoinChoice((p) => ({
                                         ...p,
-                                        [m.id]: e.target.checked ? 'director' : 'is',
+                                        [m.id]: 'director',
                                       }))
                                     }
-                                    disabled={bulkJoinLoading || removingPjUserId !== null}
+                                    disabled={!rowEditable || bulkJoinLoading}
                                     className="rounded border-gray-300"
                                   />
                                   ディレクター
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1.5 font-normal">
+                                <label
+                                  className={`flex items-center gap-1.5 font-normal ${
+                                    rowEditable ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                                  }`}
+                                >
                                   <input
                                     type="checkbox"
-                                    checked={tier === 'is'}
-                                    onChange={(e) =>
-                                      setBulkJoinTier((p) => ({
+                                    checked={choice === 'is'}
+                                    onChange={() =>
+                                      setBulkJoinChoice((p) => ({
                                         ...p,
-                                        [m.id]: e.target.checked ? 'is' : 'director',
+                                        [m.id]: 'is',
                                       }))
                                     }
-                                    disabled={bulkJoinLoading || removingPjUserId !== null}
+                                    disabled={!rowEditable || bulkJoinLoading}
                                     className="rounded border-gray-300"
                                   />
                                   IS
                                 </label>
+                                {isPjRemovalProtectedMember(m) ? null : (
+                                  <label
+                                    className={`flex items-center gap-1.5 font-normal ${
+                                      rowEditable ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={choice === 'remove'}
+                                      onChange={() =>
+                                        setBulkJoinChoice((p) => ({
+                                          ...p,
+                                          [m.id]: 'remove',
+                                        }))
+                                      }
+                                      disabled={!rowEditable || bulkJoinLoading}
+                                      className="rounded border-gray-300"
+                                    />
+                                    <span className="text-red-800">PJから除名</span>
+                                  </label>
+                                )}
                               </div>
-                            </td>
-                            <td className="px-3 py-2 align-top">
-                              <button
-                                type="button"
-                                disabled={
-                                  !canPjRemove ||
-                                  bulkJoinLoading ||
-                                  removingPjUserId !== null
-                                }
-                                onClick={() => void handleRemoveFromPj(m)}
-                                title={
-                                  !canDragMemberForTierChange(m)
-                                    ? 'このメンバーの配役は変更できません'
-                                    : wouldBecomeRolelessAfterPjRemove(m)
-                                      ? 'ディレクター/IS以外のロールがないため除名できません'
-                                      : '既定PJのメンバーシップを削除し、director / is_member を外します'
-                                }
-                                className="rounded border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
-                              >
-                                {removingPjUserId === m.id ? '処理中…' : '除名'}
-                              </button>
                             </td>
                           </tr>
                         )
@@ -833,7 +898,6 @@ export const AdminWorkspace = () => {
                 disabled={
                   bulkJoinLoading ||
                   membersLoading ||
-                  removingPjUserId !== null ||
                   !members.some((m) => bulkJoinSelected[m.id])
                 }
                 onClick={() => void handleBulkJoinApply()}
@@ -861,46 +925,125 @@ export const AdminWorkspace = () => {
             ) : invitations.length === 0 ? (
               <p className="mt-2 text-sm text-gray-500">まだ招待履歴がありません</p>
             ) : (
-              <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
-                <table className="min-w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-gray-700">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">メール</th>
-                      <th className="px-3 py-2 font-semibold">付与ロール</th>
-                      <th className="px-3 py-2 font-semibold">ステータス</th>
-                      <th className="px-3 py-2 font-semibold">期限</th>
-                      <th className="px-3 py-2 font-semibold">送信日時</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 bg-white">
-                    {invitations.map((row) => (
-                      <tr key={row.id}>
-                        <td className="px-3 py-2 font-medium text-gray-900">{row.email}</td>
-                        <td className="px-3 py-2 text-gray-700">{formatRolesJa(row.roles)}</td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={
-                              row.status === 'pending'
-                                ? 'text-emerald-700'
-                                : row.status === 'used'
-                                  ? 'text-gray-600'
-                                  : 'text-amber-800'
-                            }
-                          >
-                            {INVITE_STATUS_LABEL[row.status]}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-600">
-                          {new Date(row.expiresAt).toLocaleString('ja-JP')}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-600">
-                          {new Date(row.createdAt).toLocaleString('ja-JP')}
-                        </td>
+              <>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={
+                      inviteRevokeLoading ||
+                      invListLoading ||
+                      !invitations.some(
+                        (r) => inviteRevokeSelected[r.id] && canRevokeInvitationRow(r),
+                      )
+                    }
+                    onClick={() => void handleInviteRevokeExecute()}
+                    className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {inviteRevokeLoading ? '取り消し中…' : '取り消し実行'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={inviteRevokeLoading}
+                    onClick={() => {
+                      const next: Record<string, boolean> = {}
+                      for (const r of invitations) {
+                        if (canRevokeInvitationRow(r)) {
+                          next[r.id] = true
+                        }
+                      }
+                      setInviteRevokeSelected(next)
+                    }}
+                    className="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    全選択
+                  </button>
+                  <button
+                    type="button"
+                    disabled={inviteRevokeLoading}
+                    onClick={() => setInviteRevokeSelected({})}
+                    className="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    選択解除
+                  </button>
+                </div>
+                {inviteRevokeError ? (
+                  <p className="mt-2 text-sm text-red-600" role="alert">
+                    {inviteRevokeError}
+                  </p>
+                ) : null}
+                {inviteRevokeMessage ? (
+                  <p className="mt-2 text-sm text-emerald-800" role="status">
+                    {inviteRevokeMessage}
+                  </p>
+                ) : null}
+                <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="min-w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-gray-700">
+                      <tr>
+                        <th className="w-10 px-2 py-2 font-semibold" scope="col">
+                          取り消し
+                        </th>
+                        <th className="px-3 py-2 font-semibold">メール</th>
+                        <th className="px-3 py-2 font-semibold">付与ロール</th>
+                        <th className="px-3 py-2 font-semibold">ステータス</th>
+                        <th className="px-3 py-2 font-semibold">期限</th>
+                        <th className="px-3 py-2 font-semibold">送信日時</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {invitations.map((row) => {
+                        const revokable = canRevokeInvitationRow(row)
+                        return (
+                          <tr key={row.id}>
+                            <td className="px-2 py-2 align-top">
+                              {revokable ? (
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(inviteRevokeSelected[row.id])}
+                                  onChange={(e) =>
+                                    setInviteRevokeSelected((p) => ({
+                                      ...p,
+                                      [row.id]: e.target.checked,
+                                    }))
+                                  }
+                                  disabled={inviteRevokeLoading}
+                                  className="rounded border-gray-300"
+                                  aria-label={`${row.email}の招待を取り消す対象に含める`}
+                                />
+                              ) : (
+                                <span className="text-gray-400" title="利用済みのため取り消し不可">
+                                  —
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 font-medium text-gray-900">{row.email}</td>
+                            <td className="px-3 py-2 text-gray-700">{formatRolesJa(row.roles)}</td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={
+                                  row.status === 'pending'
+                                    ? 'text-emerald-700'
+                                    : row.status === 'used'
+                                      ? 'text-gray-600'
+                                      : 'text-amber-800'
+                                }
+                              >
+                                {INVITE_STATUS_LABEL[row.status]}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-600">
+                              {new Date(row.expiresAt).toLocaleString('ja-JP')}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-600">
+                              {new Date(row.createdAt).toLocaleString('ja-JP')}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </section>

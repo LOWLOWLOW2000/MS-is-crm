@@ -14,6 +14,7 @@ export type MockNavItem = {
 
 /** App Router の実パス（(dashboard) は URL に含まれない。/dashboard はトップのみ） */
 export const MOCK_NAV_ITEMS: MockNavItem[] = [
+  { label: 'プロフィール設定', href: '/profile', layer: 'common' },
   { label: 'KPIページ（AI診断）', href: '/kpi', layer: 'common' },
   { label: 'AI日報', href: '/ai-daily', layer: 'common' },
   { label: '架電ルーム', href: '/sales-room', layer: 'is' },

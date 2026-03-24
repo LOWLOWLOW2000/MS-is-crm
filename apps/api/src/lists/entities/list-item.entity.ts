@@ -5,6 +5,8 @@ export interface ListItem {
   companyName: string;
   phone: string;
   address: string;
+  /** 企業（Legal Entity）ID。persona（担当者）の紐付けに利用 */
+  legalEntityId: string | null;
   targetUrl: string;
   industryTag: string | null;
   assignedToUserId: string | null;

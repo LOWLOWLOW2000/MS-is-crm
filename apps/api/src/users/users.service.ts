@@ -132,10 +132,7 @@ export class UsersService {
     return toUserListApiRow(row);
   };
 
-  /**
-   * 既定PJから外す: director / is_member を外し project_memberships を削除。
-   * 上位数ロールのみ残る場合は維持。PJ枠だけのユーザーは不可（BadRequest）。
-   */
+  /** 既定PJから外す: project_memberships のみ削除（ロールは維持） */
   removeUserFromProject = async (
     jwt: JwtPayload,
     targetUserId: string,
@@ -155,10 +152,10 @@ export class UsersService {
     }
 
     const targetRoles = effectiveRolesFromUserRow(target);
+    if (targetRoles.includes(UR.EnterpriseAdmin)) {
+      throw new ForbiddenException('企業管理者はPJから除名できません');
+    }
     if (!callerEa) {
-      if (targetRoles.includes(UR.EnterpriseAdmin)) {
-        throw new ForbiddenException('企業管理者の配役は企業管理者のみ変更できます');
-      }
       if (targetRoles.includes(UR.IsAdmin)) {
         throw new ForbiddenException('IS管理者の配役は企業管理者のみ変更できます');
       }
@@ -167,27 +164,7 @@ export class UsersService {
       }
     }
 
-    const nextRoles = targetRoles.filter(
-      (r) => r !== UR.Director && r !== UR.IsMember,
-    );
-    if (nextRoles.length === 0) {
-      throw new BadRequestException(
-        'PJから外すとロールがなくなります。先に企業管理者・IS管理者・開発者のいずれかを付与してください',
-      );
-    }
-
-    const pr = primaryRole(nextRoles);
-    const now = new Date().toISOString();
-
     await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: targetUserId },
-        data: {
-          roles: nextRoles as unknown as string[],
-          role: pr,
-          updatedAt: now,
-        },
-      });
       await tx.projectMembership.deleteMany({
         where: { tenantId: jwt.tenantId, userId: targetUserId },
       });

@@ -1,8 +1,16 @@
+import path from 'path'
+import { config } from 'dotenv'
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 import { UserRole as UR } from '../src/common/enums/user-role.enum';
 import { upsertProjectMembershipInTx } from '../src/users/project-membership.helper';
 import * as bcrypt from 'bcrypt';
+
+/** ts-node 実行時も cwd に依存せず apps/api/.env */
+config({
+  path: path.resolve(__dirname, '..', '.env'),
+  override: process.env.NODE_ENV === 'production' ? false : true,
+})
 
 const connectionString = process.env.DATABASE_URL
 if (!connectionString) {

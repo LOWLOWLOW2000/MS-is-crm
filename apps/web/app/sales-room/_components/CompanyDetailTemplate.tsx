@@ -1,11 +1,18 @@
 'use client'
 
 import type React from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { SalesRoomActionResultPanel } from './SalesRoomActionResultPanel'
-import { fetchCompany, restoreLatestCompanySnapshot, updateCompany, updateListItemStatus } from '@/lib/calling-api'
+import {
+  fetchCompany,
+  fetchListItemById,
+  restoreLatestCompanySnapshot,
+  updateCompany,
+  updateListItemStatus,
+} from '@/lib/calling-api'
+import type { CompanyDetailResponse, ListItem } from '@/lib/types'
 
 const SAMPLE_PHONE_LIST = [
   { label: 'ブランチ丸の内', phone: '03-1234-5001' },
@@ -47,21 +54,93 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
   const legalEntityId = legalEntityIdProp
   const listItemId = listItemIdProp
 
+  type DisplayPersona = CompanyDetailResponse['personas'][number]
+  type CurrentTarget =
+    | {
+        kind: 'persona'
+        targetId: string
+        label: string
+        phone: string
+        email: string | null
+      }
+    | {
+        kind: 'phone'
+        label: string
+        phone: string
+      }
+    | null
+
   /** 架電状態 */
   const [isCallActive, setIsCallActive] = useState(false)
   const [isOnHold, setIsOnHold] = useState(false)
   const [isDialPadOpen, setIsDialPadOpen] = useState(false)
   const [dialNumber, setDialNumber] = useState('')
-  const [currentTarget, setCurrentTarget] = useState<{
-    label: string
-    phone: string
-  } | null>(null)
+  const [currentTarget, setCurrentTarget] = useState<CurrentTarget>(null)
+
+  const [displayPersonas, setDisplayPersonas] = useState<DisplayPersona[]>([])
+  const [personasLoading, setPersonasLoading] = useState(false)
+
+  const [listItem, setListItem] = useState<ListItem | null>(null)
+  const [listItemLoading, setListItemLoading] = useState(false)
 
   const statusLabel = isCallActive ? (isOnHold ? '保留中' : '架電中') : '待機中'
   const targetText =
     currentTarget != null
-      ? `${currentTarget.label} / ${currentTarget.phone}`
+      ? currentTarget.phone
+        ? `${currentTarget.label} / ${currentTarget.phone}`
+        : currentTarget.kind === 'persona' && currentTarget.email
+          ? `${currentTarget.label} / ${currentTarget.email}`
+          : `${currentTarget.label} / —`
       : '（発信先未選択）'
+
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (!session?.accessToken || !legalEntityId) return
+      setPersonasLoading(true)
+      try {
+        const company = await fetchCompany(session.accessToken, legalEntityId)
+        if (cancelled) return
+        setDisplayPersonas(company.personas)
+      } catch {
+        if (!cancelled) setDisplayPersonas([])
+      } finally {
+        if (!cancelled) setPersonasLoading(false)
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [session?.accessToken, legalEntityId])
+
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (!session?.accessToken || !listItemId) return
+      setListItemLoading(true)
+      try {
+        const item = await fetchListItemById(session.accessToken, listItemId)
+        if (cancelled) return
+        setListItem(item)
+      } catch {
+        if (!cancelled) setListItem(null)
+      } finally {
+        if (!cancelled) setListItemLoading(false)
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [session?.accessToken, listItemId])
+
+  const displayCallingId = listItem?.id ?? 'crec_001'
+  const displayCompanyName = listItem?.companyName ?? '株式会社サンプル企業「本社」'
+  const displayAddress = listItem?.address ?? '東京都千代田区丸の内1-1-1'
+  const displayHpPart = listItem?.targetUrl
+    ? `”HP：${listItem.targetUrl}”`
+    : null
 
   const handleDialPadDigit = (digit: string) => {
     setDialNumber((prev) => (prev + digit).slice(0, 16))
@@ -562,15 +641,24 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
             <div className="flex flex-col gap-1.5 text-xs">
               <div>
                 <span className="font-medium text-gray-500">架電ID</span>
-                <span className="ml-1.5 font-mono font-medium text-gray-900">crec_001</span>
+                <span className="ml-1.5 font-mono font-medium text-gray-900">
+                  {listItemLoading ? '—' : displayCallingId}
+                </span>
               </div>
               <div className="text-sm font-semibold text-gray-900">
                 商号（支店など）
-                <span className="ml-1">株式会社サンプル企業「本社」</span>
+                <span className="ml-1">
+                  {displayCompanyName}
+                  {displayHpPart ? (
+                    <span className="ml-2 text-xs font-semibold text-gray-700">
+                      {displayHpPart}
+                    </span>
+                  ) : null}
+                </span>
               </div>
               <div className="text-xs">
                 <span className="font-medium text-gray-500">支店・施設 所在地</span>
-                <span className="ml-1 text-gray-900">東京都千代田区丸の内1-1-1</span>
+                <span className="ml-1 text-gray-900">{listItemLoading ? '—' : displayAddress}</span>
               </div>
             </div>
           </section>
@@ -590,6 +678,7 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
                   aria-label={`${item.label}に発信`}
                   onClick={() =>
                     setCurrentTarget({
+                      kind: 'phone',
                       label: item.label,
                       phone: item.phone,
                     })
@@ -613,46 +702,143 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
               <span className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-800">
                 担当者（TEL / MAIL）
               </span>
-              {SAMPLE_PERSONAS.map((p) => (
-                <div
-                  key={p.id}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-900"
-                >
-                  <span className="text-emerald-700">{p.department}</span>
-                  <span className="font-semibold text-emerald-950">{p.name}</span>
-                  <a
-                    href={`tel:${p.phone.replace(/-/g, '')}`}
-                    className="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-emerald-700"
-                    title={`${p.name} に電話`}
-                    aria-label={`${p.name} に電話`}
-                  >
-                    TEL
-                  </a>
-                  <a
-                    href={`mailto:${p.email}`}
-                    className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-200"
-                    title={`${p.name} にメール`}
-                    aria-label={`${p.name} にメール`}
-                  >
-                    MAIL
-                  </a>
+              {personasLoading ? (
+                <div className="text-xs text-slate-500">読み込み中…</div>
+              ) : displayPersonas.length > 0 ? (
+                displayPersonas.map((p) => {
+                  const phone = p.phone ?? null
+                  const email = (p as unknown as { email?: string | null }).email ?? null
+                  const deptName = (p as unknown as { department?: { name?: string | null } | null }).department
+                    ?.name
+                  const personaLabel = `${deptName ?? ''}${deptName ? ' ' : ''}${p.name}`
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-900"
+                    >
+                      <span className="text-emerald-700">{deptName ?? '—'}</span>
+                      <span className="font-semibold text-emerald-950">{p.name}</span>
+
+                      {phone ? (
+                        <a
+                          href={`tel:${phone.replace(/-/g, '')}`}
+                          className="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-emerald-700"
+                          title={`${p.name} に電話`}
+                          aria-label={`${p.name} に電話`}
+                          onClick={() => {
+                            setCurrentTarget({
+                              kind: 'persona',
+                              targetId: p.id,
+                              label: personaLabel,
+                              phone,
+                              email,
+                            })
+                          }}
+                        >
+                          TEL
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-200 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800/70">
+                          TEL
+                        </span>
+                      )}
+
+                      {email ? (
+                        <a
+                          href={`mailto:${email}`}
+                          className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-200"
+                          title={`${p.name} にメール`}
+                          aria-label={`${p.name} にメール`}
+                          onClick={() => {
+                            setCurrentTarget({
+                              kind: 'persona',
+                              targetId: p.id,
+                              label: personaLabel,
+                              phone: phone ?? '',
+                              email,
+                            })
+                          }}
+                        >
+                          MAIL
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-200 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800/70">
+                          MAIL
+                        </span>
+                      )}
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="space-y-1">
+                  <div className="text-xs text-slate-500">担当者データがありません（サンプルを表示）</div>
+                  {SAMPLE_PERSONAS.map((p) => (
+                    <div
+                      key={p.id}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-900"
+                    >
+                      <span className="text-emerald-700">{p.department}</span>
+                      <span className="font-semibold text-emerald-950">{p.name}</span>
+                      <a
+                        href={`tel:${p.phone.replace(/-/g, '')}`}
+                        className="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-emerald-700"
+                        title={`${p.name} に電話`}
+                        aria-label={`${p.name} に電話`}
+                        onClick={() => {
+                          setCurrentTarget({
+                            kind: 'persona',
+                            targetId: p.id,
+                            label: `${p.department} ${p.name}`,
+                            phone: p.phone,
+                            email: p.email,
+                          })
+                        }}
+                      >
+                        TEL
+                      </a>
+                      <a
+                        href={`mailto:${p.email}`}
+                        className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-200"
+                        title={`${p.name} にメール`}
+                        aria-label={`${p.name} にメール`}
+                        onClick={() => {
+                          setCurrentTarget({
+                            kind: 'persona',
+                            targetId: p.id,
+                            label: `${p.department} ${p.name}`,
+                            phone: p.phone,
+                            email: p.email,
+                          })
+                        }}
+                      >
+                        MAIL
+                      </a>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           </section>
 
           {/* 架電ステータスパネル（行動結果・メモ と 電話一覧の間の横長バー） */}
-          <section className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800">
+          <section className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-100">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               {/* 左：ステータス表示 */}
-              <div className="space-y-0.5">
+              <div className="space-y-1.5">
                 <div>
-                  <span className="font-semibold text-slate-600">状況：</span>
-                  <span className="font-medium text-emerald-700">{statusLabel}</span>
+                  <span className="text-slate-400">状況：</span>
+                  <span
+                    className={
+                      isCallActive ? 'font-medium text-green-400' : 'font-medium text-slate-400'
+                    }
+                  >
+                    {statusLabel}
+                  </span>
                 </div>
                 <div>
-                  <span className="font-semibold text-slate-600">発信先：</span>
-                  <span className="font-medium text-slate-900">{targetText}</span>
+                  <span className="text-slate-400">発信先：</span>
+                  <span className="truncate font-medium text-slate-100">{targetText}</span>
                 </div>
               </div>
 
@@ -665,12 +851,13 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
                   className={`flex flex-col items-center justify-center px-2 py-2 ${
                     isCallActive ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'
                   }`}
+                  aria-label={isCallActive ? '℡切る' : 'ダイヤルパッド呼出'}
                 >
                   <span className="mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-sm bg-white/90 text-[9px] font-bold text-emerald-700">
                     {isCallActive ? '■' : '▶'}
                   </span>
                   <span className="leading-tight">
-                    {isCallActive ? '通話を切る' : 'ダイヤルパッド呼出'}
+                    {isCallActive ? '℡切る' : 'ダイヤルパッド呼出'}
                   </span>
                 </button>
 

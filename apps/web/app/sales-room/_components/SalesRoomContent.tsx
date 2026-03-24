@@ -211,7 +211,11 @@ export function SalesRoomContent() {
   const openCompanyFromRow = useCallback(
     (item: ListItem) => {
       if (callingListSource === 'api') {
-        router.push(`/sales-room?tab=company&listItemId=${encodeURIComponent(item.id)}`)
+        const legalEntityId = item.legalEntityId ?? ''
+        const qs = legalEntityId
+          ? `&legalEntityId=${encodeURIComponent(legalEntityId)}`
+          : ''
+        router.push(`/sales-room?tab=company&listItemId=${encodeURIComponent(item.id)}${qs}`)
         return
       }
       router.push('/sales-room?tab=company')
