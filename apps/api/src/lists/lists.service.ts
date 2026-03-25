@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { isRestrictedMember } from '../common/auth/role-utils';
 import { Prisma } from '../generated/prisma/client';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -26,8 +26,11 @@ export type ListItemDistributeFilters = {
   addressContains?: string;
   cityContains?: string;
   industryTagContains?: string;
+  /** 業種マスタ名の複数（いずれかに industryTag が部分一致） */
+  industryNames?: string[];
   /** 未指定時は unstarted（後方互換） */
   callProgress?: 'unstarted' | 'contacted' | 'any';
+  statuses?: string[];
   aiTiers?: string[];
 };
 
@@ -45,28 +48,47 @@ export class ListsService {
       tenantId: user.tenantId,
       listId,
     };
-    const progress = filters?.callProgress ?? 'unstarted';
-    if (progress === 'unstarted') {
-      where.status = 'unstarted';
-    } else if (progress === 'contacted') {
-      where.status = { in: ['calling', 'done'] };
+
+    const statuses = filters?.statuses?.filter((s) => s.trim().length > 0);
+    if (statuses && statuses.length > 0) {
+      where.status = { in: statuses };
+    } else {
+      const progress = filters?.callProgress ?? 'unstarted';
+      if (progress === 'unstarted') {
+        where.status = 'unstarted';
+      } else if (progress === 'contacted') {
+        where.status = { in: ['calling', 'done'] };
+      }
     }
-    const andAddr: Prisma.ListItemWhereInput[] = [];
+
+    const andClauses: Prisma.ListItemWhereInput[] = [];
     const pref = filters?.addressContains?.trim();
     if (pref) {
-      andAddr.push({ address: { contains: pref, mode: 'insensitive' } });
+      andClauses.push({ address: { contains: pref, mode: 'insensitive' } });
     }
     const city = filters?.cityContains?.trim();
     if (city) {
-      andAddr.push({ address: { contains: city, mode: 'insensitive' } });
+      andClauses.push({ address: { contains: city, mode: 'insensitive' } });
     }
-    if (andAddr.length > 0) {
-      where.AND = andAddr;
+
+    const industryNames = filters?.industryNames?.map((n) => n.trim()).filter((n) => n.length > 0) ?? [];
+    if (industryNames.length > 0) {
+      andClauses.push({
+        OR: industryNames.map((n) => ({
+          industryTag: { contains: n, mode: 'insensitive' as const },
+        })),
+      });
+    } else {
+      const tag = filters?.industryTagContains?.trim();
+      if (tag) {
+        andClauses.push({ industryTag: { contains: tag, mode: 'insensitive' } });
+      }
     }
-    const tag = filters?.industryTagContains?.trim();
-    if (tag) {
-      where.industryTag = { contains: tag, mode: 'insensitive' };
+
+    if (andClauses.length > 0) {
+      where.AND = andClauses;
     }
+
     const tiers = filters?.aiTiers?.filter((t) => t === 'A' || t === 'B' || t === 'C');
     if (tiers && tiers.length > 0) {
       where.aiListTier = { in: tiers };
@@ -223,13 +245,21 @@ export class ListsService {
   importCsv = async (user: JwtPayload, dto: ImportListCsvDto): Promise<ImportListResultDto> => {
     const parsedRows = this.parseCsvRows(dto.csvText);
     const nowIso = new Date().toISOString();
-    const listName = dto.name?.trim() || `CSVリスト-${new Date().toLocaleDateString('ja-JP')}`;
+    const listName =
+      dto.name?.trim() ||
+      `CSVリスト-${new Date().toLocaleString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`;
 
-    const existingUrls = await this.prisma.listItem.findMany({
-      where: { tenantId: user.tenantId },
-      select: { targetUrl: true },
-    });
-    const existingUrlSet = new Set(existingUrls.map((r) => r.targetUrl).filter((u) => u.length > 0));
+    /**
+     * 重要: 「リストをストックする」ため、既存リスト（テナント全体）との重複URLで弾かない。
+     * 重複除外は CSV 内のみで行う（同じCSV内でのURL重複はスキップ）。
+     */
+    const existingUrlSet = new Set<string>();
 
     const itemsToCreate: { companyName: string; phone: string; address: string; targetUrl: string; industryTag: string | null }[] = [];
     let skippedCount = 0;
@@ -389,6 +419,127 @@ export class ListsService {
     );
 
     return { updatedCount: updates.length };
+  };
+
+  /**
+   * 目標件数（割当件数）に基づく配布
+   * - floor: 各メンバーに ideal 配分の小数切り捨て分を割り当て
+   * - 残り（端数）は ideal の小数部分が大きいメンバーから順に 1件ずつ割り当て
+   * - 最終的な合計割当は必ず matchCount（=対象件数）に一致
+   */
+  distributeListItemsByTargetCounts = async (
+    user: JwtPayload,
+    listId: string,
+    assigneeUserIds: string[],
+    targetCounts: number[],
+    filters?: ListItemDistributeFilters,
+  ): Promise<{ updatedCount: number }> => {
+    const list = await this.prisma.callingList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!list) {
+      throw new NotFoundException('対象リストが見つかりません');
+    }
+
+    if (assigneeUserIds.length === 0 || targetCounts.length === 0) {
+      throw new BadRequestException('配布先ユーザーまたは目標件数が指定されていません');
+    }
+    if (assigneeUserIds.length !== targetCounts.length) {
+      throw new BadRequestException('assigneeUserIds と targetCounts は同じ長さで指定してください');
+    }
+
+    const pairs = assigneeUserIds
+      .map((userId, i) => ({
+        userId: userId.trim(),
+        targetCount: targetCounts[i] ?? 0,
+        checkOrder: i,
+      }))
+      .filter((p) => p.userId.length > 0);
+
+    if (pairs.length === 0) {
+      throw new BadRequestException('配布先ユーザーが指定されていません');
+    }
+
+    const sumTargets = pairs.reduce((acc, p) => acc + (p.targetCount ?? 0), 0);
+    if (sumTargets <= 0) {
+      throw new BadRequestException('全員目標割当件数（目標件数合計）が 1以上になるよう指定してください');
+    }
+
+    const where = this.buildDistributeTargetWhere(user, listId, filters);
+    const targets = await this.prisma.listItem.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (targets.length === 0) {
+      return { updatedCount: 0 };
+    }
+
+    const total = targets.length;
+    const nowIso = new Date().toISOString();
+
+    const baseAllocations = pairs.map((p) => {
+      const ideal = (total * p.targetCount) / sumTargets;
+      const base = Math.floor(ideal);
+      const fraction = ideal - base;
+      return { userId: p.userId, base, fraction, checkOrder: p.checkOrder };
+    });
+
+    const baseSum = baseAllocations.reduce((acc, a) => acc + a.base, 0);
+    let remaining = total - baseSum;
+
+    // 本来 remaining は 0 以上になる（整数化の誤差で負になる可能性だけ吸収）
+    if (remaining < 0) {
+      remaining = 0;
+    }
+
+    // 残り（端数）: fraction が大きい順、同点はチェック順
+    const sortedByFraction = [...baseAllocations].sort((a, b) => {
+      if (b.fraction !== a.fraction) return b.fraction - a.fraction;
+      return a.checkOrder - b.checkOrder;
+    });
+
+    const extraMembers: string[] = [];
+    for (let i = 0; i < sortedByFraction.length && remaining > 0; i += 1) {
+      extraMembers.push(sortedByFraction[i].userId);
+      remaining -= 1;
+    }
+
+    // allocationSequence:
+    // 1) floor部分をチェック順に積む
+    // 2) 残りは fraction が大きい順に 1件ずつ追加
+    const allocationSequence: string[] = [];
+    const byCheckOrder = [...baseAllocations].sort((a, b) => a.checkOrder - b.checkOrder);
+    for (const a of byCheckOrder) {
+      for (let i = 0; i < a.base; i += 1) {
+        allocationSequence.push(a.userId);
+      }
+    }
+    for (const u of extraMembers) {
+      allocationSequence.push(u);
+    }
+
+    if (allocationSequence.length !== total) {
+      throw new BadRequestException('配布割当の合計が一致しません（内部エラー）');
+    }
+
+    await this.prisma.$transaction(
+      targets.map((t, i) =>
+        this.prisma.listItem.update({
+          where: { id: t.id },
+          data: {
+            tenantId: user.tenantId,
+            assignedToUserId: allocationSequence[i],
+            assignedAt: nowIso,
+            assignedByUserId: user.sub,
+            statusUpdatedAt: nowIso,
+          },
+        }),
+      ),
+    );
+
+    return { updatedCount: targets.length };
   };
 
   recallListItems = async (

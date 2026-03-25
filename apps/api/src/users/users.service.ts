@@ -14,6 +14,7 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { upsertProjectMembershipInTx } from './project-membership.helper';
 import { toUserListApiRow, type UserListApiRow } from './user-list.mapper';
+import { type UpdateProfileImageDto } from './dto/update-profile-image.dto';
 
 const PROTECTED_ROLES: UR[] = [UR.EnterpriseAdmin, UR.IsAdmin, UR.Developer];
 
@@ -52,6 +53,77 @@ const mergeTierIntoRoles = (oldRoles: UR[], box: 'director' | 'is'): UR[] => {
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** 自分自身のプロフィール情報（プロフ写真・テナント表示名・PJ配役。PJ変更画面用） */
+  getMeProfile = async (jwt: JwtPayload): Promise<{
+    id: string
+    tenantId: string
+    email: string
+    name: string
+    profileImageUrl: string | null
+    role: string
+    roles: string[]
+    tenantCompanyName: string
+    tenantProjectName: string
+    projectAssignment: UserListApiRow['projectAssignment']
+  }> => {
+    const [row, tenant] = await Promise.all([
+      this.prisma.user.findFirst({
+        where: { id: jwt.sub, tenantId: jwt.tenantId },
+        select: USER_LIST_SELECT,
+      }),
+      this.prisma.tenant.findFirst({
+        where: { id: jwt.tenantId },
+        select: { companyName: true, projectDisplayName: true, name: true },
+      }),
+    ])
+    if (!row) {
+      throw new NotFoundException('ユーザーが見つかりません')
+    }
+    const mapped = toUserListApiRow(row)
+    const projectRaw = (tenant?.projectDisplayName ?? '').trim()
+    const tenantProjectName = projectRaw.length > 0 ? projectRaw : '未設定'
+    const tenantCompanyName = (tenant?.companyName ?? tenant?.name ?? '').trim() || '未設定'
+    return {
+      id: mapped.id,
+      tenantId: mapped.tenantId,
+      email: mapped.email,
+      name: mapped.name,
+      profileImageUrl: mapped.profileImageUrl,
+      role: mapped.role,
+      roles: mapped.roles,
+      tenantCompanyName,
+      tenantProjectName,
+      projectAssignment: mapped.projectAssignment,
+    }
+  }
+
+  /** 自分自身のプロフ写真更新（MVP: dataURL文字列を保存） */
+  updateMeProfileImage = async (
+    jwt: JwtPayload,
+    dto: UpdateProfileImageDto,
+  ): Promise<{ profileImageUrl: string | null }> => {
+    const raw = dto.profileImageUrl ?? ''
+    const next = raw.trim().length === 0 ? null : raw.trim()
+
+    // dataURL以外が来てもDBは保存してしまうため、最低限のガードを入れる
+    if (next !== null && !next.startsWith('data:image/')) {
+      throw new BadRequestException('画像の形式が不正です')
+    }
+
+    const updated = await this.prisma.user.updateMany({
+      where: { id: jwt.sub, tenantId: jwt.tenantId },
+      data: { profileImageUrl: next },
+    })
+    if (updated.count === 0) {
+      throw new NotFoundException('ユーザーが見つかりません')
+    }
+    const row = await this.prisma.user.findFirst({
+      where: { id: jwt.sub, tenantId: jwt.tenantId },
+      select: { profileImageUrl: true },
+    })
+    return { profileImageUrl: row?.profileImageUrl ?? null }
+  }
 
   getUsers = async (user: JwtPayload): Promise<UserListApiRow[]> => {
     const rows = await this.prisma.user.findMany({
@@ -132,7 +204,12 @@ export class UsersService {
     return toUserListApiRow(row);
   };
 
-  /** 既定PJから外す: project_memberships のみ削除（ロールは維持） */
+  /**
+   * 既定PJから外す: project_memberships のみ削除（User.roles は維持）
+   *
+   * PJメンバー一覧は project_memberships（projectAssignment）で表示同期するため、
+   * User.roles の director / is_member を無理に外さずに済ませる。
+   */
   removeUserFromProject = async (
     jwt: JwtPayload,
     targetUserId: string,
@@ -153,7 +230,7 @@ export class UsersService {
 
     const targetRoles = effectiveRolesFromUserRow(target);
     if (targetRoles.includes(UR.EnterpriseAdmin)) {
-      throw new ForbiddenException('企業管理者はPJから除名できません');
+      throw new ForbiddenException('企業管理者はPJからサインアウトできません');
     }
     if (!callerEa) {
       if (targetRoles.includes(UR.IsAdmin)) {
@@ -164,11 +241,11 @@ export class UsersService {
       }
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.projectMembership.deleteMany({
+    const deleteResult = await this.prisma.$transaction(async (tx) => {
+      return tx.projectMembership.deleteMany({
         where: { tenantId: jwt.tenantId, userId: targetUserId },
-      });
-    });
+      })
+    })
 
     const row = await this.prisma.user.findFirst({
       where: { id: targetUserId, tenantId: jwt.tenantId },
@@ -177,6 +254,30 @@ export class UsersService {
     if (!row) {
       throw new NotFoundException('更新後のユーザー取得に失敗しました');
     }
-    return toUserListApiRow(row);
+    const apiRow = toUserListApiRow(row)
+    // #region agent log
+    fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': 'e715e7',
+      },
+      body: JSON.stringify({
+        sessionId: 'e715e7',
+        hypothesisId: 'PJ-REMOVE',
+        location: 'users.service.ts:removeUserFromProject',
+        message: 'deleteMany(project_memberships)',
+        data: {
+          tenantId: jwt.tenantId,
+          targetUserId,
+          deletedCount: deleteResult.count,
+          projectAssignmentAfter: apiRow.projectAssignment,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
+
+    return apiRow;
   };
 }

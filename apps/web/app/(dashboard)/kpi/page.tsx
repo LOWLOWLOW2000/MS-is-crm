@@ -1,11 +1,11 @@
 /**
- * KPIページ（AI診断）。左ナビ「KPIページ（AI診断）」のメイン。子要素は1カラムで縦並び。
+ * KPIページ（AI）。左ナビ「KPIページ（AI）」のメイン。子要素は1カラムで縦並び。
  */
 export default function KpiPage() {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-6">
       <header className="shrink-0">
-        <h1 className="text-xl font-bold text-gray-900">KPIページ（AI診断）</h1>
+        <h1 className="text-xl font-bold text-gray-900">KPIページ（AI）</h1>
         <p className="mt-2 text-sm text-gray-600">
           個人・チーム・PJのKPIをAI診断で可視化します。
         </p>

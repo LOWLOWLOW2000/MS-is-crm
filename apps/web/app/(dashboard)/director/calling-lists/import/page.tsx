@@ -11,6 +11,13 @@ type ImportResult = {
   skippedCount: number
 }
 
+type SampleCsvFile = {
+  fileName: string
+  publicUrl: string
+  bytes: number
+  updatedAt: string
+}
+
 const readTextFile = async (file: File): Promise<string> => {
   const text = await file.text()
   return text
@@ -48,6 +55,13 @@ export default function DirectorCallingListImportPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [result, setResult] = useState<ImportResult | null>(null)
+  const [sampleFiles, setSampleFiles] = useState<SampleCsvFile[]>([])
+  const [sampleFilesLoading, setSampleFilesLoading] = useState(false)
+
+  const stripCsvExtension = (name: string): string => {
+    // "sample.csv" -> "sample"
+    return name.toLowerCase().endsWith('.csv') ? name.slice(0, -4) : name
+  }
 
   const canSubmit = useMemo(() => {
     return Boolean(accessToken) && csvText.trim().length > 0
@@ -57,11 +71,40 @@ export default function DirectorCallingListImportPage() {
     fileRef.current?.click()
   }
 
+  const refreshSampleFiles = async () => {
+    setSampleFilesLoading(true)
+    try {
+      const res = await fetch('/api/samples/csv', { cache: 'no-store' })
+      if (!res.ok) throw new Error('サンプルCSV一覧の取得に失敗しました')
+      const data = (await res.json()) as { files: SampleCsvFile[] }
+      setSampleFiles(Array.isArray(data.files) ? data.files : [])
+    } catch (e) {
+      setSampleFiles([])
+      setMessage(e instanceof Error ? e.message : 'サンプルCSV一覧の取得に失敗しました')
+    } finally {
+      setSampleFilesLoading(false)
+    }
+  }
+
+  const loadSampleFile = async (file: SampleCsvFile) => {
+    try {
+      const res = await fetch(file.publicUrl, { cache: 'no-store' })
+      if (!res.ok) throw new Error(`CSVの取得に失敗しました: ${file.fileName}`)
+      const text = await res.text()
+      setListName(stripCsvExtension(file.fileName))
+      setCsvText(text)
+      setMessage(`読み込みました: ${file.fileName}`)
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'CSVの取得に失敗しました')
+    }
+  }
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
     try {
+      setListName(stripCsvExtension(file.name))
       const text = await readTextFile(file)
       setCsvText(text)
       setMessage(`読み込みました: ${file.name}`)
@@ -117,9 +160,9 @@ export default function DirectorCallingListImportPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
-      <h1 className="text-xl font-bold text-gray-900">架電リストCSV格納</h1>
+      <h1 className="text-xl font-bold text-gray-900">リスト格納</h1>
       <p className="mt-2 text-sm text-gray-600">
-        CSV を取り込み、架電リストとして格納します（`/lists/import-csv`）。ディレクター・管理者ロールが必要です（is_member
+        CSV を取り込み、リストとして格納します（`/lists/import-csv`）。ディレクター・管理者ロールが必要です（is_member
         のみのアカウントでは API が拒否します）。
       </p>
 
@@ -165,6 +208,57 @@ export default function DirectorCallingListImportPage() {
               >
                 サンプル入力
               </button>
+            </div>
+
+            <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-slate-800">格納済みCSV（public/samples）</div>
+                <button
+                  type="button"
+                  onClick={refreshSampleFiles}
+                  disabled={sampleFilesLoading}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {sampleFilesLoading ? '更新中...' : '一覧更新'}
+                </button>
+              </div>
+              <div className="mt-2 max-h-40 overflow-auto rounded border border-slate-200 bg-white">
+                {sampleFilesLoading && sampleFiles.length === 0 ? (
+                  <div className="p-2 text-xs text-slate-500">読み込み中...</div>
+                ) : sampleFiles.length === 0 ? (
+                  <div className="p-2 text-xs text-slate-500">まだ一覧を取得していません（「一覧更新」を押してください）</div>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {sampleFiles.map((f) => (
+                      <li key={f.publicUrl} className="flex items-center justify-between gap-2 p-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-medium text-slate-800">{f.fileName}</div>
+                          <div className="text-[11px] text-slate-500">
+                            {new Date(f.updatedAt).toLocaleString('ja-JP')} / {(f.bytes / 1024).toFixed(1)}KB
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => loadSampleFile(f)}
+                            className="rounded bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
+                          >
+                            読み込む
+                          </button>
+                          <a
+                            href={f.publicUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] font-semibold text-blue-600 hover:underline"
+                          >
+                            開く
+                          </a>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
 
             <button

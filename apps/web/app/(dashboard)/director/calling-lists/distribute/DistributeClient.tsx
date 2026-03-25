@@ -1,15 +1,18 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import {
   distributeListItemsEven,
+  distributeListItemsTargetCounts,
   fetchCallingLists,
   fetchListIndustryMasters,
   fetchListKpiByAssignee,
   fetchUsers,
   previewDistributeEvenMatch,
   recallListItems,
+  type UserListItem,
 } from '@/lib/calling-api'
 import type { ListIndustryMasterRow } from '@/lib/types'
 import {
@@ -27,7 +30,33 @@ const KPI_STATUS_LABEL: Record<(typeof KPI_STATUS_KEYS)[number], string> = {
   excluded: '除外',
 }
 
-type CallProgress = 'unstarted' | 'contacted' | 'any'
+/**
+ * プロフ画像未設定時の簡易イニシャル表示
+ * （配布先リストで写真を「ステータス」として左端に出す）
+ */
+const initialsFromName = (name: string): string => {
+  const t = name.trim()
+  if (t.length === 0) return '?'
+  const parts = t.split(/[\s　]+/).filter(Boolean)
+  if (parts.length >= 2) {
+    return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase()
+  }
+  return t.slice(0, 2).toUpperCase()
+}
+
+const STATUS_OPTIONS = [
+  '担当者あり興味',
+  '担当者あり不要',
+  '不在',
+  '番号違い',
+  '断り',
+  '折り返し依頼',
+  '留守電',
+  '資料送付',
+  'アポ',
+  'リスト除外',
+  '不通',
+] as const
 
 export function DistributeClient({ initialListId }: { initialListId?: string }) {
   const { data: session } = useSession()
@@ -35,24 +64,30 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
 
   const [listsLoading, setListsLoading] = useState(false)
   const [lists, setLists] = useState<{ id: string; name: string; itemCount: number }[]>([])
-  const [selectedListId, setSelectedListId] = useState('')
-  const [listModalOpen, setListModalOpen] = useState(false)
+  /** 配布・プレビュー・回収・KPIの対象（複数可） */
+  const [selectedListIds, setSelectedListIds] = useState<string[]>([])
 
   const [mastersLoading, setMastersLoading] = useState(false)
   const [industryMasters, setIndustryMasters] = useState<ListIndustryMasterRow[]>([])
-  const [industryName, setIndustryName] = useState('')
+  /** 業種マスタ名（複数選択・いずれかに industryTag が部分一致） */
+  const [selectedIndustryNames, setSelectedIndustryNames] = useState<string[]>([])
+  const [industrySearch, setIndustrySearch] = useState('')
 
   const [prefecture, setPrefecture] = useState('')
   const [city, setCity] = useState(CITY_OPTION_ALL)
 
-  const [callProgress, setCallProgress] = useState<CallProgress>('unstarted')
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
   const [aiA, setAiA] = useState(false)
   const [aiB, setAiB] = useState(false)
   const [aiC, setAiC] = useState(false)
 
+  type DistributeMode = 'even' | 'target'
+  const [distributeMode, setDistributeMode] = useState<DistributeMode>('even')
+
   const [usersLoading, setUsersLoading] = useState(false)
-  const [users, setUsers] = useState<{ id: string; name: string; email: string; role: string }[]>([])
+  const [users, setUsers] = useState<UserListItem[]>([])
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
+  const [targetCountsByUserId, setTargetCountsByUserId] = useState<Record<string, number>>({})
 
   const [actionLoading, setActionLoading] = useState(false)
   const [lastMessage, setLastMessage] = useState<string>('')
@@ -65,9 +100,21 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
 
   const cityOptions = useMemo(() => citiesForPrefecture(prefecture), [prefecture])
 
-  useEffect(() => {
-    setCity(CITY_OPTION_ALL)
-  }, [prefecture])
+  /** プレビュー結果メッセージ用（API に送る住所条件と同じ解釈） */
+  const addressFilterSummaryForMessage = useMemo(() => {
+    const pref = prefecture.trim()
+    const cityRaw = city.trim()
+    const cityActive =
+      cityRaw.length > 0 &&
+      cityRaw !== CITY_OPTION_ALL &&
+      cityOptions.includes(cityRaw)
+        ? cityRaw
+        : null
+    if (!pref && !cityActive) return '住所未指定'
+    if (pref && cityActive) return `${pref}・${cityActive}`
+    if (pref) return `${pref}（市区町村: 全域）`
+    return cityActive ?? '住所未指定'
+  }, [prefecture, city, cityOptions])
 
   const industryByGroup = useMemo(() => {
     const map = new Map<string, ListIndustryMasterRow[]>()
@@ -80,10 +127,25 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'ja'))
   }, [industryMasters])
 
+  const filteredIndustryByGroup = useMemo(() => {
+    const q = industrySearch.trim().toLowerCase()
+    if (!q) return industryByGroup
+    return industryByGroup
+      .map(([group, rows]) => [group, rows.filter((m) => m.name.toLowerCase().includes(q))] as const)
+      .filter(([, rows]) => rows.length > 0)
+  }, [industryByGroup, industrySearch])
+
   const selectedUsersLabel = useMemo(() => {
     const map = new Map(users.map((u) => [u.id, u.name || u.email]))
     return selectedUserIds.map((id) => map.get(id) ?? id).join(', ')
   }, [selectedUserIds, users])
+
+  /** 均等配布は配布先パネルを使わず、取得済みメンバー全員へ割り当てる */
+  const assigneeUserIdsForEven = useMemo(() => users.map((u) => u.id), [users])
+
+  const totalTargetAllocationCount = useMemo(() => {
+    return selectedUserIds.reduce((acc, id) => acc + (targetCountsByUserId[id] ?? 0), 0)
+  }, [selectedUserIds, targetCountsByUserId])
 
   const kpiMatrixRows = useMemo(() => {
     const byAssignee = new Map<string | null, Record<string, number>>()
@@ -115,15 +177,22 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
     return m
   }, [users])
 
-  const selectedListLabel = useMemo(() => {
-    const hit = lists.find((l) => l.id === selectedListId)
-    return hit ? `${hit.name}` : ''
-  }, [lists, selectedListId])
+  /** `リスト名（〇〇件）` 形式の1行表記 */
+  const formatListLine = (l: { name: string; itemCount: number }) =>
+    `${l.name || '（無題）'}（${l.itemCount}件）`
 
-  const selectedListMeta = useMemo(() => {
-    const hit = lists.find((l) => l.id === selectedListId)
-    return hit ?? null
-  }, [lists, selectedListId])
+  const selectedListsDisplay = useMemo(() => {
+    return selectedListIds
+      .map((id) => lists.find((l) => l.id === id))
+      .filter((x): x is { id: string; name: string; itemCount: number } => Boolean(x))
+  }, [lists, selectedListIds])
+
+  /** トリガー用ボタンに載せる短文（複数時は件数サマリ） */
+  const targetListButtonLabel = useMemo(() => {
+    if (selectedListsDisplay.length === 0) return ''
+    if (selectedListsDisplay.length === 1) return formatListLine(selectedListsDisplay[0])
+    return `選択中 ${selectedListsDisplay.length} リスト`
+  }, [selectedListsDisplay])
 
   const aiTiers = useMemo((): ('A' | 'B' | 'C')[] => {
     const t: ('A' | 'B' | 'C')[] = []
@@ -136,29 +205,97 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
   const filterPayload = useMemo(() => {
     const addressContains = prefecture.trim() || undefined
     const cityRaw = city.trim()
-    const cityContains =
-      cityRaw && cityRaw !== CITY_OPTION_ALL ? cityRaw : undefined
-    const industryTagContains = industryName.trim() || undefined
+    /** 県変更直後のズレで「別県の市区」が残らないよう、現在のプルダウンに存在する値だけ送る */
+    const cityInCurrentOptions =
+      cityRaw.length > 0 &&
+      cityRaw !== CITY_OPTION_ALL &&
+      cityOptions.includes(cityRaw)
+    const cityContains = cityInCurrentOptions ? cityRaw : undefined
     return {
       addressContains,
       cityContains,
-      industryTagContains,
-      callProgress,
+      industryNames: selectedIndustryNames.length > 0 ? selectedIndustryNames : undefined,
+      statuses: selectedStatuses.length > 0 ? selectedStatuses : undefined,
       aiTiers: aiTiers.length > 0 ? aiTiers : undefined,
     }
-  }, [prefecture, city, industryName, callProgress, aiTiers])
+  }, [prefecture, city, cityOptions, selectedIndustryNames, selectedStatuses, aiTiers])
 
   useEffect(() => {
     if (!accessToken) return
     const run = async () => {
       setListsLoading(true)
       try {
+        // #region agent log
+        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': 'db6de1',
+          },
+          body: JSON.stringify({
+            sessionId: 'db6de1',
+            location: 'DistributeClient.tsx:fetchCallingLists:before',
+            hypothesisId: 'H1',
+            message: 'calling lists fetch start',
+            data: {
+              hasAccessToken: Boolean(accessToken),
+              accessTokenLength: accessToken.length,
+              initialListId,
+            },
+            timestamp: Date.now(),
+            runId: 'pre',
+          }),
+        }).catch(() => {})
+        // #endregion
         const next = await fetchCallingLists(accessToken)
         setLists(next.map((l) => ({ id: l.id, name: l.name, itemCount: l.itemCount })))
+        // #region agent log
+        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': 'db6de1',
+          },
+          body: JSON.stringify({
+            sessionId: 'db6de1',
+            location: 'DistributeClient.tsx:fetchCallingLists:after',
+            hypothesisId: 'H2',
+            message: 'calling lists fetch success',
+            data: {
+              listsCount: next.length,
+              hasInitialMatch: Boolean(
+                initialListId && next.some((l) => l.id === initialListId),
+              ),
+            },
+            timestamp: Date.now(),
+            runId: 'pre',
+          }),
+        }).catch(() => {})
+        // #endregion
         if (initialListId && next.some((l) => l.id === initialListId)) {
-          setSelectedListId(initialListId)
+          setSelectedListIds([initialListId])
         }
       } catch (e) {
+        // #region agent log
+        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': 'db6de1',
+          },
+          body: JSON.stringify({
+            sessionId: 'db6de1',
+            location: 'DistributeClient.tsx:fetchCallingLists:catch',
+            hypothesisId: 'H2e',
+            message: 'calling lists fetch failed',
+            data: {
+              error: e instanceof Error ? e.message : String(e),
+            },
+            timestamp: Date.now(),
+            runId: 'pre',
+          }),
+        }).catch(() => {})
+        // #endregion
         setLastMessage((e as Error).message)
       } finally {
         setListsLoading(false)
@@ -174,7 +311,43 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
       try {
         const next = await fetchListIndustryMasters(accessToken)
         setIndustryMasters(next)
+        // #region agent log
+        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': 'db6de1',
+          },
+          body: JSON.stringify({
+            sessionId: 'db6de1',
+            location: 'DistributeClient.tsx:fetchListIndustryMasters:success',
+            hypothesisId: 'H3',
+            message: 'industry masters fetched',
+            data: { mastersCount: next.length },
+            timestamp: Date.now(),
+            runId: 'pre',
+          }),
+        }).catch(() => {})
+        // #endregion
       } catch (e) {
+        // #region agent log
+        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': 'db6de1',
+          },
+          body: JSON.stringify({
+            sessionId: 'db6de1',
+            location: 'DistributeClient.tsx:fetchListIndustryMasters:catch',
+            hypothesisId: 'H3e',
+            message: 'industry masters fetch failed',
+            data: { error: e instanceof Error ? e.message : String(e) },
+            timestamp: Date.now(),
+            runId: 'pre',
+          }),
+        }).catch(() => {})
+        // #endregion
         setLastMessage((e as Error).message)
       } finally {
         setMastersLoading(false)
@@ -189,8 +362,44 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
       setUsersLoading(true)
       try {
         const next = await fetchUsers(accessToken)
-        setUsers(next.map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })))
+        setUsers(next)
+        // #region agent log
+        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': 'db6de1',
+          },
+          body: JSON.stringify({
+            sessionId: 'db6de1',
+            location: 'DistributeClient.tsx:fetchUsers:success',
+            hypothesisId: 'H4',
+            message: 'users fetched',
+            data: { usersCount: next.length },
+            timestamp: Date.now(),
+            runId: 'pre',
+          }),
+        }).catch(() => {})
+        // #endregion
       } catch (e) {
+        // #region agent log
+        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': 'db6de1',
+          },
+          body: JSON.stringify({
+            sessionId: 'db6de1',
+            location: 'DistributeClient.tsx:fetchUsers:catch',
+            hypothesisId: 'H4e',
+            message: 'users fetch failed',
+            data: { error: e instanceof Error ? e.message : String(e) },
+            timestamp: Date.now(),
+            runId: 'pre',
+          }),
+        }).catch(() => {})
+        // #endregion
         setLastMessage((e as Error).message)
       } finally {
         setUsersLoading(false)
@@ -199,49 +408,88 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
     void run()
   }, [accessToken])
 
+  /** リスト再取得後、存在しないIDを選択から外す */
   useEffect(() => {
-    if (!listModalOpen) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setListModalOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [listModalOpen])
+    setSelectedListIds((prev) => prev.filter((id) => lists.some((l) => l.id === id)))
+  }, [lists])
 
-  const refreshKpi = async () => {
-    if (!accessToken || !selectedListId) return
+  const refreshKpi = useCallback(async () => {
+    if (!accessToken || selectedListIds.length === 0) {
+      setKpiRows([])
+      return
+    }
     setKpiLoading(true)
     try {
-      const rows = await fetchListKpiByAssignee(accessToken, selectedListId)
-      setKpiRows(rows)
+      const merged = new Map<string, { assigneeUserId: string | null; status: string; count: number }>()
+      for (const listId of selectedListIds) {
+        const rows = await fetchListKpiByAssignee(accessToken, listId)
+        for (const r of rows) {
+          const key = `${r.assigneeUserId ?? '__null__'}\t${r.status}`
+          const prev = merged.get(key)
+          if (prev) {
+            prev.count += r.count
+          } else {
+            merged.set(key, {
+              assigneeUserId: r.assigneeUserId,
+              status: r.status,
+              count: r.count,
+            })
+          }
+        }
+      }
+      setKpiRows(Array.from(merged.values()))
     } catch (e) {
       setLastMessage((e as Error).message)
     } finally {
       setKpiLoading(false)
     }
-  }
+  }, [accessToken, selectedListIds])
+
+  useEffect(() => {
+    // リスト選択後に、KPI（割当×ステータス）を自動反映する
+    void refreshKpi()
+  }, [refreshKpi])
 
   const resetPreview = useCallback(() => {
     setMatchCount(null)
   }, [])
 
+  const toggleTargetList = (listId: string, checked: boolean) => {
+    setSelectedListIds((prev) => {
+      if (checked) return prev.includes(listId) ? prev : [...prev, listId]
+      return prev.filter((x) => x !== listId)
+    })
+    resetPreview()
+  }
+
+  const selectAllTargetLists = () => {
+    setSelectedListIds(lists.map((l) => l.id))
+    resetPreview()
+  }
+
+  const clearTargetLists = () => {
+    setSelectedListIds([])
+    resetPreview()
+  }
+
   const handlePreviewMatch = async () => {
     if (!accessToken) return
-    if (!selectedListId) {
-      setLastMessage('リストを選択してください')
+    if (selectedListIds.length === 0) {
+      setLastMessage('リストを1件以上選択してください')
       return
     }
     setPreviewLoading(true)
     try {
-      const result = await previewDistributeEvenMatch(accessToken, selectedListId, filterPayload)
-      setMatchCount(result.matchCount)
-      const progLabel =
-        callProgress === 'unstarted'
-          ? '未架電（未着手）'
-          : callProgress === 'contacted'
-            ? '架電済み（架電中・完了）'
-            : 'すべての進捗'
-      setLastMessage(`条件に一致する件数: ${result.matchCount}件（${progLabel}）`)
+      let total = 0
+      for (const listId of selectedListIds) {
+        const result = await previewDistributeEvenMatch(accessToken, listId, filterPayload)
+        total += result.matchCount
+      }
+      setMatchCount(total)
+      const statusLabel = selectedStatuses.length === 0 ? 'ステータス指定なし' : selectedStatuses.join(' / ')
+      setLastMessage(
+        `条件に一致する件数（選択リスト合計）: ${total}件（住所: ${addressFilterSummaryForMessage}・${statusLabel}・${selectedListIds.length}リスト）`,
+      )
     } catch (e) {
       setLastMessage((e as Error).message)
       setMatchCount(null)
@@ -252,27 +500,79 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
 
   const handleDistributeEven = async () => {
     if (!accessToken) return
-    if (!selectedListId) {
-      setLastMessage('リストを選択してください')
+    if (selectedListIds.length === 0) {
+      setLastMessage('リストを1件以上選択してください')
       return
     }
     if (selectedUserIds.length === 0) {
       setLastMessage('配布先（User.id）を選択してください')
       return
     }
-    if (callProgress !== 'unstarted') {
+    if (selectedStatuses.length > 0) {
       const ok = window.confirm(
-        '未着手以外を配布対象にしています。既存の割当が上書きされる場合があります。続行しますか？',
+        'ステータスで絞り込み配布します。既存の割当が上書きされる場合があります。続行しますか？',
       )
       if (!ok) return
     }
     setActionLoading(true)
     try {
-      const result = await distributeListItemsEven(accessToken, selectedListId, {
-        assigneeUserIds: selectedUserIds,
-        ...filterPayload,
-      })
-      setLastMessage(`均等配布しました: ${result.updatedCount}件`)
+      let totalUpdated = 0
+      for (const listId of selectedListIds) {
+        const result = await distributeListItemsEven(accessToken, listId, {
+          assigneeUserIds: selectedUserIds,
+          ...filterPayload,
+        })
+        totalUpdated += result.updatedCount
+      }
+      setLastMessage(
+        `均等配布しました: 合計 ${totalUpdated}件（対象 ${selectedListIds.length} リスト）`,
+      )
+      setMatchCount(null)
+      await refreshKpi()
+    } catch (e) {
+      setLastMessage((e as Error).message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDistributeTargetCounts = async () => {
+    if (!accessToken) return
+    if (selectedListIds.length === 0) {
+      setLastMessage('リストを1件以上選択してください')
+      return
+    }
+    if (selectedUserIds.length === 0) {
+      setLastMessage('配布先（User.id）を選択してください')
+      return
+    }
+    if (totalTargetAllocationCount <= 0) {
+      setLastMessage('全員目標割当件数（目標件数合計）が 1以上になるように設定してください')
+      return
+    }
+
+    if (selectedStatuses.length > 0) {
+      const ok = window.confirm(
+        'ステータスで絞り込み配布します。既存の割当が上書きされる場合があります。続行しますか？',
+      )
+      if (!ok) return
+    }
+
+    const targetCounts = selectedUserIds.map((id) => targetCountsByUserId[id] ?? 0)
+    setActionLoading(true)
+    try {
+      let totalUpdated = 0
+      for (const listId of selectedListIds) {
+        const result = await distributeListItemsTargetCounts(accessToken, listId, {
+          assigneeUserIds: selectedUserIds,
+          targetCounts,
+          ...filterPayload,
+        })
+        totalUpdated += result.updatedCount
+      }
+      setLastMessage(
+        `目標件数でメンバーにリスト割り振り（全員目標割当件数: ${totalTargetAllocationCount}）: 合計 ${totalUpdated}件（対象 ${selectedListIds.length} リスト）`,
+      )
       setMatchCount(null)
       await refreshKpi()
     } catch (e) {
@@ -284,14 +584,20 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
 
   const handleRecall = async (mode: 'all' | 'unstartedOnly' | 'callingOnly') => {
     if (!accessToken) return
-    if (!selectedListId) {
-      setLastMessage('リストを選択してください')
+    if (selectedListIds.length === 0) {
+      setLastMessage('リストを1件以上選択してください')
       return
     }
     setActionLoading(true)
     try {
-      const result = await recallListItems(accessToken, selectedListId, { mode })
-      setLastMessage(`引き上げしました: ${result.updatedCount}件（mode=${mode}）`)
+      let totalUpdated = 0
+      for (const listId of selectedListIds) {
+        const result = await recallListItems(accessToken, listId, { mode })
+        totalUpdated += result.updatedCount
+      }
+      setLastMessage(
+        `引き上げしました: 合計 ${totalUpdated}件（mode=${mode}・対象 ${selectedListIds.length} リスト）`,
+      )
       await refreshKpi()
     } catch (e) {
       setLastMessage((e as Error).message)
@@ -303,18 +609,21 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
   const hasFilters =
     !!filterPayload.addressContains ||
     !!filterPayload.cityContains ||
-    !!filterPayload.industryTagContains ||
-    callProgress !== 'unstarted' ||
+    (filterPayload.industryNames?.length ?? 0) > 0 ||
+    (filterPayload.statuses?.length ?? 0) > 0 ||
     (filterPayload.aiTiers?.length ?? 0) > 0
 
   return (
     <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
-      <h1 className="text-xl font-bold text-gray-900">担当へ配布</h1>
+      <h1 className="text-xl font-bold text-gray-900">リスト配布・管理</h1>
       <p className="mt-2 text-sm text-gray-600">
-        格納した架電リストの<strong className="font-semibold">どれを対象にするか</strong>
-        を選び、上の条件で絞り込んだうえで、ISメンバーへ
-        <strong className="font-semibold">均等配布</strong>・<strong className="font-semibold">引き上げ</strong>
-        （割当解除）し、進捗は下のKPIで確認します。1件＝リスト内の1社（明細）です。
+        1. PJに格納されているリストをチェックで選択（複数可）
+        <br />
+        2. リストの<strong className="font-semibold">配布方法</strong>を選択・リストの<strong className="font-semibold">回収方法</strong>を選択
+        <br />
+        3. 2で選んだ方法の<strong className="font-semibold">追加操作</strong>
+        <br />
+        終了
       </p>
 
       {lastMessage && (
@@ -326,92 +635,161 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
       <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-gray-900">条件付き均等配布</h2>
         <p className="mt-1 text-xs text-gray-500">
-          都道府県・市区は住所への部分一致、業種はマスタ名で部分一致です。住所の表記ゆれがある場合は結果がずれることがあります。未架電＝ListItem
-          status が未着手のみ。架電済み＝架電中・完了。
+          都道府県・市区は住所への部分一致です。業種はマスタを複数選ぶと、
+          <code className="rounded bg-slate-100 px-1 text-[10px]">ListItem.industryTag</code>
+          がいずれかのマスタ名に部分一致する明細が対象になります。住所の表記ゆれがある場合は結果がずれることがあります。
         </p>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="block text-xs font-medium text-gray-700">
-            都道府県
-            <select
-              value={prefecture}
-              onChange={(e) => {
-                setPrefecture(e.target.value)
-                resetPreview()
-              }}
-              className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">（指定なし）</option>
-              {JAPAN_PREFECTURES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-xs font-medium text-gray-700">
-            市区町村（主要リスト）
-            <select
-              value={city}
-              onChange={(e) => {
-                setCity(e.target.value)
-                resetPreview()
-              }}
-              disabled={!prefecture}
-              className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50"
-            >
-              {cityOptions.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-xs font-medium text-gray-700">
+        <fieldset className="mt-3 rounded border border-gray-200 bg-white px-3 py-2">
+          <legend className="px-1 text-xs font-semibold text-gray-700">
+            都道府県・市区町村
+          </legend>
+          <div className="mt-1 grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs font-medium text-gray-700">
+              都道府県
+              <select
+                value={prefecture}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setPrefecture(next)
+                  /** 県が変わったら市区を即リセット（useEffect だと1レンダー古い市区が filter に残る） */
+                  setCity(CITY_OPTION_ALL)
+                  resetPreview()
+                }}
+                className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">（指定なし）</option>
+                {JAPAN_PREFECTURES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-gray-700">
+              市区町村（主要リスト）
+              <select
+                key={prefecture || 'none'}
+                value={city}
+                onChange={(e) => {
+                  setCity(e.target.value)
+                  resetPreview()
+                }}
+                disabled={!prefecture}
+                className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50"
+              >
+                {cityOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-1 text-[11px] text-gray-500">
+            都道府県未選択時は市区町村は選べません。未指定＝住所で絞り込みなし（他の条件のみ）
+          </div>
+        </fieldset>
+
+        <fieldset className="mt-3 rounded border border-gray-200 bg-white px-3 py-2">
+          <legend className="px-1 text-xs font-semibold text-gray-700">
             業種（中カテゴリ＝マスタ名）
-            <select
-              value={industryName}
-              onChange={(e) => {
-                setIndustryName(e.target.value)
-                resetPreview()
-              }}
+          </legend>
+          <label className="mt-2 block text-[11px] font-medium text-gray-600">
+            マスタ名で絞り込み（表示のみ）
+            <input
+              type="search"
+              value={industrySearch}
+              onChange={(e) => setIndustrySearch(e.target.value)}
+              placeholder="例: 飲食"
               disabled={mastersLoading}
-              className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">（指定なし）</option>
-              {industryByGroup.map(([group, rows]) => (
-                <optgroup key={group} label={group}>
-                  {rows.map((m) => (
-                    <option key={m.id} value={m.name}>
-                      {m.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+              className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+            />
           </label>
-        </div>
+          <div className="mt-2 max-h-48 overflow-y-auto rounded border border-slate-200 bg-slate-50/80 p-2">
+            {mastersLoading ? (
+              <div className="text-xs text-gray-500">業種マスタ読み込み中...</div>
+            ) : filteredIndustryByGroup.length === 0 ? (
+              <div className="text-xs text-gray-500">該当するマスタがありません</div>
+            ) : (
+              filteredIndustryByGroup.map(([group, rows]) => (
+                <div key={group} className="mb-3 last:mb-0">
+                  <div className="mb-1 text-[11px] font-semibold text-slate-700">{group}</div>
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                    {rows.map((m) => {
+                      const checked = selectedIndustryNames.includes(m.name)
+                      return (
+                        <label
+                          key={m.id}
+                          className="flex min-w-0 items-center gap-2 rounded border border-transparent px-1 py-0.5 text-xs font-medium text-gray-700 hover:bg-white"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const on = e.target.checked
+                              setSelectedIndustryNames((prev) =>
+                                on ? [...prev, m.name] : prev.filter((x) => x !== m.name),
+                              )
+                              resetPreview()
+                            }}
+                            className="h-4 w-4 shrink-0 rounded border-gray-300"
+                          />
+                          <span className="truncate" title={m.name}>
+                            {m.name}
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="mt-1 text-[11px] text-gray-500">
+            未選択＝業種で絞り込みなし（他の条件のみ）
+          </div>
+        </fieldset>
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block text-xs font-medium text-gray-700">
-            未架電 / 架電済み（ListItem ステータス）
-            <select
-              value={callProgress}
-              onChange={(e) => {
-                setCallProgress(e.target.value as CallProgress)
-                resetPreview()
-              }}
-              className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="unstarted">未架電（未着手のみ）</option>
-              <option value="contacted">架電済み（架電中・完了）</option>
-              <option value="any">進捗すべて</option>
-            </select>
-          </label>
-          <fieldset className="text-xs font-medium text-gray-700">
-            <legend className="mb-1">AIリスト判定（A〜C、未チェック＝絞り込みなし）</legend>
-            <div className="flex flex-wrap gap-3 pt-1">
-              <label className="flex items-center gap-1.5 font-normal">
+          <fieldset className="rounded border border-gray-200 bg-white px-3 py-2">
+            <legend className="px-1 text-xs font-semibold text-gray-700">
+              ステータス（ListItem.status）
+            </legend>
+            <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {STATUS_OPTIONS.map((s) => {
+                const checked = selectedStatuses.includes(s)
+                return (
+                  <label key={s} className="flex items-center gap-2 text-xs font-medium text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const nextChecked = e.target.checked
+                        setSelectedStatuses((prev) =>
+                          nextChecked ? [...prev, s] : prev.filter((x) => x !== s),
+                        )
+                        resetPreview()
+                      }}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="truncate" title={s}>
+                      {s}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+            <div className="mt-1 text-[11px] text-gray-500">
+              未選択＝ステータスで絞り込みなし（他の条件のみ）
+            </div>
+          </fieldset>
+          <fieldset className="rounded border border-gray-200 bg-white px-3 py-2">
+            <legend className="px-1 text-xs font-semibold text-gray-700">
+              AIリスト判定（A〜C）
+            </legend>
+            <div className="mt-1 flex flex-wrap gap-3 pt-1 text-xs font-medium text-gray-700">
+              <label className="flex items-center gap-2 font-medium text-gray-700">
                 <input
                   type="checkbox"
                   checked={aiA}
@@ -419,11 +797,11 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
                     setAiA(e.target.checked)
                     resetPreview()
                   }}
-                  className="rounded border-gray-300"
+                  className="h-4 w-4 rounded border-gray-300"
                 />
                 A
               </label>
-              <label className="flex items-center gap-1.5 font-normal">
+              <label className="flex items-center gap-2 font-medium text-gray-700">
                 <input
                   type="checkbox"
                   checked={aiB}
@@ -431,11 +809,11 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
                     setAiB(e.target.checked)
                     resetPreview()
                   }}
-                  className="rounded border-gray-300"
+                  className="h-4 w-4 rounded border-gray-300"
                 />
                 B
               </label>
-              <label className="flex items-center gap-1.5 font-normal">
+              <label className="flex items-center gap-2 font-medium text-gray-700">
                 <input
                   type="checkbox"
                   checked={aiC}
@@ -443,10 +821,13 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
                     setAiC(e.target.checked)
                     resetPreview()
                   }}
-                  className="rounded border-gray-300"
+                  className="h-4 w-4 rounded border-gray-300"
                 />
                 C
               </label>
+            </div>
+            <div className="mt-1 text-[11px] text-gray-500">
+              未チェック＝AIティアで絞り込みなし（他の条件のみ）
             </div>
           </fieldset>
         </div>
@@ -455,7 +836,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
           <button
             type="button"
             onClick={handlePreviewMatch}
-            disabled={previewLoading || !selectedListId}
+            disabled={previewLoading || selectedListIds.length === 0}
             className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
           >
             {previewLoading ? '確認中…' : '対象件数を確認'}
@@ -471,88 +852,133 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-gray-900">配布の対象リスト</h2>
-          <p className="mt-1 text-xs leading-relaxed text-gray-600">
-            CSV格納などで登録済みの「架電リスト」から、今回操作するリストを1つ選びます。名前（例:
-            CSVリスト-日付）は取り込み時のリスト名です。
+          <p className="mt-2 text-xs text-gray-600">
+            チェックで複数選択できます。プレビュー・配布・回収・KPIは<strong className="font-semibold">選択した全リスト</strong>に対して実行されます（KPIは合算表示）。
           </p>
-          <div className="mt-3 space-y-2">
+          <div className="mt-2 text-xs text-gray-700">
+            新規のリストは{' '}
+            <Link href="/director/calling-lists/import" className="font-semibold text-blue-600 hover:underline">
+              リスト格納
+            </Link>
+            から追加できます。
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setListModalOpen(true)}
-              disabled={listsLoading}
-              className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-60"
+              onClick={selectAllTargetLists}
+              disabled={listsLoading || lists.length === 0}
+              className="rounded border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              {listsLoading
-                ? '読み込み中...'
-                : selectedListId
-                  ? `${selectedListLabel || '（無題）'}（明細 ${selectedListMeta?.itemCount ?? '—'} 件）`
-                  : 'リストを選ぶ'}
+              全選択
             </button>
-            <div className="text-[11px] text-gray-600">
-              テナント内のリスト: <span className="tabular-nums font-medium text-gray-800">{lists.length}</span> 件
-              {selectedListId && selectedListMeta ? (
-                <span className="mt-1 block text-gray-500">
-                  選択中の内部ID（問い合わせ・ログ用・通常は不要）:{' '}
-                  <code className="rounded bg-slate-100 px-1 text-[10px] text-slate-700">{selectedListId}</code>
-                </span>
-              ) : null}
-            </div>
+            <button
+              type="button"
+              onClick={clearTargetLists}
+              disabled={selectedListIds.length === 0}
+              className="rounded border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              全解除
+            </button>
           </div>
-        </section>
-
-        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">配布先（User.id）</h2>
-          <div className="mt-3 max-h-[260px] overflow-auto rounded border border-gray-200">
-            {usersLoading ? (
-              <div className="p-3 text-sm text-gray-500">読み込み中...</div>
+          <div className="mt-2 max-h-56 overflow-y-auto rounded border border-gray-200 bg-slate-50/50">
+            {listsLoading ? (
+              <div className="p-3 text-xs text-gray-500">読み込み中...</div>
+            ) : lists.length === 0 ? (
+              <div className="p-3 text-xs text-gray-500">リストがありません</div>
             ) : (
-              <ul className="divide-y divide-gray-200">
-                {users.map((u) => {
-                  const checked = selectedUserIds.includes(u.id)
+              <ul className="divide-y divide-gray-100">
+                {lists.map((l) => {
+                  const checked = selectedListIds.includes(l.id)
                   return (
-                    <li key={u.id} className="flex items-start gap-2 p-3">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          setSelectedUserIds((prev) =>
-                            e.target.checked ? [...prev, u.id] : prev.filter((x) => x !== u.id),
-                          )
-                        }}
-                        className="mt-1 h-4 w-4 rounded border-gray-300"
-                        aria-label={`選択 ${u.name}`}
-                      />
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-900">{u.name || u.email}</div>
-                        <div className="text-[11px] text-gray-500">
-                          {u.email} / {u.role} / {u.id}
-                        </div>
-                      </div>
+                    <li key={l.id}>
+                      <label className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-amber-50/80">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => toggleTargetList(l.id, e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
+                          aria-label={`対象にする ${formatListLine(l)}`}
+                        />
+                        <span className="min-w-0 flex-1 text-sm font-medium text-gray-900">
+                          {formatListLine(l)}
+                        </span>
+                      </label>
                     </li>
                   )
                 })}
               </ul>
             )}
           </div>
-          <div className="mt-2 text-[11px] text-gray-600">選択中: {selectedUsersLabel || '—'}</div>
+          <div className="mt-2 text-base text-gray-700">
+            テナント内{' '}
+            <span className="font-semibold tabular-nums text-blue-600">{lists.length}</span> 件 / 選択{' '}
+            <span className="font-semibold tabular-nums text-blue-600">{selectedListIds.length}</span> 件
+            {targetListButtonLabel && selectedListsDisplay.length > 1 ? (
+              <span className="mt-1 block text-gray-500">{targetListButtonLabel}</span>
+            ) : null}
+          </div>
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">操作</h2>
+          <h2 className="text-sm font-semibold text-gray-900">配布方法</h2>
           <div className="mt-3 space-y-2">
-            <button
-              type="button"
-              onClick={handleDistributeEven}
-              disabled={actionLoading}
-              className="w-full rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-            >
-              {hasFilters ? '条件付き均等配布' : '均等配布（条件なし）'}
-            </button>
+            <fieldset className="text-xs font-medium text-gray-700">
+              <legend className="mb-1">配布方法</legend>
+              <div className="flex flex-wrap gap-3">
+                <label className="flex items-center gap-2 font-normal">
+                  <input
+                    type="radio"
+                    name="distribute-mode"
+                    checked={distributeMode === 'even'}
+                    onChange={() => setDistributeMode('even')}
+                    className="rounded border-gray-300"
+                  />
+                  均等割り付け
+                </label>
+                <label className="flex items-center gap-2 font-normal">
+                  <input
+                    type="radio"
+                    name="distribute-mode"
+                    checked={distributeMode === 'target'}
+                    onChange={() => setDistributeMode('target')}
+                    className="rounded border-gray-300"
+                  />
+                  目標件数でメンバーにリスト割り振り
+                </label>
+              </div>
+            </fieldset>
+
+            {distributeMode === 'even' ? (
+              <button
+                type="button"
+                onClick={handleDistributeEven}
+                disabled={actionLoading || selectedListIds.length === 0}
+                className="w-full rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {hasFilters ? '条件付き均等配布' : '均等配布（条件なし）'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleDistributeTargetCounts}
+                disabled={
+                  actionLoading ||
+                  selectedListIds.length === 0 ||
+                  selectedUserIds.length === 0 ||
+                  totalTargetAllocationCount <= 0
+                }
+                className="w-full rounded bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {hasFilters ? '条件付き目標件数で割り振り' : '目標件数で割り振り（条件なし）'}
+              </button>
+            )}
+
+            <div className="pt-1 text-xs font-semibold text-gray-800">回収方法</div>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => handleRecall('unstartedOnly')}
-                disabled={actionLoading}
+                disabled={actionLoading || selectedListIds.length === 0}
                 className="rounded border border-gray-300 bg-white px-2 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
                 未着手引上げ
@@ -560,7 +986,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
               <button
                 type="button"
                 onClick={() => handleRecall('callingOnly')}
-                disabled={actionLoading}
+                disabled={actionLoading || selectedListIds.length === 0}
                 className="rounded border border-gray-300 bg-white px-2 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
                 架電中引上げ
@@ -568,21 +994,112 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
               <button
                 type="button"
                 onClick={() => handleRecall('all')}
-                disabled={actionLoading}
+                disabled={actionLoading || selectedListIds.length === 0}
                 className="rounded border border-gray-300 bg-white px-2 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
                 全部引上げ
               </button>
             </div>
-            <button
-              type="button"
-              onClick={refreshKpi}
-              disabled={kpiLoading || !selectedListId}
-              className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-            >
-              KPI更新
-            </button>
           </div>
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-gray-900">配布先（User.id）</h2>
+          <div className="mt-1 text-base text-gray-700">
+            テナント内{' '}
+            <span className="font-semibold tabular-nums text-blue-600">{users.length}</span> 件 / 選択{' '}
+            <span className="font-semibold tabular-nums text-blue-600">{selectedUserIds.length}</span> 件
+          </div>
+          <div className="mt-3 max-h-[260px] overflow-auto rounded border border-gray-200">
+            {usersLoading ? (
+              <div className="p-3 text-sm text-gray-500">読み込み中...</div>
+            ) : (
+              <ul className="divide-y divide-gray-200">
+                {users.map((u) => {
+                  const checked = selectedUserIds.includes(u.id)
+                  const displayName = u.name || u.email || u.id
+                  const ringClass = checked ? 'ring-sky-300' : 'ring-gray-200'
+                  const bgGradient = checked
+                    ? 'from-sky-200 to-sky-300'
+                    : 'from-slate-200 to-slate-300'
+                  return (
+                    <li key={u.id} className="flex items-start gap-2 p-3">
+                      {/* 写真（=ステータス）を左端表示 */}
+                      <div
+                        className={`relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gradient-to-br ring-1 ${ringClass} ${bgGradient}`}
+                        title={displayName}
+                      >
+                        {u.profileImageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={u.profileImageUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-700">
+                            {initialsFromName(displayName)}
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const nextChecked = e.target.checked
+                          setSelectedUserIds((prev) =>
+                            nextChecked ? [...prev, u.id] : prev.filter((x) => x !== u.id),
+                          )
+                          setTargetCountsByUserId((prev) => {
+                            if (!nextChecked) {
+                              const { [u.id]: _removed, ...rest } = prev
+                              return rest
+                            }
+                            return { ...prev, [u.id]: prev[u.id] ?? 1 }
+                          })
+                        }}
+                        className="mt-1 h-4 w-4 rounded border-gray-300"
+                        aria-label={`選択 ${displayName}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-900 truncate">
+                          {displayName}
+                        </div>
+                        <div className="text-[11px] text-gray-500 truncate">
+                          {u.role} / {u.id}
+                        </div>
+                      </div>
+                      {checked && distributeMode === 'target' ? (
+                        <div className="ml-auto flex flex-col items-end gap-1">
+                          <label className="text-[11px] font-medium text-gray-600">
+                            目標割当件数（メンバーへ割り振り）
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={targetCountsByUserId[u.id] ?? 0}
+                            onChange={(e) => {
+                              const raw = e.target.value
+                              const next = raw === '' ? 0 : Math.max(0, Math.floor(Number(raw)))
+                              setTargetCountsByUserId((prev) => ({ ...prev, [u.id]: next }))
+                            }}
+                            className="w-28 rounded border border-gray-300 bg-white px-2 py-1 text-sm text-right"
+                          />
+                        </div>
+                      ) : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+          <div className="mt-2 text-[11px] text-gray-600">選択中: {selectedUsersLabel || '—'}</div>
+          {distributeMode === 'target' ? (
+            <div className="mt-1 text-[11px] text-gray-600">
+              全員目標割当件数（メンバー別合計）: <span className="font-semibold tabular-nums">{totalTargetAllocationCount}</span>
+            </div>
+          ) : null}
         </section>
       </div>
 
@@ -617,7 +1134,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
               ) : kpiMatrixRows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
-                    KPI未取得（「配布の対象リスト」を選び「KPI更新」を押してください）
+                    KPI未取得（「配布の対象リスト」で1件以上チェックすると自動で取得・複数は合算）
                   </td>
                 </tr>
               ) : (
@@ -648,60 +1165,6 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
         </div>
       </section>
 
-      {listModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          role="presentation"
-          onClick={() => setListModalOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="list-picker-title"
-            className="flex max-h-[min(28rem,75vh)] w-full max-w-md flex-col overflow-hidden rounded-xl bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.key === 'Escape' && setListModalOpen(false)}
-          >
-            <div
-              id="list-picker-title"
-              className="shrink-0 border-b border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900"
-            >
-              架電リストをタップして選択
-            </div>
-            <p className="border-b border-gray-100 px-4 py-2 text-[11px] text-gray-500">
-              一覧は多い場合スクロールできます。各行の件数はリスト内の企業（明細）数です。
-            </p>
-            <ul className="min-h-0 flex-1 overflow-y-auto">
-              {lists.map((l) => (
-                <li key={l.id} className="border-b border-gray-100 last:border-0">
-                  <button
-                    type="button"
-                    title={`内部ID: ${l.id}`}
-                    className="w-full px-4 py-3 text-left text-sm text-gray-800 hover:bg-amber-50"
-                    onClick={() => {
-                      setSelectedListId(l.id)
-                      setListModalOpen(false)
-                      resetPreview()
-                    }}
-                  >
-                    <span className="font-medium">{l.name}</span>
-                    <span className="mt-0.5 block text-[11px] text-gray-500">明細 {l.itemCount} 件</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="shrink-0 border-t border-gray-200 p-2">
-              <button
-                type="button"
-                className="w-full rounded border border-gray-300 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => setListModalOpen(false)}
-              >
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

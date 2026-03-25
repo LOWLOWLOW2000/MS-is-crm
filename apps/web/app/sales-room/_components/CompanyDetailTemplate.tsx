@@ -3,7 +3,7 @@
 import type React from 'react'
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, LifeBuoy, Mail, PhoneForwarded } from 'lucide-react'
 import { SalesRoomActionResultPanel } from './SalesRoomActionResultPanel'
 import {
   fetchCompany,
@@ -20,6 +20,18 @@ const SAMPLE_PHONE_LIST = [
   { label: '営業本部直通', phone: '03-1234-5002' },
   { label: '情報システム部直通', phone: '03-1234-5003' },
 ]
+
+/** 連絡アクション（電話一覧・担当者行のベース。タッチしやすい最小高さ） */
+const contactActionBase =
+  'inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1'
+
+/** 担当者行：部署電話と同じピル見た目（枠・角丸・高さを電話一覧に寄せる） */
+const personaRowPill =
+  'inline-flex max-w-full min-h-10 items-center gap-1.5 rounded-lg border border-emerald-400 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-900 shadow-sm'
+
+/** 電話・メールのみアイコン（正方形・タップ領域確保） */
+const contactIconOnlyBtn =
+  'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-emerald-500'
 
 const SAMPLE_PERSONAS = [
   {
@@ -161,16 +173,17 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
     setIsDialPadOpen(false)
   }
 
+  /** ダイヤルパッド呼出（通話中は無効。切る操作は「電話を切る」ボタン） */
   const handleClickCallSegment = () => {
-    if (isCallActive) {
-      // 通話中 → 切る
-      setIsCallActive(false)
-      setIsOnHold(false)
-      setDialNumber('')
-      return
-    }
-    // 待機中 → ダイヤルパッド呼出
+    if (isCallActive) return
     setIsDialPadOpen(true)
+  }
+
+  /** 通話終了（専用ボタン） */
+  const handleHangUp = () => {
+    setIsCallActive(false)
+    setIsOnHold(false)
+    setDialNumber('')
   }
 
   const handleClickHold = () => {
@@ -178,11 +191,10 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
     setIsOnHold((prev) => !prev)
   }
 
-  const handleClickEmergency = () => {
-    // 将来: ディレクターへの WebRTC 呼び出しをトリガー
-    // 現状は UI モックのみ
+  /** ディレクター等へのヘルプ要請（将来: WebRTC / キュー連携） */
+  const handleHelpRequest = () => {
     // eslint-disable-next-line no-alert
-    alert('ディレクターに緊急コール（モック）')
+    alert('ヘルプ要請を送信しました（モック）')
   }
 
   const handleBack = () => {
@@ -374,8 +386,8 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
   return (
     <div className="relative rounded-md border border-gray-200 bg-white shadow-sm">
       {/* ヘッダ：詳細表示（リスト名）＋ リスト変更 UI */}
-      <header className="flex flex-wrap items-center justify-start gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs">
-        <div className="flex flex-wrap items-center gap-2">
+      <header className="flex flex-wrap items-stretch gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <span className="text-[11px] text-gray-600">リスト変更→</span>
           <select className="rounded border border-gray-300 bg-white px-3 py-1.5 text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
             <option>再架電</option>
@@ -416,6 +428,94 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
             </button>
           </div>
         </div>
+
+        {/* 架電ステータス（ヘッダ右端。狭い画面では下段に折り返し） */}
+        <section className="w-full shrink-0 rounded-md border border-slate-500/70 bg-slate-700 px-3 py-2 shadow-sm sm:ml-auto sm:w-auto sm:max-w-2xl">
+          <p className="mb-1.5 border-b border-slate-500/80 pb-1 text-[10px] font-semibold tracking-wide text-slate-400">
+            架電ステータス
+          </p>
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1.5 text-[13px] leading-snug">
+              <div>
+                <span className="text-slate-200/95">状況：</span>
+                <span
+                  className={
+                    isCallActive
+                      ? 'font-semibold text-green-300'
+                      : 'font-semibold text-white'
+                  }
+                >
+                  {statusLabel}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <span className="text-slate-200/95">発信先：</span>
+                <span className="font-semibold text-white">{targetText}</span>
+              </div>
+            </div>
+
+            <div className="mt-2 grid w-full min-w-[220px] grid-cols-2 gap-0.5 overflow-hidden rounded-md border border-slate-300 bg-slate-100 text-[11px] font-semibold sm:mt-0 sm:max-w-2xl sm:grid-cols-4">
+              <button
+                type="button"
+                onClick={handleClickCallSegment}
+                disabled={isCallActive}
+                className={`flex flex-col items-center justify-center px-2 py-2 ${
+                  isCallActive
+                    ? 'cursor-not-allowed bg-slate-200 text-slate-500'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                }`}
+                aria-label="ダイヤルパッド呼出"
+              >
+                <span className="mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-sm bg-white/90 text-[9px] font-bold text-emerald-700">
+                  ▶
+                </span>
+                <span className="leading-tight">ダイヤルパッド呼出</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClickHold}
+                disabled={!isCallActive}
+                className={`flex flex-col items-center justify-center border-l border-slate-300 px-2 py-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  isOnHold ? 'bg-amber-200 text-amber-900' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                }`}
+              >
+                <span className="mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-white">
+                  ♪
+                </span>
+                <span className="leading-tight">保留</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleHelpRequest}
+                className="flex flex-col items-center justify-center border-l border-slate-300 bg-amber-200 px-2 py-2 text-amber-950 hover:bg-amber-300"
+                aria-label="ヘルプ要請"
+              >
+                <span className="mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-600 text-white">
+                  <LifeBuoy className="h-2.5 w-2.5" aria-hidden />
+                </span>
+                <span className="leading-tight">ヘルプ要請</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleHangUp}
+                disabled={!isCallActive}
+                className="flex flex-col items-center justify-center border-l border-slate-300 bg-red-600 px-2 py-2 text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                aria-label="電話を切る"
+              >
+                <span className="mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-sm bg-white/90 text-[9px] font-bold text-red-700">
+                  ■
+                </span>
+                <span className="leading-tight">電話を切る</span>
+              </button>
+            </div>
+          </div>
+          <p className="mt-1.5 text-[10px] leading-snug text-slate-400">
+            ヘルパーの声は相手に聞こえません
+          </p>
+        </section>
       </header>
 
       {/* 修正・担当追加 POPUP */}
@@ -663,230 +763,173 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
             </div>
           </section>
 
-          {/* 電話一覧（押下で発信）＋ 担当者（TEL / MAIL） */}
-          <section className="w-full space-y-2">
-            <div className="flex w-full flex-wrap items-center gap-1.5 text-sm font-semibold">
-              <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-800">
-                電話一覧（押下で発信）
-              </span>
-              {SAMPLE_PHONE_LIST.map((item) => (
-                <a
-                  key={item.label}
-                  href={`tel:${item.phone.replace(/-/g, '')}`}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-800 hover:bg-sky-100"
-                  title={`${item.label}に発信`}
-                  aria-label={`${item.label}に発信`}
-                  onClick={() =>
-                    setCurrentTarget({
-                      kind: 'phone',
-                      label: item.label,
-                      phone: item.phone,
-                    })
-                  }
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V21a2 2 0 01-2 2h-1C9.716 23 3 16.284 3 8V5z"
-                    />
-                  </svg>
-                  <span>{item.label}</span>
-                  <span className="font-mono">{item.phone}</span>
-                </a>
-              ))}
+          {/* 電話一覧（クリック発信）＋ 担当者（TEL / MAIL）— lucide でアイコン統一 */}
+          <section className="w-full space-y-3">
+            <div className="space-y-2">
+              <h3 className="inline-block rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-800">
+                電話一覧（クリック発信）
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {SAMPLE_PHONE_LIST.map((item) => (
+                  <a
+                    key={item.label}
+                    href={`tel:${item.phone.replace(/-/g, '')}`}
+                    className={`${contactActionBase} max-w-full border border-sky-400 bg-sky-50 text-sky-900 hover:bg-sky-100 focus-visible:ring-sky-400`}
+                    title={`${item.label}に発信`}
+                    aria-label={`${item.label} ${item.phone} に発信`}
+                    onClick={() =>
+                      setCurrentTarget({
+                        kind: 'phone',
+                        label: item.label,
+                        phone: item.phone,
+                      })
+                    }
+                  >
+                    <PhoneForwarded className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="max-w-[10rem] truncate sm:max-w-none">{item.label}</span>
+                    <span className="font-mono text-[11px] text-sky-950">{item.phone}</span>
+                  </a>
+                ))}
+              </div>
             </div>
 
-            <div className="flex w-full flex-wrap items-center gap-1.5 text-xs">
-              <span className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-800">
-                担当者（TEL / MAIL）
-              </span>
+            <div className="space-y-2">
+              <h3 className="inline-block rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-800">
+                担当者
+              </h3>
               {personasLoading ? (
                 <div className="text-xs text-slate-500">読み込み中…</div>
               ) : displayPersonas.length > 0 ? (
-                displayPersonas.map((p) => {
-                  const phone = p.phone ?? null
-                  const email = (p as unknown as { email?: string | null }).email ?? null
-                  const deptName = (p as unknown as { department?: { name?: string | null } | null }).department
-                    ?.name
-                  const personaLabel = `${deptName ?? ''}${deptName ? ' ' : ''}${p.name}`
+                <div className="flex flex-wrap gap-2">
+                  {displayPersonas.map((p) => {
+                    const phone = p.phone ?? null
+                    const email = (p as unknown as { email?: string | null }).email ?? null
+                    const deptName = (p as unknown as { department?: { name?: string | null } | null }).department
+                      ?.name
+                    const personaLabel = `${deptName ?? ''}${deptName ? ' ' : ''}${p.name}`
 
-                  return (
-                    <div
-                      key={p.id}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-900"
-                    >
-                      <span className="text-emerald-700">{deptName ?? '—'}</span>
-                      <span className="font-semibold text-emerald-950">{p.name}</span>
-
-                      {phone ? (
+                    return (
+                      <div
+                        key={p.id}
+                        className={`${personaRowPill} pr-1`}
+                      >
+                        <PhoneForwarded className="h-4 w-4 shrink-0 text-emerald-700" aria-hidden />
+                        <span className="max-w-[9rem] truncate sm:max-w-[14rem]">
+                          <span className="text-emerald-700">{deptName ?? '—'}</span>
+                          <span className="ml-1 font-semibold text-emerald-950">{p.name}</span>
+                        </span>
+                        <span className="shrink-0 font-mono text-[11px] text-emerald-950">
+                          {phone ?? '—'}
+                        </span>
+                        {phone ? (
+                          <a
+                            href={`tel:${phone.replace(/-/g, '')}`}
+                            className={`${contactIconOnlyBtn} border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700`}
+                            title={`${p.name} に電話`}
+                            aria-label={`${p.name} に電話`}
+                            onClick={() => {
+                              setCurrentTarget({
+                                kind: 'persona',
+                                targetId: p.id,
+                                label: personaLabel,
+                                phone,
+                                email,
+                              })
+                            }}
+                          >
+                            <PhoneForwarded className="h-5 w-5" aria-hidden />
+                          </a>
+                        ) : (
+                          <span
+                            className={`${contactIconOnlyBtn} cursor-not-allowed border-emerald-200 bg-emerald-100/90 text-emerald-400`}
+                            aria-disabled
+                            title="電話番号なし"
+                          >
+                            <PhoneForwarded className="h-5 w-5 opacity-50" aria-hidden />
+                          </span>
+                        )}
+                        {email ? (
+                          <a
+                            href={`mailto:${email}`}
+                            className={`${contactIconOnlyBtn} border-emerald-500 bg-white text-emerald-900 hover:bg-emerald-100`}
+                            title={`${p.name} にメール`}
+                            aria-label={`${p.name} にメール`}
+                            onClick={() => {
+                              setCurrentTarget({
+                                kind: 'persona',
+                                targetId: p.id,
+                                label: personaLabel,
+                                phone: phone ?? '',
+                                email,
+                              })
+                            }}
+                          >
+                            <Mail className="h-5 w-5" aria-hidden />
+                          </a>
+                        ) : (
+                          <span
+                            className={`${contactIconOnlyBtn} cursor-not-allowed border-emerald-200 bg-emerald-100/90 text-emerald-400`}
+                            aria-disabled
+                            title="メールなし"
+                          >
+                            <Mail className="h-5 w-5 opacity-50" aria-hidden />
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="text-xs text-slate-500">担当者データがありません（サンプルを表示）</div>
+                  <div className="flex flex-wrap gap-2">
+                    {SAMPLE_PERSONAS.map((p) => (
+                      <div key={p.id} className={`${personaRowPill} pr-1`}>
+                        <PhoneForwarded className="h-4 w-4 shrink-0 text-emerald-700" aria-hidden />
+                        <span className="max-w-[9rem] truncate sm:max-w-[14rem]">
+                          <span className="text-emerald-700">{p.department}</span>
+                          <span className="ml-1 font-semibold text-emerald-950">{p.name}</span>
+                        </span>
+                        <span className="shrink-0 font-mono text-[11px] text-emerald-950">{p.phone}</span>
                         <a
-                          href={`tel:${phone.replace(/-/g, '')}`}
-                          className="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-emerald-700"
+                          href={`tel:${p.phone.replace(/-/g, '')}`}
+                          className={`${contactIconOnlyBtn} border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700`}
                           title={`${p.name} に電話`}
                           aria-label={`${p.name} に電話`}
                           onClick={() => {
                             setCurrentTarget({
                               kind: 'persona',
                               targetId: p.id,
-                              label: personaLabel,
-                              phone,
-                              email,
+                              label: `${p.department} ${p.name}`,
+                              phone: p.phone,
+                              email: p.email,
                             })
                           }}
                         >
-                          TEL
+                          <PhoneForwarded className="h-5 w-5" aria-hidden />
                         </a>
-                      ) : (
-                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-200 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800/70">
-                          TEL
-                        </span>
-                      )}
-
-                      {email ? (
                         <a
-                          href={`mailto:${email}`}
-                          className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-200"
+                          href={`mailto:${p.email}`}
+                          className={`${contactIconOnlyBtn} border-emerald-500 bg-white text-emerald-900 hover:bg-emerald-100`}
                           title={`${p.name} にメール`}
                           aria-label={`${p.name} にメール`}
                           onClick={() => {
                             setCurrentTarget({
                               kind: 'persona',
                               targetId: p.id,
-                              label: personaLabel,
-                              phone: phone ?? '',
-                              email,
+                              label: `${p.department} ${p.name}`,
+                              phone: p.phone,
+                              email: p.email,
                             })
                           }}
                         >
-                          MAIL
+                          <Mail className="h-5 w-5" aria-hidden />
                         </a>
-                      ) : (
-                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-200 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800/70">
-                          MAIL
-                        </span>
-                      )}
-                    </div>
-                  )
-                })
-              ) : (
-                <div className="space-y-1">
-                  <div className="text-xs text-slate-500">担当者データがありません（サンプルを表示）</div>
-                  {SAMPLE_PERSONAS.map((p) => (
-                    <div
-                      key={p.id}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-900"
-                    >
-                      <span className="text-emerald-700">{p.department}</span>
-                      <span className="font-semibold text-emerald-950">{p.name}</span>
-                      <a
-                        href={`tel:${p.phone.replace(/-/g, '')}`}
-                        className="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-emerald-700"
-                        title={`${p.name} に電話`}
-                        aria-label={`${p.name} に電話`}
-                        onClick={() => {
-                          setCurrentTarget({
-                            kind: 'persona',
-                            targetId: p.id,
-                            label: `${p.department} ${p.name}`,
-                            phone: p.phone,
-                            email: p.email,
-                          })
-                        }}
-                      >
-                        TEL
-                      </a>
-                      <a
-                        href={`mailto:${p.email}`}
-                        className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-200"
-                        title={`${p.name} にメール`}
-                        aria-label={`${p.name} にメール`}
-                        onClick={() => {
-                          setCurrentTarget({
-                            kind: 'persona',
-                            targetId: p.id,
-                            label: `${p.department} ${p.name}`,
-                            phone: p.phone,
-                            email: p.email,
-                          })
-                        }}
-                      >
-                        MAIL
-                      </a>
-                    </div>
-                  ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
-            </div>
-          </section>
-
-          {/* 架電ステータスパネル（行動結果・メモ と 電話一覧の間の横長バー） */}
-          <section className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-100">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              {/* 左：ステータス表示 */}
-              <div className="space-y-1.5">
-                <div>
-                  <span className="text-slate-400">状況：</span>
-                  <span
-                    className={
-                      isCallActive ? 'font-medium text-green-400' : 'font-medium text-slate-400'
-                    }
-                  >
-                    {statusLabel}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400">発信先：</span>
-                  <span className="truncate font-medium text-slate-100">{targetText}</span>
-                </div>
-              </div>
-
-              {/* 右：電話セクション（3セグメントパネル） */}
-              <div className="mt-2 grid w-full min-w-[220px] grid-cols-3 gap-0.5 overflow-hidden rounded-md border border-slate-300 bg-slate-100 text-[11px] font-semibold sm:mt-0 sm:max-w-xs">
-                {/* 電話操作パネル（ダイヤルパッド呼出 / 切る） */}
-                <button
-                  type="button"
-                  onClick={handleClickCallSegment}
-                  className={`flex flex-col items-center justify-center px-2 py-2 ${
-                    isCallActive ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                  }`}
-                  aria-label={isCallActive ? '℡切る' : 'ダイヤルパッド呼出'}
-                >
-                  <span className="mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-sm bg-white/90 text-[9px] font-bold text-emerald-700">
-                    {isCallActive ? '■' : '▶'}
-                  </span>
-                  <span className="leading-tight">
-                    {isCallActive ? '℡切る' : 'ダイヤルパッド呼出'}
-                  </span>
-                </button>
-
-                {/* 保留パネル */}
-                <button
-                  type="button"
-                  onClick={handleClickHold}
-                  className={`flex flex-col items-center justify-center border-l border-r border-slate-300 px-2 py-2 ${
-                    isOnHold ? 'bg-amber-200 text-amber-900' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-                  }`}
-                >
-                  <span className="mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-white">
-                    ♪
-                  </span>
-                  <span className="leading-tight">保留</span>
-                </button>
-
-                {/* 緊急パネル（ディレクター呼出） */}
-                <button
-                  type="button"
-                  onClick={handleClickEmergency}
-                  className="flex flex-col items-center justify-center bg-yellow-300 px-2 py-2 text-yellow-950 hover:bg-yellow-400"
-                >
-                  <span className="mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
-                    !
-                  </span>
-                  <span className="leading-tight">緊急</span>
-                </button>
-              </div>
             </div>
           </section>
 

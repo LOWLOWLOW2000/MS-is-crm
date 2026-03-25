@@ -348,6 +348,21 @@ export type UserListItem = {
   } | null;
 };
 
+export type MyProfile = {
+  id: string
+  tenantId: string
+  email: string
+  name: string
+  profileImageUrl: string | null
+  role: string
+  roles: string[]
+  /** テナント表示（ヘッダーと同系） */
+  tenantCompanyName: string
+  tenantProjectName: string
+  /** 既定PJへの配役（未参加なら null） */
+  projectAssignment?: UserListItem['projectAssignment']
+};
+
 export const fetchUsers = async (accessToken: string): Promise<UserListItem[]> => {
   const response = await fetch(`${apiBaseUrl}/users`, {
     method: 'GET',
@@ -380,6 +395,41 @@ export const fetchUsers = async (accessToken: string): Promise<UserListItem[]> =
   return (await response.json()) as UserListItem[];
 };
 
+/** 自分自身のプロフィール取得（プロフ写真など） */
+export const fetchMyProfile = async (accessToken: string): Promise<MyProfile> => {
+  const response = await fetch(`${apiBaseUrl}/users/me`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || 'プロフィール取得に失敗しました')
+  }
+  return (await response.json()) as MyProfile
+}
+
+/** 自分自身のプロフ写真更新（MVP: dataURL文字列を保存） */
+export const updateMyProfileImage = async (
+  accessToken: string,
+  profileImageUrl: string,
+): Promise<{ profileImageUrl: string | null }> => {
+  const response = await fetch(`${apiBaseUrl}/users/me/profile-image`, {
+    method: 'PATCH',
+    headers: {
+      ...createAuthHeaders(accessToken),
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+    body: JSON.stringify({ profileImageUrl }),
+  })
+  if (!response.ok) {
+    const errText = await response.text()
+    throw new Error(errText || 'プロフ写真更新に失敗しました')
+  }
+  return (await response.json()) as { profileImageUrl: string | null }
+}
+
 /** 管理画面 BOX: director（Tier1）/ is（Tier2）に応じて director・is_member を切替 */
 export const assignUserTierBox = async (
   accessToken: string,
@@ -402,7 +452,7 @@ export const assignUserTierBox = async (
   return (await response.json()) as UserListItem;
 };
 
-/** 既定PJから除名（project_memberships のみ削除） */
+/** 既定PJからサインアウト（project_memberships のみ削除） */
 export const removeUserFromPj = async (
   accessToken: string,
   userId: string,
@@ -465,7 +515,10 @@ export type DistributeListFilters = {
   addressContains?: string
   cityContains?: string
   industryTagContains?: string
+  /** 業種マスタ名の複数（いずれかに industryTag が部分一致） */
+  industryNames?: string[]
   callProgress?: 'unstarted' | 'contacted' | 'any'
+  statuses?: string[]
   aiTiers?: ('A' | 'B' | 'C')[]
 }
 
@@ -476,7 +529,15 @@ const appendDistributeFilterParams = (params: URLSearchParams, filters: Distribu
   if (addr) params.set('addressContains', addr)
   if (city) params.set('cityContains', city)
   if (tag) params.set('industryTagContains', tag)
+  for (const n of filters.industryNames ?? []) {
+    const t = n.trim()
+    if (t.length > 0) params.append('industryNames', t)
+  }
   if (filters.callProgress) params.set('callProgress', filters.callProgress)
+  for (const s of filters.statuses ?? []) {
+    const t = s.trim()
+    if (t.length > 0) params.append('statuses', t)
+  }
   for (const t of filters.aiTiers ?? []) {
     params.append('aiTiers', t)
   }
@@ -493,7 +554,28 @@ const distributeFilterBody = (
   if (addr) body.addressContains = addr
   if (city) body.cityContains = city
   if (tag) body.industryTagContains = tag
+  if (filters.industryNames && filters.industryNames.length > 0) body.industryNames = filters.industryNames
   if (filters.callProgress) body.callProgress = filters.callProgress
+  if (filters.statuses && filters.statuses.length > 0) body.statuses = filters.statuses
+  if (filters.aiTiers && filters.aiTiers.length > 0) body.aiTiers = filters.aiTiers
+  return body
+}
+
+const distributeTargetFilterBody = (
+  assigneeUserIds: string[],
+  targetCounts: number[],
+  filters: DistributeListFilters,
+): Record<string, unknown> => {
+  const body: Record<string, unknown> = { assigneeUserIds, targetCounts }
+  const addr = filters.addressContains?.trim()
+  const city = filters.cityContains?.trim()
+  const tag = filters.industryTagContains?.trim()
+  if (addr) body.addressContains = addr
+  if (city) body.cityContains = city
+  if (tag) body.industryTagContains = tag
+  if (filters.industryNames && filters.industryNames.length > 0) body.industryNames = filters.industryNames
+  if (filters.callProgress) body.callProgress = filters.callProgress
+  if (filters.statuses && filters.statuses.length > 0) body.statuses = filters.statuses
   if (filters.aiTiers && filters.aiTiers.length > 0) body.aiTiers = filters.aiTiers
   return body
 }
@@ -551,6 +633,26 @@ export const distributeListItemsEven = async (
 
   if (!response.ok) {
     throw new Error('配布に失敗しました')
+  }
+
+  return (await response.json()) as { updatedCount: number }
+}
+
+export const distributeListItemsTargetCounts = async (
+  accessToken: string,
+  listId: string,
+  input: { assigneeUserIds: string[]; targetCounts: number[] } & DistributeListFilters,
+): Promise<{ updatedCount: number }> => {
+  const { assigneeUserIds, targetCounts, ...filters } = input
+  const response = await fetch(`${apiBaseUrl}/lists/${listId}/items/distribute-target`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(distributeTargetFilterBody(assigneeUserIds, targetCounts, filters)),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('目標件数配布に失敗しました')
   }
 
   return (await response.json()) as { updatedCount: number }

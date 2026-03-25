@@ -35,12 +35,12 @@ export function DashboardMenuLinks() {
           </li>
           <li>
             <Link href="/dashboard?view=kpi" className="text-blue-600 hover:underline">
-              KPIページ
+              KPIページ（AI）
             </Link>
           </li>
           <li>
             <Link href="/dashboard?view=ai-daily" className="text-blue-600 hover:underline">
-              AI日報
+              日報（AI）
             </Link>
           </li>
           {canSeeTier1Or2 && (
@@ -52,7 +52,7 @@ export function DashboardMenuLinks() {
           )}
           <li>
             <Link href="/sales-room" className="text-blue-600 hover:underline">
-              営業ルーム
+              架電ルーム
             </Link>
           </li>
           {canSeeTier1Or2 && (

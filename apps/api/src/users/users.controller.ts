@@ -18,6 +18,7 @@ import { hasAnyRole } from '../common/auth/role-utils';
 import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { UpdateUserTierDto } from './dto/update-user-tier.dto';
+import { UpdateProfileImageDto } from './dto/update-profile-image.dto';
 import { UsersService } from './users.service';
 
 interface JwtRequest extends Request {
@@ -77,7 +78,7 @@ export class UsersController {
     }
   }
 
-  /** 既定PJから除名: director / is_member を外し project_memberships を削除 */
+  /** 既定PJからサインアウト: project_memberships を削除 */
   @Delete(':id/pj-membership')
   async removePjMembership(@Req() req: JwtRequest, @Param('id') id: string) {
     try {
@@ -88,6 +89,32 @@ export class UsersController {
       if (error instanceof NotFoundException) throw error;
       if (error instanceof BadRequestException) throw error;
       throw new InternalServerErrorException('PJからの除名に失敗しました');
+    }
+  }
+
+  /** 自分自身のプロフィール情報（プロフ写真など） */
+  @Get('me')
+  async getMe(@Req() req: JwtRequest) {
+    try {
+      return await this.usersService.getMeProfile(req.user)
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error
+      throw new InternalServerErrorException('プロフィール取得に失敗しました')
+    }
+  }
+
+  /** 自分自身のプロフ写真更新（MVP: dataURLを保存） */
+  @Patch('me/profile-image')
+  async updateMeProfileImage(
+    @Req() req: JwtRequest,
+    @Body() dto: UpdateProfileImageDto,
+  ) {
+    try {
+      return await this.usersService.updateMeProfileImage(req.user, dto)
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error
+      if (error instanceof NotFoundException) throw error
+      throw new InternalServerErrorException('プロフ写真更新に失敗しました')
     }
   }
 }

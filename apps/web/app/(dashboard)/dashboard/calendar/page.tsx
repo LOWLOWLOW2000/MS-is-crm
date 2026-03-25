@@ -39,9 +39,9 @@ export default function CalendarPage() {
       <nav className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm" aria-label="関連ページ">
         <Link href="/dashboard" className="text-blue-600 hover:underline">メニュー</Link>
         <Link href="/dashboard?view=corporate" className="text-blue-600 hover:underline">個人アカウント</Link>
-        <Link href="/dashboard?view=kpi" className="text-blue-600 hover:underline">KPIページ</Link>
-        <Link href="/dashboard?view=ai-daily" className="text-blue-600 hover:underline">AI日報</Link>
-        <Link href="/sales-room" className="text-blue-600 hover:underline">営業ルーム</Link>
+        <Link href="/dashboard?view=kpi" className="text-blue-600 hover:underline">KPIページ（AI）</Link>
+        <Link href="/dashboard?view=ai-daily" className="text-blue-600 hover:underline">日報（AI）</Link>
+        <Link href="/sales-room" className="text-blue-600 hover:underline">架電ルーム</Link>
       </nav>
 
       {/* 中央: Googleカレンダー埋め込み */}

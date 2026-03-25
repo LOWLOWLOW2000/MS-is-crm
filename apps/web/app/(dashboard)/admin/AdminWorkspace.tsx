@@ -24,7 +24,7 @@ const TIER_ORDER_STORAGE_KEY = 'is-crm-admin-tier-order'
 
 type TierKey = 'director' | 'is'
 
-/** 一括「付与区分」: ディレクター / IS / PJ除名（メンバーシップ削除のみ） */
+/** 一括「付与区分」: ディレクター / IS / PJサインアウト（メンバーシップ削除のみ） */
 type BulkPjChoice = 'director' | 'is' | 'remove'
 
 /** 横並び時の既定: 左 ディレクター → 右 ISメンバー（つまみで入れ替え可） */
@@ -100,7 +100,7 @@ const inferPjTierForBulkRow = (m: UserListItem): TierKey => {
   if (
     eff.includes('is_member') &&
     !eff.includes('director') &&
-    !eff.some((r) => ['enterprise_admin', 'is_admin', 'developer'].includes(r))
+    !eff.some((r) => ['is_admin', 'developer'].includes(r))
   ) {
     return 'is'
   }
@@ -113,7 +113,7 @@ const isEnterpriseAdminMember = (m: UserListItem): boolean =>
 const isPjRemovalProtectedMember = (m: UserListItem): boolean =>
   effectiveRolesFromListItem(m).includes('enterprise_admin')
 
-/** PJ未アサインなら除名、それ以外は membership の pjRole を優先 */
+/** PJ未アサインならサインアウト、それ以外は membership の pjRole を優先 */
 const inferBulkPjChoice = (m: UserListItem): BulkPjChoice => {
   if (isEnterpriseAdminMember(m)) {
     return inferPjTierForBulkRow(m)
@@ -159,12 +159,12 @@ export const AdminWorkspace = () => {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteMessage, setInviteMessage] = useState('')
 
-  /** 企業管理者: 所属メンバー一括で director / is_member 相当を PATCH */
-  const [bulkJoinSelected, setBulkJoinSelected] = useState<Record<string, boolean>>({})
+  /** 所属メンバー一括: 付与区分 → 配役決定で全行反映・直前 members を undo に保持 */
   const [bulkJoinChoice, setBulkJoinChoice] = useState<Record<string, BulkPjChoice>>({})
   const [bulkJoinLoading, setBulkJoinLoading] = useState(false)
   const [bulkJoinMessage, setBulkJoinMessage] = useState('')
   const [bulkJoinError, setBulkJoinError] = useState('')
+  const [pjAssignUndoSnapshot, setPjAssignUndoSnapshot] = useState<UserListItem[] | null>(null)
 
   const [invitations, setInvitations] = useState<TenantInvitationRow[]>([])
   const [invListLoading, setInvListLoading] = useState(false)
@@ -187,34 +187,15 @@ export const AdminWorkspace = () => {
   )
 
   /**
-   * BOX は排他表示。is_member と director / 管理ロールが同時に付いている行は Tier1 にだけ出す（重複・「移動したのに残る」見えを防ぐ）。
+   * PJメンバー一覧は projectAssignment で表示同期する。
    */
   const directorMembers = useMemo(
-    () =>
-      members.filter((m) => {
-        const eff = effectiveRolesFromListItem(m)
-        return eff.some((r) =>
-          ['director', 'enterprise_admin', 'is_admin', 'developer'].includes(r),
-        )
-      }),
+    () => members.filter((m) => m.projectAssignment?.pjRole === 'director'),
     [members],
   )
   /** Tier2：is_member のみ（director・企業管理者・IS管理者・開発者と併記しない一覧） */
   const isTierMembers = useMemo(
-    () =>
-      members.filter((m) => {
-        const eff = effectiveRolesFromListItem(m)
-        if (!eff.includes('is_member')) return false
-        if (eff.includes('director')) return false
-        if (
-          eff.some((r) =>
-            ['enterprise_admin', 'is_admin', 'developer'].includes(r),
-          )
-        ) {
-          return false
-        }
-        return true
-      }),
+    () => members.filter((m) => m.projectAssignment?.pjRole === 'is_member'),
     [members],
   )
 
@@ -263,7 +244,8 @@ export const AdminWorkspace = () => {
     setMembersError('')
     try {
       const rows = await fetchUsers(accessToken)
-      setMembers([...rows].sort(compareMemberOrder))
+      const sorted = [...rows].sort(compareMemberOrder)
+      setMembers(sorted)
     } catch (e) {
       setMembersError((e as Error).message)
       setMembers([])
@@ -286,19 +268,6 @@ export const AdminWorkspace = () => {
           next[m.id] = inferBulkPjChoice(m)
         }
       }
-      for (const id of Object.keys(next)) {
-        if (!seen.has(id)) {
-          delete next[id]
-        }
-      }
-      return next
-    })
-  }, [members])
-
-  useEffect(() => {
-    setBulkJoinSelected((prev) => {
-      const seen = new Set(members.map((m) => m.id))
-      const next = { ...prev }
       for (const id of Object.keys(next)) {
         if (!seen.has(id)) {
           delete next[id]
@@ -355,6 +324,9 @@ export const AdminWorkspace = () => {
             setSelfTierChangeHint(
               '自分の役割区分を変更しました。トークン反映のため再ログインしてください。',
             )
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new Event('roles:changed'))
+            }
           }
         } catch (err) {
           setSelfTierChangeHint('')
@@ -464,30 +436,26 @@ export const AdminWorkspace = () => {
   const handleBulkJoinApply = async () => {
     setBulkJoinMessage('')
     setBulkJoinError('')
-    const targets = members.filter((m) => bulkJoinSelected[m.id])
-    if (targets.length === 0) {
-      setBulkJoinError('「対象に含める」を1名以上オンにしてください')
-      return
-    }
     if (!accessToken) {
       setBulkJoinError('ログイン情報が不足しています')
       return
     }
+    const targets = members.filter((m) => canDragMemberForTierChange(m))
+    if (targets.length === 0) {
+      setBulkJoinError('変更できるメンバーがいません')
+      return
+    }
+    const snapshotBefore = JSON.parse(JSON.stringify(members)) as UserListItem[]
     setBulkJoinLoading(true)
     let touchedSelf = false
     try {
       let assignCount = 0
       let removeCount = 0
       for (const m of targets) {
-        if (!canDragMemberForTierChange(m)) {
-          throw new Error(
-            `${m.name?.trim() || m.email}: このメンバーの配役は変更できません`,
-          )
-        }
         const choice = bulkJoinChoice[m.id] ?? inferBulkPjChoice(m)
         if (choice === 'remove') {
           if (isPjRemovalProtectedMember(m)) {
-            throw new Error('企業管理者はPJから除名できません')
+            throw new Error('企業管理者はPJからサインアウトできません')
           }
           await removeUserFromPj(accessToken, m.id)
           removeCount += 1
@@ -505,16 +473,64 @@ export const AdminWorkspace = () => {
         parts.push(`アサイン ${assignCount}名`)
       }
       if (removeCount > 0) {
-        parts.push(`PJ除名 ${removeCount}名`)
+        parts.push(`PJサインアウト ${removeCount}名`)
       }
       setBulkJoinMessage(
         parts.length > 0 ? `${parts.join('、')}を反映しました` : '反映しました',
       )
-      setBulkJoinSelected({})
+      setPjAssignUndoSnapshot(snapshotBefore)
       if (touchedSelf) {
         setSelfTierChangeHint(
           '自分の役割区分を変更しました。トークン反映のため再ログインしてください。',
         )
+        if (typeof window !== 'undefined') {
+          // 左ナビは NextAuth のセッションJWTに依存しないよう、APIから再取得するための通知
+          window.dispatchEvent(new Event('roles:changed'))
+        }
+      }
+    } catch (e) {
+      setBulkJoinError((e as Error).message)
+    } finally {
+      setBulkJoinLoading(false)
+    }
+  }
+
+  /** 直前の配役決定前の一覧スナップショットへ API で復帰 */
+  const handleUndoPjAssign = async () => {
+    setBulkJoinMessage('')
+    setBulkJoinError('')
+    if (!accessToken || !pjAssignUndoSnapshot?.length) {
+      return
+    }
+    setBulkJoinLoading(true)
+    let assignCount = 0
+    let removeCount = 0
+    let touchedSelf = false
+    try {
+      for (const oldUser of pjAssignUndoSnapshot) {
+        if (!canDragMemberForTierChange(oldUser)) {
+          continue
+        }
+        if (oldUser.id === session?.user?.id) touchedSelf = true
+        const choice = inferBulkPjChoice(oldUser)
+        if (choice === 'remove') {
+          if (isPjRemovalProtectedMember(oldUser)) {
+            continue
+          }
+          await removeUserFromPj(accessToken, oldUser.id)
+          removeCount += 1
+        } else {
+          await assignUserTierBox(accessToken, oldUser.id, choice)
+          assignCount += 1
+        }
+      }
+      await refreshMembers()
+      setPjAssignUndoSnapshot(null)
+      setBulkJoinMessage(
+        `一つ前の状態に戻しました（アサイン ${assignCount}名・PJサインアウト ${removeCount}名）`,
+      )
+      if (touchedSelf && typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('roles:changed'))
       }
     } catch (e) {
       setBulkJoinError((e as Error).message)
@@ -531,20 +547,24 @@ export const AdminWorkspace = () => {
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-      <h1 className="text-xl font-bold text-gray-900">メンバー役職変更・メンバー招待</h1>
-      <h2 className="mt-4 text-base font-semibold text-gray-900">メンバーの役職の変更</h2>
-      <ul className="mt-2 list-inside list-disc space-y-1 text-sm leading-relaxed text-gray-700">
-        <li>役職をドラッグアンドドロップで変更できます。</li>
-        <li>
-          企業の管理者（企業アカウント管理者）だけは、どの役職であっても、企業アカウント傘下のすべてのメンバーおよび自分自身の役職を自由に変更できます。
-        </li>
-      </ul>
-      <p className="mt-3 text-sm leading-relaxed text-gray-600">
-        この案件（PJ）への招待メールの送付・状況確認も、このページの下の方から行えます。
-      </p>
+      <h1 className="text-2xl font-bold text-gray-900">メンバー役職変更・メンバー招待</h1>
 
       <div className="mt-6 space-y-6">
-        <section aria-label="権限変更">
+        <section
+          aria-label="権限変更"
+          className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+        >
+          <h2 className="text-lg font-semibold text-gray-900">メンバーの役職の変更</h2>
+          <ul className="mt-2 list-inside list-disc space-y-1 text-sm leading-relaxed text-gray-700">
+            <li>役職をドラッグアンドドロップで変更できます。</li>
+            <li>
+              企業の管理者（企業アカウント管理者）だけは、どの役職であっても、企業アカウント傘下のすべてのメンバーおよび自分自身の役職を自由に変更できます。
+            </li>
+          </ul>
+          <p className="mt-3 text-sm leading-relaxed text-gray-600">
+            この案件（PJ）への招待メールの送付・状況確認も、このページの下の方から行えます。
+          </p>
+
           {selfTierChangeHint ? (
             <p className="mt-2 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900" role="status">
               {selfTierChangeHint}
@@ -643,7 +663,7 @@ export const AdminWorkspace = () => {
           className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
           aria-label="PJ招待・配役"
         >
-          <h2 className="text-sm font-semibold text-gray-900">PJ招待・所属メンバーの配役</h2>
+          <h2 className="text-base font-semibold text-gray-900">PJ招待・所属メンバーの配役</h2>
           <ul className="mt-1 list-inside list-disc space-y-1 text-xs text-gray-600">
             <li>招待メールの送付・招待一覧は企業アカウント管理者のみです。</li>
             <li>
@@ -651,7 +671,7 @@ export const AdminWorkspace = () => {
               で招待されます。
             </li>
             <li>
-              下の「所属メンバーのプロジェクトアサイン」は、企業管理者またはディレクターが、参加中メンバーを既定PJに
+              下の「自社メンバーPJアサイン・サインアウト」は、企業管理者またはディレクターが、参加中メンバーを既定PJに
               <strong className="font-medium text-gray-800">ディレクター／ISメンバー</strong>
               として割り当てられます（<code className="rounded bg-gray-100 px-1">project_memberships</code> と同期）。
             </li>
@@ -714,48 +734,19 @@ export const AdminWorkspace = () => {
 
           {canReassignTier ? (
             <div className="mt-6 border-t border-gray-100 pt-4">
-              <h3 className="text-xs font-semibold text-gray-900">所属メンバーのプロジェクトアサイン</h3>
-              <p className="mt-1 text-xs leading-relaxed text-gray-600">
-                企業アカウントに参加中のメンバーをこのプロジェクトにアサインします。
+              <h3 className="text-sm font-semibold text-gray-900">
+                自社メンバーPJアサイン・サインアウト・権限変更
+              </h3>
+              <p className="mt-1 text-sm leading-relaxed text-gray-600">
+                このセクションでは自社に所属してるメンバーを本PJへアサイン・サインアウトさせる事ができ、あわせてPJ内の権限（役職）も変更できます。
               </p>
-              <p className="mt-1 text-xs font-medium text-amber-900">
-                ※強制アサイン — 本人の許可なくアサインします。
-              </p>
-              <p className="mt-2 text-xs text-gray-500">
-                「対象に含める」で選び、付与区分は <strong className="font-medium text-gray-800">ディレクター</strong> /{' '}
-                <strong className="font-medium text-gray-800">IS</strong> /{' '}
-                <strong className="font-medium text-gray-800">PJから除名</strong> のいずれか1つだけ。
-                PJアサインはドラッグ移動と同じ{' '}
-                <code className="rounded bg-gray-100 px-0.5">PATCH /users/:id/tier</code>
-                、除名は <code className="rounded bg-gray-100 px-0.5">DELETE /users/:id/pj-membership</code>{' '}
-                （メンバーシップのみ削除・ロールは維持）。企業管理者行に「PJから除名」はありません。
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={
-                    membersLoading || members.length === 0 || bulkJoinLoading
-                  }
-                  onClick={() => {
-                    const all: Record<string, boolean> = {}
-                    for (const m of members) {
-                      all[m.id] = true
-                    }
-                    setBulkJoinSelected(all)
-                  }}
-                  className="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  全員を対象にチェック
-                </button>
-                <button
-                  type="button"
-                  disabled={bulkJoinLoading}
-                  onClick={() => setBulkJoinSelected({})}
-                  className="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  対象をクリア
-                </button>
-              </div>
+              <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-gray-600">
+                <li>
+                  PJアサインは役職を選ぶと自動でアサインされ、ログイン可能になります。
+                </li>
+                <li>PJ内の権限（役職）を変更できます。</li>
+                <li>社内待機になります（企業アカには残ります）。</li>
+              </ul>
               {bulkJoinError ? (
                 <p className="mt-2 text-sm text-red-600" role="alert">
                   {bulkJoinError}
@@ -775,9 +766,6 @@ export const AdminWorkspace = () => {
                   <table className="min-w-full text-left text-xs">
                     <thead className="bg-slate-50 text-gray-700">
                       <tr>
-                        <th className="w-10 px-2 py-2 font-semibold" scope="col">
-                          対象
-                        </th>
                         <th className="min-w-[10rem] px-3 py-2 font-semibold" scope="col">
                           メンバー
                         </th>
@@ -801,21 +789,6 @@ export const AdminWorkspace = () => {
                             key={m.id}
                             className={isEnterpriseAdminMember(m) ? 'bg-sky-50/70' : undefined}
                           >
-                            <td className="px-2 py-2 align-top">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(bulkJoinSelected[m.id])}
-                                onChange={(e) =>
-                                  setBulkJoinSelected((p) => ({
-                                    ...p,
-                                    [m.id]: e.target.checked,
-                                  }))
-                                }
-                                disabled={bulkJoinLoading}
-                                className="rounded border-gray-300"
-                                aria-label={`${m.name || m.email}を一括反映の対象に含める`}
-                              />
-                            </td>
                             <td className="px-3 py-2 align-top">
                               <div className="font-medium text-gray-900">
                                 {m.name?.trim() || '（無名）'}
@@ -881,7 +854,9 @@ export const AdminWorkspace = () => {
                                       disabled={!rowEditable || bulkJoinLoading}
                                       className="rounded border-gray-300"
                                     />
-                                    <span className="text-red-800">PJから除名</span>
+                                    <span className="text-red-800">
+                                      社内待機
+                                    </span>
                                   </label>
                                 )}
                               </div>
@@ -893,18 +868,35 @@ export const AdminWorkspace = () => {
                   </table>
                 </div>
               )}
-              <button
-                type="button"
-                disabled={
-                  bulkJoinLoading ||
-                  membersLoading ||
-                  !members.some((m) => bulkJoinSelected[m.id])
-                }
-                onClick={() => void handleBulkJoinApply()}
-                className="mt-3 rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
-              >
-                {bulkJoinLoading ? '決定中…' : '配役決定'}
-              </button>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={
+                    bulkJoinLoading ||
+                    membersLoading ||
+                    members.length === 0 ||
+                    !members.some((m) => canDragMemberForTierChange(m))
+                  }
+                  onClick={() => void handleBulkJoinApply()}
+                  className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
+                >
+                  {bulkJoinLoading ? '決定中…' : '配役決定'}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    bulkJoinLoading ||
+                    membersLoading ||
+                    pjAssignUndoSnapshot === null ||
+                    members.length === 0
+                  }
+                  onClick={() => void handleUndoPjAssign()}
+                  title="直前の配役決定の直前の一覧状態に戻します"
+                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {bulkJoinLoading ? '処理中…' : '一つ前に戻る'}
+                </button>
+              </div>
             </div>
           ) : null}
 

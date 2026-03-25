@@ -23,6 +23,7 @@ import { ImportListCsvDto } from './dto/import-list-csv.dto';
 import { ImportListResultDto } from './dto/import-list-result.dto';
 import { AssignListDto } from './dto/assign-list.dto';
 import { DistributeListItemsDto } from './dto/distribute-list-items.dto';
+import { DistributeListItemsTargetDto } from './dto/distribute-list-items-target.dto';
 import { ListIndustryMasterRowDto } from './dto/list-industry-master-row.dto';
 import type { ListItemDistributeFilters } from './lists.service';
 import { RecallListItemsDto } from './dto/recall-list-items.dto';
@@ -30,6 +31,7 @@ import { UpdateListItemStatusDto } from './dto/update-list-item-status.dto';
 import { CallingList } from './entities/calling-list.entity';
 import { ListItem } from './entities/list-item.entity';
 import { ListsService } from './lists.service';
+import { DISTRIBUTE_LIST_ITEM_STATUSES } from './dto/distribute-filters.dto';
 
 interface JwtRequest extends Request {
   user: JwtPayload;
@@ -78,6 +80,28 @@ export class ListsController {
     const arr = Array.isArray(raw) ? raw : [raw];
     const ok = arr.filter((x): x is 'A' | 'B' | 'C' => x === 'A' || x === 'B' || x === 'C');
     return ok.length > 0 ? ok : undefined;
+  };
+
+  private parseStatusesQuery = (raw?: string | string[]): string[] | undefined => {
+    if (raw === undefined) {
+      return undefined;
+    }
+    const arr = Array.isArray(raw) ? raw : [raw];
+    const trimmed = arr.map((x) => x.trim()).filter((x) => x.length > 0);
+    const ok = trimmed.filter((x) =>
+      (DISTRIBUTE_LIST_ITEM_STATUSES as readonly string[]).includes(x),
+    );
+    return ok.length > 0 ? ok : undefined;
+  };
+
+  /** 業種マスタ名の複数（クエリは industryNames を繰り返し） */
+  private parseIndustryNamesQuery = (raw?: string | string[]): string[] | undefined => {
+    if (raw === undefined) {
+      return undefined;
+    }
+    const arr = Array.isArray(raw) ? raw : [raw];
+    const trimmed = arr.map((x) => x.trim()).filter((x) => x.length > 0);
+    return trimmed.length > 0 ? trimmed : undefined;
   };
 
   @Post('import-csv')
@@ -157,18 +181,24 @@ export class ListsController {
     @Query('addressContains') addressContains?: string,
     @Query('cityContains') cityContains?: string,
     @Query('industryTagContains') industryTagContains?: string,
+    @Query('industryNames') industryNamesRaw?: string | string[],
     @Query('callProgress') callProgressRaw?: string,
+    @Query('statuses') statusesRaw?: string | string[],
     @Query('aiTiers') aiTiersRaw?: string | string[],
   ): Promise<{ matchCount: number }> {
     try {
       this.assertDirectorRole(req.user);
       const callProgress = this.parseCallProgressQuery(callProgressRaw);
+      const statuses = this.parseStatusesQuery(statusesRaw);
+      const industryNames = this.parseIndustryNamesQuery(industryNamesRaw);
       const aiTiers = this.parseAiTiersQuery(aiTiersRaw);
       return await this.listsService.previewDistributeListItemsEven(req.user, listId, {
         addressContains,
         cityContains,
         industryTagContains,
+        industryNames,
         callProgress,
+        statuses,
         aiTiers,
       });
     } catch (error) {
@@ -210,7 +240,9 @@ export class ListsController {
         addressContains: dto.addressContains,
         cityContains: dto.cityContains,
         industryTagContains: dto.industryTagContains,
+        industryNames: dto.industryNames,
         callProgress: dto.callProgress,
+        statuses: dto.statuses,
         aiTiers: dto.aiTiers,
       });
     } catch (error) {
@@ -218,6 +250,41 @@ export class ListsController {
         throw error;
       }
       throw new InternalServerErrorException('配布に失敗しました');
+    }
+  }
+
+  /**
+   * 目標件数（割当件数）に基づく配布（:listId/items/distribute-target）
+   * - assigneeUserIds と targetCounts は同じ順序で対応
+   */
+  @Post(':listId/items/distribute-target')
+  async distributeTarget(
+    @Req() req: JwtRequest,
+    @Param('listId') listId: string,
+    @Body() dto: DistributeListItemsTargetDto,
+  ): Promise<{ updatedCount: number }> {
+    try {
+      this.assertDirectorRole(req.user);
+      return await this.listsService.distributeListItemsByTargetCounts(
+        req.user,
+        listId,
+        dto.assigneeUserIds,
+        dto.targetCounts,
+        {
+          addressContains: dto.addressContains,
+          cityContains: dto.cityContains,
+          industryTagContains: dto.industryTagContains,
+          industryNames: dto.industryNames,
+          callProgress: dto.callProgress,
+          statuses: dto.statuses,
+          aiTiers: dto.aiTiers,
+        },
+      );
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('目標件数配布に失敗しました');
     }
   }
 

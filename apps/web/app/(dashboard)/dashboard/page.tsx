@@ -13,13 +13,13 @@ export default function DashboardPage() {
           <h2 className="mb-2 text-sm font-semibold text-gray-500">共通・IS</h2>
           <ul className="list-none space-y-1">
             <li>
-              <Link href="/kpi" className="text-blue-600 no-underline hover:underline">KPIページ</Link>
+              <Link href="/kpi" className="text-blue-600 no-underline hover:underline">KPIページ（AI）</Link>
             </li>
             <li>
-              <Link href="/ai-daily" className="text-blue-600 no-underline hover:underline">AI日報</Link>
+              <Link href="/ai-daily" className="text-blue-600 no-underline hover:underline">日報（AI）</Link>
             </li>
             <li>
-              <Link href="/sales-room" className="text-blue-600 no-underline hover:underline">インサイドセールス（IS UI）</Link>
+              <Link href="/sales-room" className="text-blue-600 no-underline hover:underline">架電ルーム</Link>
             </li>
             <li>
               <Link href="/sales-room/refinement" className="text-blue-600 no-underline hover:underline">未調査リスト精査</Link>

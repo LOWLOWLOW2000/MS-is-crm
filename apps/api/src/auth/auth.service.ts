@@ -166,7 +166,8 @@ export class AuthService {
       throw new ConflictException('このメールアドレスは既に登録されています');
     }
 
-    const roles: UserRole[] = [UserRole.EnterpriseAdmin, UserRole.Director];
+    // 企業アカウント管理者は「IS側ルール」に寄せる（director混入を防ぐ）
+    const roles: UserRole[] = [UserRole.EnterpriseAdmin];
     const pr = primaryRole(roles);
     const now = new Date().toISOString();
     const passwordHash =

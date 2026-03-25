@@ -7,7 +7,7 @@ export const pjRoleForUserRoles = (roles: UR[]): 'director' | 'is_member' => {
     roles.includes(UR.IsMember) &&
     !roles.includes(UR.Director) &&
     !roles.some((r) =>
-      [UR.EnterpriseAdmin, UR.IsAdmin, UR.Developer].includes(r),
+      [UR.IsAdmin, UR.Developer].includes(r),
     )
   ) {
     return 'is_member';
