@@ -66,7 +66,7 @@ function InviteAcceptInner() {
         setSubmitting(false)
         return
       }
-      window.location.href = '/dashboard'
+      window.location.href = '/pj-switch'
     } catch (err) {
       setError(err instanceof Error ? err.message : '参加に失敗しました')
     }

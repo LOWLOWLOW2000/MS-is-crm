@@ -5,11 +5,23 @@
  */
 const path = require('path');
 const { execSync } = require('child_process');
+const fs = require('fs');
 
 const root = process.env.npm_config_local_prefix || process.cwd();
 const rootPath = path.isAbsolute(root) ? root : path.resolve(process.cwd(), root);
 
 process.chdir(rootPath);
+
+// dev 起動のたびに dev 側 distDir をクリーンにする（build との衝突防止・チャンク欠落で CSS が404になる再発防止）
+try {
+  const webNextDevDir = path.join(rootPath, 'apps/web/.next-dev')
+  const webNextDir = path.join(rootPath, 'apps/web/.next')
+  fs.rmSync(webNextDevDir, { recursive: true, force: true })
+  // 念のための互換：以前の壊れた .next が残っていると悪さをすることがある
+  fs.rmSync(webNextDir, { recursive: true, force: true })
+} catch {
+  // ignore
+}
 
 const run = (cmd) => {
   execSync(cmd, { stdio: 'inherit', cwd: rootPath, shell: true });

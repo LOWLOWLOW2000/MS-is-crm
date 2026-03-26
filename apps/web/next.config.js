@@ -1,5 +1,21 @@
 const nextConfig = {
   reactStrictMode: true,
+  /**
+   * dev と build の `.next` 衝突で `/_next/static/*` が 404 になる問題を抑止する。
+   * `npm run dev` / `npm run build` 側で `NEXT_DIST_DIR` を切り替える。
+   */
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
+  /**
+   * dev 時に .next の一部が欠落して `/_next/static/*` が404になり「HTMLだけ」になる再発を抑止する。
+   * WSL/ファイル監視/キャッシュ競合などで webpack の永続キャッシュが壊れるケースがあるため、
+   * dev ではキャッシュを無効化して安定性を優先する。
+   */
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.cache = false
+    }
+    return config
+  },
   async redirects() {
     return [
       { source: '/dashboard/sales-room/refinement', destination: '/sales-room/refinement', permanent: true },

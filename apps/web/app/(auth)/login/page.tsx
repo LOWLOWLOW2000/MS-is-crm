@@ -58,7 +58,7 @@ export default function LoginPage() {
       }
       const q = new URLSearchParams(window.location.search)
       const fromQuery = safeCallbackPath(q.get('callbackUrl'))
-      window.location.href = fromQuery ?? '/dashboard'
+      window.location.href = fromQuery ?? '/pj-switch'
     } catch {
       setLoginError('ログインに失敗しました')
     }
@@ -171,7 +171,7 @@ export default function LoginPage() {
           <div className="flex flex-col gap-2">
             <button
               type="button"
-              onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+              onClick={() => signIn('google', { callbackUrl: '/pj-switch' })}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
@@ -184,7 +184,7 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              onClick={() => signIn('azure-ad', { callbackUrl: '/dashboard' })}
+              onClick={() => signIn('azure-ad', { callbackUrl: '/pj-switch' })}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden>

@@ -49,4 +49,61 @@ export class DirectorController {
       throw new InternalServerErrorException('囁きの送信に失敗しました');
     }
   }
+
+  /**
+   * アポ・資料請求（= 資料送付）管理用: 件数サマリ
+   * MVP: 直近24時間に「アポ/資料送付」が1件でもあればナビにバッジを出す用途
+   */
+  @Get('requests/summary')
+  async getRequestsSummary(@Req() req: JwtRequest): Promise<{
+    unreadTotal: number
+    unreadAppointment: number
+    unreadMaterial: number
+  }> {
+    try {
+      return await this.directorService.getRequestsSummary(req.user)
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error
+      throw new InternalServerErrorException('アポ・資料請求サマリの取得に失敗しました')
+    }
+  }
+
+  /**
+   * アポ・資料請求（= 資料送付）管理用: 一覧
+   */
+  @Get('requests')
+  async getRequests(@Req() req: JwtRequest): Promise<
+    {
+      id: string
+      type: 'appointment' | 'material'
+      createdAt: string
+      companyName: string
+      targetUrl: string
+      memo: string
+      createdByUserId: string
+      createdByName?: string
+      isRead: boolean
+      directorReadAt: string | null
+    }[]
+  > {
+    try {
+      return await this.directorService.getRequests(req.user)
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error
+      throw new InternalServerErrorException('アポ・資料請求一覧の取得に失敗しました')
+    }
+  }
+
+  @Post('requests/read')
+  async markRequestsAsRead(
+    @Req() req: JwtRequest,
+    @Body() body: { ids?: string[]; markAll?: boolean },
+  ): Promise<{ updated: number }> {
+    try {
+      return await this.directorService.markRequestsAsRead(req.user, body)
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error
+      throw new InternalServerErrorException('アポ・資料請求の既読化に失敗しました')
+    }
+  }
 }

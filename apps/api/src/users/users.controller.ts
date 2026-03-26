@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   ForbiddenException,
@@ -18,6 +19,7 @@ import { hasAnyRole } from '../common/auth/role-utils';
 import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { UpdateUserTierDto } from './dto/update-user-tier.dto';
+import { UpdateMeProfileDto } from './dto/update-me-profile.dto';
 import { UpdateProfileImageDto } from './dto/update-profile-image.dto';
 import { UsersService } from './users.service';
 
@@ -100,6 +102,19 @@ export class UsersController {
     } catch (error) {
       if (error instanceof ForbiddenException) throw error
       throw new InternalServerErrorException('プロフィール取得に失敗しました')
+    }
+  }
+
+  /** 自分自身のプロフィール更新（住所・電話・Slack・表示名） */
+  @Patch('me')
+  async updateMe(@Req() req: JwtRequest, @Body() dto: UpdateMeProfileDto) {
+    try {
+      return await this.usersService.updateMeProfile(req.user, dto)
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error
+      if (error instanceof NotFoundException) throw error
+      if (error instanceof ConflictException) throw error
+      throw new InternalServerErrorException('プロフィール更新に失敗しました')
     }
   }
 

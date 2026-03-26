@@ -27,6 +27,47 @@ type LegalEntitySnapshotPayload = {
 export class CompaniesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  getOrCreateMyCompany = async (user: JwtPayload) => {
+    const nowIso = new Date().toISOString()
+
+    const existing = await this.prisma.legalEntity.findFirst({
+      where: { tenantId: user.tenantId },
+      include: {
+        establishments: { orderBy: { createdAt: 'asc' } },
+        departments: { orderBy: { createdAt: 'asc' } },
+        personas: { include: { department: true }, orderBy: { createdAt: 'asc' } },
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+    if (existing) {
+      return existing
+    }
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: user.tenantId },
+      select: { companyName: true, name: true, headOfficeAddress: true },
+    })
+    const companyName = (tenant?.companyName ?? tenant?.name ?? '未設定').trim() || '未設定'
+
+    const created = await this.prisma.legalEntity.create({
+      data: {
+        tenantId: user.tenantId,
+        name: companyName,
+        headOfficeAddress: tenant?.headOfficeAddress ?? null,
+        status: 'active',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+      include: {
+        establishments: { orderBy: { createdAt: 'asc' } },
+        departments: { orderBy: { createdAt: 'asc' } },
+        personas: { include: { department: true }, orderBy: { createdAt: 'asc' } },
+      },
+    })
+
+    return created
+  }
+
   getCompany = async (user: JwtPayload, legalEntityId: string) => {
     const row = await this.prisma.legalEntity.findFirst({
       where: { id: legalEntityId, tenantId: user.tenantId },

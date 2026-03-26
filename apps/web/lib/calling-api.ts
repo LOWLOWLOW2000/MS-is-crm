@@ -22,6 +22,8 @@ import {
   CompanyDetailResponse,
   UpdateCompanyInput,
   UpdateCompanyResult,
+  DirectorRequestRow,
+  DirectorRequestSummary,
 } from './types';
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.API_BASE_URL ?? 'http://localhost:3001';
@@ -62,6 +64,21 @@ export const fetchCompany = async (accessToken: string, legalEntityId: string): 
 
   if (!response.ok) {
     throw new Error('企業情報の取得に失敗しました')
+  }
+
+  return (await response.json()) as CompanyDetailResponse
+}
+
+export const fetchMyCompany = async (accessToken: string): Promise<CompanyDetailResponse> => {
+  const response = await fetch(`${apiBaseUrl}/companies/me`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, '企業情報の取得に失敗しました')
+    throw new Error(message)
   }
 
   return (await response.json()) as CompanyDetailResponse
@@ -217,6 +234,55 @@ export const fetchRecentHelpRequests = async (accessToken: string): Promise<Call
   return (await response.json()) as CallingHelpRequest[];
 };
 
+export const fetchDirectorRequestsSummary = async (accessToken: string): Promise<DirectorRequestSummary> => {
+  const response = await fetch(`${apiBaseUrl}/director/requests/summary`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, 'アポ・資料請求サマリの取得に失敗しました')
+    throw new Error(message)
+  }
+
+  return (await response.json()) as DirectorRequestSummary
+}
+
+export const fetchDirectorRequests = async (accessToken: string): Promise<DirectorRequestRow[]> => {
+  const response = await fetch(`${apiBaseUrl}/director/requests`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, 'アポ・資料請求一覧の取得に失敗しました')
+    throw new Error(message)
+  }
+
+  return (await response.json()) as DirectorRequestRow[]
+}
+
+export const markDirectorRequestsAsRead = async (
+  accessToken: string,
+  body: { ids?: string[]; markAll?: boolean },
+): Promise<{ updated: number }> => {
+  const response = await fetch(`${apiBaseUrl}/director/requests/read`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, 'アポ・資料請求の既読化に失敗しました')
+    throw new Error(message)
+  }
+
+  return (await response.json()) as { updated: number }
+}
+
 export const joinHelpRequest = async (
   accessToken: string,
   requestId: string,
@@ -281,33 +347,6 @@ export const importCsvList = async (
     cache: 'no-store',
   });
 
-  // #region agent log
-  fetch('http://127.0.0.1:7694/ingest/2c3781ca-fbdf-4289-a7bb-2c29cef5514a', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a931fb' },
-    body: JSON.stringify({
-      sessionId: 'a931fb',
-      location: 'calling-api.ts:importCsvList',
-      message: 'import-csv response',
-      data: {
-        hypothesisId: 'H1-H4',
-        apiBaseHost: (() => {
-          try {
-            return new URL(apiBaseUrl).host
-          } catch {
-            return 'invalid-url'
-          }
-        })(),
-        tokenLength: accessToken?.length ?? 0,
-        status: response.status,
-        ok: response.ok,
-      },
-      timestamp: Date.now(),
-      runId: 'pre-fix',
-    }),
-  }).catch(() => {})
-  // #endregion
-
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'CSVインポートに失敗しました'))
   }
@@ -339,6 +378,8 @@ export type UserListItem = {
   countryCode: string | null;
   prefecture: string | null;
   mobilePhone: string | null;
+  slackId: string | null;
+  departmentName: string | null;
   createdAt: string;
   /** テナント既定PJ（1テナント1件）への配役。API が project_memberships と同期して返す */
   projectAssignment?: {
@@ -356,12 +397,28 @@ export type MyProfile = {
   profileImageUrl: string | null
   role: string
   roles: string[]
+  countryCode: string | null
+  prefecture: string | null
+  mobilePhone: string | null
+  slackId: string | null
+  departmentName: string | null
+  /** メール+パスワードでログイン可能か */
+  hasPassword: boolean
   /** テナント表示（ヘッダーと同系） */
   tenantCompanyName: string
   tenantProjectName: string
   /** 既定PJへの配役（未参加なら null） */
   projectAssignment?: UserListItem['projectAssignment']
 };
+
+export type UpdateMyProfileBody = {
+  name?: string
+  countryCode?: string | null
+  prefecture?: string | null
+  mobilePhone?: string | null
+  slackId?: string | null
+  departmentName?: string | null
+}
 
 export const fetchUsers = async (accessToken: string): Promise<UserListItem[]> => {
   const response = await fetch(`${apiBaseUrl}/users`, {
@@ -407,6 +464,65 @@ export const fetchMyProfile = async (accessToken: string): Promise<MyProfile> =>
     throw new Error(text || 'プロフィール取得に失敗しました')
   }
   return (await response.json()) as MyProfile
+}
+
+/** 自分自身のプロフィール更新（住所・電話・Slack・表示名） */
+export const updateMyProfile = async (
+  accessToken: string,
+  body: UpdateMyProfileBody,
+): Promise<MyProfile> => {
+  const response = await fetch(`${apiBaseUrl}/users/me`, {
+    method: 'PATCH',
+    headers: {
+      ...createAuthHeaders(accessToken),
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const errText = await response.text()
+    let detail = errText
+    try {
+      const j = JSON.parse(errText) as { message?: string | string[] }
+      if (typeof j.message === 'string') detail = j.message
+      else if (Array.isArray(j.message)) detail = j.message.join('; ')
+    } catch {
+      if (errText.trim().length > 0) detail = errText.trim().slice(0, 400)
+    }
+    throw new Error(detail || 'プロフィール更新に失敗しました')
+  }
+  return (await response.json()) as MyProfile
+}
+
+/** メール+パスワード利用者向けパスワード変更（成功後は refresh が失効） */
+export const changePassword = async (
+  accessToken: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ ok: true }> => {
+  const response = await fetch(`${apiBaseUrl}/auth/change-password`, {
+    method: 'POST',
+    headers: {
+      ...createAuthHeaders(accessToken),
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })
+  if (!response.ok) {
+    const errText = await response.text()
+    let detail = errText
+    try {
+      const j = JSON.parse(errText) as { message?: string | string[] }
+      if (typeof j.message === 'string') detail = j.message
+      else if (Array.isArray(j.message)) detail = j.message.join('; ')
+    } catch {
+      /* テキストのまま */
+    }
+    throw new Error(detail || 'パスワード変更に失敗しました')
+  }
+  return (await response.json()) as { ok: true }
 }
 
 /** 自分自身のプロフ写真更新（MVP: dataURL文字列を保存） */
@@ -754,7 +870,7 @@ export const unassignCallingList = async (
 // -----------------------------
 
 export const fetchListAreaMasters = async (accessToken: string) => {
-  const response = await fetch(`${apiBaseUrl}/lists/masters/areas`, {
+  const response = await fetch(`${apiBaseUrl}/list-generation/areas`, {
     method: 'GET',
     headers: createAuthHeaders(accessToken),
     cache: 'no-store',
@@ -764,7 +880,7 @@ export const fetchListAreaMasters = async (accessToken: string) => {
 };
 
 export const fetchListKeywordMasters = async (accessToken: string) => {
-  const response = await fetch(`${apiBaseUrl}/lists/masters/keywords`, {
+  const response = await fetch(`${apiBaseUrl}/list-generation/keywords`, {
     method: 'GET',
     headers: createAuthHeaders(accessToken),
     cache: 'no-store',
@@ -777,7 +893,7 @@ export const createListAreaMaster = async (
   accessToken: string,
   name: string,
 ): Promise<{ id: string; name: string; isActive: boolean }> => {
-  const response = await fetch(`${apiBaseUrl}/lists/masters/areas`, {
+  const response = await fetch(`${apiBaseUrl}/list-generation/areas`, {
     method: 'POST',
     headers: createAuthHeaders(accessToken),
     body: JSON.stringify({ name }),
@@ -791,7 +907,7 @@ export const createListIndustryMaster = async (
   accessToken: string,
   name: string,
 ): Promise<{ id: string; name: string; isActive: boolean }> => {
-  const response = await fetch(`${apiBaseUrl}/lists/masters/industries`, {
+  const response = await fetch(`${apiBaseUrl}/list-generation/industries`, {
     method: 'POST',
     headers: createAuthHeaders(accessToken),
     body: JSON.stringify({ name }),
@@ -805,7 +921,7 @@ export const createListKeywordMaster = async (
   accessToken: string,
   name: string,
 ): Promise<{ id: string; name: string; isActive: boolean }> => {
-  const response = await fetch(`${apiBaseUrl}/lists/masters/keywords`, {
+  const response = await fetch(`${apiBaseUrl}/list-generation/keywords`, {
     method: 'POST',
     headers: createAuthHeaders(accessToken),
     body: JSON.stringify({ name }),
@@ -819,10 +935,20 @@ export const generateList = async (
   accessToken: string,
   input: { input: { areaId: string; industryId: string; keywordIds: string[]; limit?: number }; assigneeEmail: string; listName?: string },
 ): Promise<{ requestId: string; status: string }> => {
-  const response = await fetch(`${apiBaseUrl}/lists/generate`, {
+  const normalizedInput = {
+    areaIds: input.input.areaId ? [input.input.areaId] : [],
+    industryIds: input.input.industryId ? [input.input.industryId] : [],
+    keywordIds: input.input.keywordIds ?? [],
+    ...(typeof input.input.limit === 'number' ? { limit: input.input.limit } : {}),
+    ...(input.listName ? { listName: input.listName } : {}),
+  }
+  const response = await fetch(`${apiBaseUrl}/list-generation/requests`, {
     method: 'POST',
     headers: createAuthHeaders(accessToken),
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      assignedToEmail: input.assigneeEmail,
+      input: normalizedInput,
+    }),
     cache: 'no-store',
   });
   if (!response.ok) throw new Error('リスト生成リクエストに失敗しました');
@@ -830,7 +956,7 @@ export const generateList = async (
 };
 
 export const fetchGenerationRequests = async (accessToken: string) => {
-  const response = await fetch(`${apiBaseUrl}/lists/generation-requests`, {
+  const response = await fetch(`${apiBaseUrl}/list-generation/requests`, {
     method: 'GET',
     headers: createAuthHeaders(accessToken),
     cache: 'no-store',
@@ -852,14 +978,29 @@ export const fetchListAdvice = async (
   accessToken: string,
   question: string,
 ): Promise<{ advice: string; suggestedActions: { type: string; title: string; payload: Record<string, unknown> }[] }> => {
-  const response = await fetch(`${apiBaseUrl}/lists/advice`, {
+  const response = await fetch(`${apiBaseUrl}/list-generation/requests`, {
     method: 'POST',
     headers: createAuthHeaders(accessToken),
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({
+      assignedToEmail: 'ai-advisor@local',
+      input: { freeText: question },
+    }),
     cache: 'no-store',
   });
-  if (!response.ok) throw new Error('AIアドバイスの取得に失敗しました');
-  return (await response.json()) as { advice: string; suggestedActions: { type: string; title: string; payload: Record<string, unknown> }[] };
+  if (!response.ok) {
+    throw new Error('AIアドバイスの取得に失敗しました')
+  }
+  const created = (await response.json()) as { id?: string; status?: string }
+  return {
+    advice: 'アドバイス依頼を受け付けました。運用フローでは生成リクエスト履歴から進行状況を確認してください。',
+    suggestedActions: [
+      {
+        type: 'open_generation_requests',
+        title: '生成リクエスト履歴を開く',
+        payload: { requestId: created.id ?? null, status: created.status ?? 'queued' },
+      },
+    ],
+  }
 };
 
 export const fetchRecentZoomCalls = async (accessToken: string): Promise<ZoomCallLog[]> => {
@@ -931,12 +1072,29 @@ export const fetchReportByMember = async (
 };
 
 /**
- * AIスコアカード一覧取得（ダミー実装）。
- * 後から実装する場合: GET ${apiBaseUrl}/reports/ai-scorecard を呼んで JSON を返す。
+ * AIスコアカード一覧取得。
+ * @param accessToken JWTアクセストークン
  */
-export const fetchReportAiScorecard = async (_accessToken: string): Promise<AiScorecardEntry[]> => {
-  return [];
-};
+export const fetchReportAiScorecard = async (accessToken: string): Promise<AiScorecardEntry[]> => {
+  const response = await fetch(`${apiBaseUrl}/reports/ai-scorecard`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('AIスコアカードの取得に失敗しました')
+  }
+  const payload = await response.json()
+  if (!Array.isArray(payload)) return []
+  return payload
+    .filter((row): row is AiScorecardEntry => !!row && typeof row === 'object')
+    .sort((a, b) => {
+      const bTime = new Date(b.evaluatedAt ?? b.callDate).getTime()
+      const aTime = new Date(a.evaluatedAt ?? a.callDate).getTime()
+      return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime)
+    })
+}
 
 export const fetchCallingSettings = async (accessToken: string): Promise<CallingSettings> => {
   const response = await fetch(`${apiBaseUrl}/settings/calling`, {

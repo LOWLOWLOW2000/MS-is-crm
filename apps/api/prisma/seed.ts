@@ -170,8 +170,193 @@ async function main(): Promise<void> {
   await seedCallingListDemo(now);
   await seedCallingListKanbanSample(now);
   await seedCallingListThirtyDummyItems(now);
+  await seedAiScorecardDemo(now);
+  await seedDirectorUnreadRequests(now);
 
   await syncAllProjectsAndMemberships();
+}
+
+async function seedAiScorecardDemo(now: string): Promise<void> {
+  const member = await prisma.user.findUnique({
+    where: { tenantId_email: { tenantId: DEMO_TENANT, email: 'member@example.com' } },
+    select: { id: true, tenantId: true },
+  });
+  if (!member) {
+    console.log('Seed: skip ai-scorecard demo (member@example.com not found).');
+    return;
+  }
+
+  const recordId = 'seed-calling-record-ai-score-01';
+  const evaluatedAt = new Date(Date.now() - 1000 * 60 * 60).toISOString();
+  const callAt = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString();
+
+  await prisma.callingRecord.upsert({
+    where: { callingHistoryId: recordId },
+    create: {
+      callingHistoryId: recordId,
+      tenantId: member.tenantId,
+      createdBy: member.id,
+      companyName: '（AI評価デモ）株式会社テスト',
+      companyPhone: '03-1234-5678',
+      companyAddress: '東京都千代田区1-2-3',
+      targetUrl: 'https://example.com',
+      approved: true,
+      approvedAt: callAt,
+      approvedBy: member.id,
+      result: 'connected',
+      memo: 'seed: ai-scorecard demo record',
+      nextCallAt: null,
+      createdAt: callAt,
+      updatedAt: now,
+    },
+    update: {
+      companyName: '（AI評価デモ）株式会社テスト',
+      companyPhone: '03-1234-5678',
+      companyAddress: '東京都千代田区1-2-3',
+      targetUrl: 'https://example.com',
+      approved: true,
+      approvedAt: callAt,
+      approvedBy: member.id,
+      result: 'connected',
+      memo: 'seed: ai-scorecard demo record',
+      nextCallAt: null,
+      createdAt: callAt,
+      updatedAt: now,
+    },
+  });
+
+  await prisma.callingAiEvaluation.upsert({
+    where: { id: 'seed-calling-ai-eval-01' },
+    create: {
+      id: 'seed-calling-ai-eval-01',
+      tenantId: member.tenantId,
+      callRecordId: recordId,
+      evaluatedAt,
+      categoryScores: [
+        {
+          category: '導入トーク',
+          score: 4.2,
+          tagCount: 3,
+          tags: [
+            { tag: 'opening', value: 'good' },
+            { tag: 'empathy', value: 'ok' },
+            { tag: 'next_step', value: 'weak' },
+          ],
+        },
+        {
+          category: 'ヒアリング',
+          score: 3.6,
+          tagCount: 2,
+          tags: [
+            { tag: 'needs', value: 'partial' },
+            { tag: 'budget', value: 'missed' },
+          ],
+        },
+      ],
+      summary: '課題の深掘りは良いが、次アクション合意が弱い。次回は具体日程の打診まで行う。',
+      improvementPoints: ['次回アポの具体日程をその場で提案する', '導入事例を1つ挟んで温度感を上げる'],
+    },
+    update: {
+      tenantId: member.tenantId,
+      callRecordId: recordId,
+      evaluatedAt,
+      categoryScores: [
+        {
+          category: '導入トーク',
+          score: 4.2,
+          tagCount: 3,
+          tags: [
+            { tag: 'opening', value: 'good' },
+            { tag: 'empathy', value: 'ok' },
+            { tag: 'next_step', value: 'weak' },
+          ],
+        },
+        {
+          category: 'ヒアリング',
+          score: 3.6,
+          tagCount: 2,
+          tags: [
+            { tag: 'needs', value: 'partial' },
+            { tag: 'budget', value: 'missed' },
+          ],
+        },
+      ],
+      summary: '課題の深掘りは良いが、次アクション合意が弱い。次回は具体日程の打診まで行う。',
+      improvementPoints: ['次回アポの具体日程をその場で提案する', '導入事例を1つ挟んで温度感を上げる'],
+    },
+  });
+
+  console.log('Seed: ai-scorecard demo (callingRecord + callingAiEvaluation) upserted.');
+}
+
+async function seedDirectorUnreadRequests(now: string): Promise<void> {
+  const member = await prisma.user.findUnique({
+    where: { tenantId_email: { tenantId: DEMO_TENANT, email: 'member@example.com' } },
+    select: { id: true, tenantId: true },
+  })
+  if (!member) {
+    console.log('Seed: skip director unread requests (member@example.com not found).')
+    return
+  }
+
+  const baseCreatedAt = new Date(Date.now() - 45 * 60 * 1000).toISOString()
+  const rows = [
+    {
+      id: 'seed-calling-record-appointment-01',
+      companyName: '（seed）アポ確認株式会社',
+      targetUrl: 'https://example.com/appointment-01',
+      result: 'アポ',
+      memo: 'seed: アポ未読確認用',
+    },
+    {
+      id: 'seed-calling-record-material-01',
+      companyName: '（seed）資料請求確認株式会社',
+      targetUrl: 'https://example.com/material-01',
+      result: '資料送付',
+      memo: 'seed: 資料請求未読確認用',
+    },
+  ] as const
+
+  for (const row of rows) {
+    await prisma.callingRecord.upsert({
+      where: { callingHistoryId: row.id },
+      create: {
+        callingHistoryId: row.id,
+        tenantId: member.tenantId,
+        createdBy: member.id,
+        companyName: row.companyName,
+        companyPhone: '03-0000-0000',
+        companyAddress: '東京都千代田区 seed 1-1-1',
+        targetUrl: row.targetUrl,
+        approved: true,
+        approvedAt: baseCreatedAt,
+        approvedBy: member.id,
+        result: row.result,
+        memo: row.memo,
+        nextCallAt: null,
+        directorReadAt: null,
+        directorReadBy: null,
+        createdAt: baseCreatedAt,
+        updatedAt: now,
+      },
+      update: {
+        companyName: row.companyName,
+        targetUrl: row.targetUrl,
+        result: row.result,
+        memo: row.memo,
+        approved: true,
+        approvedAt: baseCreatedAt,
+        approvedBy: member.id,
+        nextCallAt: null,
+        directorReadAt: null,
+        directorReadBy: null,
+        createdAt: baseCreatedAt,
+        updatedAt: now,
+      },
+    })
+  }
+
+  console.log('Seed: director unread requests (appointment/material) upserted.')
 }
 
 /** 全テナントに既定PJを作り、全ユーザーの project_memberships を User.roles と一致させる */

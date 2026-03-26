@@ -9,6 +9,8 @@ type RowWithPm = {
   countryCode: string | null;
   prefecture: string | null;
   mobilePhone: string | null;
+  slackId: string | null;
+  departmentName: string | null;
   createdAt: string;
   projectMemberships: {
     pjRole: string;

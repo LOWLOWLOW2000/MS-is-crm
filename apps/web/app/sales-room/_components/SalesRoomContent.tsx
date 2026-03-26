@@ -9,12 +9,216 @@ import { SalesRoomActionResultPanel } from './SalesRoomActionResultPanel'
 import { RecallReminderBanner } from './RecallReminderBanner'
 import { useTalkScriptStore } from '@/lib/stores/talk-script-store'
 import { NotionBlockEditor } from './NotionBlockEditor'
+import { useRecallListStore } from '@/lib/stores/recall-list-store'
+import { useAppoSubmissionStore } from '@/lib/stores/appo-submission-store'
+import { useMaterialRequestStore } from '@/lib/stores/material-request-store'
 import {
   fetchAssignedCallingLists,
   fetchCallingLists,
   fetchListItems,
 } from '@/lib/calling-api'
 import type { ListItem } from '@/lib/types'
+import type { AppoSubmissionItem } from '@/lib/stores/appo-submission-store'
+import type { MaterialRequestItem } from '@/lib/stores/material-request-store'
+
+type EditPanelCommonProps = {
+  onCancel: () => void
+}
+
+const statusToJa = (status: string): string => {
+  if (status === 'draft') return '下書き'
+  if (status === 'sent') return '送信済み'
+  if (status === 'returned') return '差し戻し（要訂正）'
+  if (status === 'deleted') return '削除'
+  if (status === 'failed') return '送信失敗'
+  return status
+}
+
+const AppoEditPanel = ({
+  item,
+  onCancel,
+}: EditPanelCommonProps & {
+  item: AppoSubmissionItem
+}) => {
+  const [appoDateTime, setAppoDateTime] = useState<string>(item.required.appoDateTime ?? '')
+  const [appoPlace, setAppoPlace] = useState<string>(item.required.appoPlace ?? '')
+  const [freeMemo, setFreeMemo] = useState<string>(item.freeMemo ?? '')
+
+  return (
+    <div className="rounded-md border border-blue-200 bg-blue-50/60 p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">アポ 修正フォーム</h3>
+          <p className="mt-1 text-sm text-gray-600">
+            企業: <span className="font-medium text-gray-900">{item.companyName}</span>
+          </p>
+          {item.status === 'returned' ? (
+            <p className="mt-1 text-sm font-medium text-amber-900">
+              差し戻し中（理由: {item.returnReason?.trim() ? item.returnReason : '未記録'}）
+            </p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const ok = window.confirm('確定送信します。よろしいですか？')
+              if (!ok) return
+              useAppoSubmissionStore.getState().upsert({
+                ...item,
+                required: {
+                  appoDateTime: appoDateTime.trim() ? appoDateTime.trim() : null,
+                  appoPlace: appoPlace.trim() ? appoPlace.trim() : null,
+                },
+                freeMemo,
+                status: 'sent',
+                isUnreadForIs: false,
+                returnReason: null,
+                updatedAt: Date.now(),
+              })
+              onCancel()
+            }}
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            確定送信
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">日時（必須）</span>
+          <input
+            value={appoDateTime}
+            onChange={(e) => setAppoDateTime(e.target.value)}
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            placeholder="例: 2026-03-26 14:00"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">場所（必須）</span>
+          <input
+            value={appoPlace}
+            onChange={(e) => setAppoPlace(e.target.value)}
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            placeholder="例: Zoom / 来社 / オンライン"
+          />
+        </label>
+      </div>
+
+      <label className="mt-4 block">
+        <span className="text-sm font-medium text-gray-700">自由メモ</span>
+        <textarea
+          value={freeMemo}
+          onChange={(e) => setFreeMemo(e.target.value)}
+          rows={5}
+          className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          placeholder="補足や注意点など"
+        />
+      </label>
+    </div>
+  )
+}
+
+const MaterialEditPanel = ({
+  item,
+  onCancel,
+}: EditPanelCommonProps & {
+  item: MaterialRequestItem
+}) => {
+  const [deliveryMethod, setDeliveryMethod] = useState<string>(item.required.deliveryMethod ?? '')
+  const [materialSet, setMaterialSet] = useState<string>(item.required.materialSet ?? '')
+  const [freeMemo, setFreeMemo] = useState<string>(item.freeMemo ?? '')
+
+  return (
+    <div className="rounded-md border border-blue-200 bg-blue-50/60 p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">資料請求 修正フォーム</h3>
+          <p className="mt-1 text-sm text-gray-600">
+            企業: <span className="font-medium text-gray-900">{item.companyName}</span>
+          </p>
+          {item.status === 'returned' ? (
+            <p className="mt-1 text-sm font-medium text-amber-900">
+              差し戻し中（理由: {item.returnReason?.trim() ? item.returnReason : '未記録'}）
+            </p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const ok = window.confirm('確定送信します。よろしいですか？')
+              if (!ok) return
+              useMaterialRequestStore.getState().upsert({
+                ...item,
+                required: {
+                  deliveryMethod: deliveryMethod.trim() ? deliveryMethod.trim() : null,
+                  materialSet: materialSet.trim() ? materialSet.trim() : null,
+                },
+                freeMemo,
+                status: 'sent',
+                isUnreadForIs: false,
+                returnReason: null,
+                updatedAt: Date.now(),
+              })
+              onCancel()
+            }}
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            確定送信
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">送付方法（必須）</span>
+          <input
+            value={deliveryMethod}
+            onChange={(e) => setDeliveryMethod(e.target.value)}
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            placeholder="例: メール / 郵送 / 手渡し"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">資料セット（必須）</span>
+          <input
+            value={materialSet}
+            onChange={(e) => setMaterialSet(e.target.value)}
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            placeholder="例: 会社案内+料金表"
+          />
+        </label>
+      </div>
+
+      <label className="mt-4 block">
+        <span className="text-sm font-medium text-gray-700">自由メモ</span>
+        <textarea
+          value={freeMemo}
+          onChange={(e) => setFreeMemo(e.target.value)}
+          rows={5}
+          className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          placeholder="補足や注意点など"
+        />
+      </label>
+    </div>
+  )
+}
 
 /** トーク用サブタブ：管理職がセット / 自分で書く */
 const TALK_SUB_TABS = [
@@ -36,6 +240,9 @@ const TAB_ITEMS: { key: string; label: string }[] = [
   { key: 'kpi', label: 'KPI' },
   { key: 'daily', label: '日報' },
   { key: 'memo-c', label: '自由メモ（案件）' },
+  { key: 'recall', label: '再架電' },
+  { key: 'appo', label: 'アポ' },
+  { key: 'material', label: '資料請求' },
 ]
 
 const TAB_KEYS_BASE = TAB_ITEMS.map((t) => t.key)
@@ -121,6 +328,9 @@ export function SalesRoomContent() {
   const tab = searchParams.get('tab') ?? DEFAULT_TAB
   const activeTab = tabKeys.includes(tab) ? tab : DEFAULT_TAB
   const activeLabel = tabMap[activeTab] ?? '企業詳細'
+  const mode = searchParams.get('mode') ?? ''
+  const appoEditId = searchParams.get('appoId') ?? ''
+  const materialEditId = searchParams.get('materialId') ?? ''
 
   const [tabOrder, setTabOrder] = useState<string[]>(() => loadTabOrder(tabKeys))
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -140,6 +350,51 @@ export function SalesRoomContent() {
     'ログイン後、配布リストの明細を表示します。未ログイン時はデモ行です。',
   )
   const [callingListLoading, setCallingListLoading] = useState(false)
+
+  const recallItems = useRecallListStore((s) => s.items)
+  const appoItems = useAppoSubmissionStore((s) => s.items)
+  const materialItems = useMaterialRequestStore((s) => s.items)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailKind, setDetailKind] = useState<'appo' | 'material' | null>(null)
+  const [detailId, setDetailId] = useState<string>('')
+
+  const selectedAppo = detailKind === 'appo' ? appoItems.find((i) => i.id === detailId) ?? null : null
+  const selectedMaterial =
+    detailKind === 'material' ? materialItems.find((i) => i.id === detailId) ?? null : null
+
+  const appoUnreadTotal = appoItems.reduce((acc, i) => acc + (i.isUnreadForIs ? 1 : 0), 0)
+  const materialUnreadTotal = materialItems.reduce((acc, i) => acc + (i.isUnreadForIs ? 1 : 0), 0)
+
+  const closeDetail = () => {
+    setDetailOpen(false)
+    setDetailKind(null)
+    setDetailId('')
+  }
+
+  const exitEditMode = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('mode')
+    params.delete('appoId')
+    params.delete('materialId')
+    router.push(`/sales-room?${params.toString()}`)
+  }, [router, searchParams])
+
+  const enterEditMode = useCallback(
+    (kind: 'appo' | 'material', id: string) => {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('tab', kind)
+      params.set('mode', 'edit')
+      if (kind === 'appo') {
+        params.set('appoId', id)
+        params.delete('materialId')
+      } else {
+        params.set('materialId', id)
+        params.delete('appoId')
+      }
+      router.push(`/sales-room?${params.toString()}`)
+    },
+    [router, searchParams],
+  )
 
   useEffect(() => {
     setTabOrder(loadTabOrder(tabKeys))
@@ -282,7 +537,13 @@ export function SalesRoomContent() {
             const params = new URLSearchParams(searchParams.toString())
             params.set('tab', key)
             const isActive = activeTab === key
-            const label = tabMap[key] ?? key
+            const baseLabel = tabMap[key] ?? key
+            const label =
+              key === 'appo' && appoUnreadTotal > 0
+                ? `${baseLabel}（未読(${appoUnreadTotal})）`
+                : key === 'material' && materialUnreadTotal > 0
+                  ? `${baseLabel}（未読(${materialUnreadTotal})）`
+                  : baseLabel
             const isDropTarget = dropIndex === index
             const isDragging = dragIndex === index
             return (
@@ -331,6 +592,420 @@ export function SalesRoomContent() {
       {/* 下：選択タブの結果表示（IS UI メインエリア） */}
       <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-gray-100 p-0">
         <RecallReminderBanner />
+
+        {detailOpen && (selectedAppo || selectedMaterial) && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="詳細"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeDetail()
+            }}
+          >
+            <div className="w-full max-w-2xl overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
+              <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-semibold text-gray-900">
+                    {detailKind === 'appo' ? 'アポ 詳細' : '資料請求 詳細'}
+                  </h3>
+                  <p className="mt-0.5 truncate text-xs text-gray-500">
+                    {detailKind === 'appo'
+                      ? (selectedAppo?.companyName ?? '')
+                      : (selectedMaterial?.companyName ?? '')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeDetail}
+                  className="shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  閉じる
+                </button>
+              </div>
+
+              <div className="max-h-[70vh] overflow-auto p-4">
+                {detailKind === 'appo' && selectedAppo ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border border-gray-200 bg-white p-3">
+                        <div className="text-xs font-medium text-gray-500">ステータス</div>
+                        <div className="mt-1 text-sm font-semibold text-gray-900">
+                          {statusToJa(selectedAppo.status)}
+                        </div>
+                        {selectedAppo.isUnreadForIs ? (
+                          <div className="mt-2 inline-flex rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                            未読
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="rounded-lg border border-gray-200 bg-white p-3">
+                        <div className="text-xs font-medium text-gray-500">slug</div>
+                        <div className="mt-1 break-all font-mono text-xs text-gray-800">{selectedAppo.slug}</div>
+                      </div>
+                    </div>
+
+                    {selectedAppo.status === 'returned' ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <div className="text-xs font-semibold text-amber-900">訂正依頼（差し戻し理由）</div>
+                        <div className="mt-2 whitespace-pre-wrap text-sm text-amber-950">
+                          {selectedAppo.returnReason?.trim()
+                            ? selectedAppo.returnReason
+                            : '（理由はまだ記録されていません）'}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="text-xs font-medium text-gray-500">必須項目</div>
+                      <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                        <div>
+                          <dt className="text-xs font-medium text-gray-500">日時</dt>
+                          <dd className="mt-0.5 text-gray-900">{selectedAppo.required.appoDateTime ?? '—'}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-medium text-gray-500">場所</dt>
+                          <dd className="mt-0.5 text-gray-900">{selectedAppo.required.appoPlace ?? '—'}</dd>
+                        </div>
+                      </dl>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="text-xs font-medium text-gray-500">自由メモ</div>
+                      <div className="mt-2 whitespace-pre-wrap rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-900">
+                        {selectedAppo.freeMemo?.trim() ? selectedAppo.freeMemo : '（空）'}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedAppo.isUnreadForIs) useAppoSubmissionStore.getState().markRead(selectedAppo.id)
+                        }}
+                        className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        既読にする
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeDetail()
+                          enterEditMode('appo', selectedAppo.id)
+                        }}
+                        className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                      >
+                        修正して再送
+                      </button>
+                    </div>
+                  </div>
+                ) : detailKind === 'material' && selectedMaterial ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border border-gray-200 bg-white p-3">
+                        <div className="text-xs font-medium text-gray-500">ステータス</div>
+                        <div className="mt-1 text-sm font-semibold text-gray-900">
+                          {statusToJa(selectedMaterial.status)}
+                        </div>
+                        {selectedMaterial.isUnreadForIs ? (
+                          <div className="mt-2 inline-flex rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                            未読
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="rounded-lg border border-gray-200 bg-white p-3">
+                        <div className="text-xs font-medium text-gray-500">slug</div>
+                        <div className="mt-1 break-all font-mono text-xs text-gray-800">{selectedMaterial.slug}</div>
+                      </div>
+                    </div>
+
+                    {selectedMaterial.status === 'returned' ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <div className="text-xs font-semibold text-amber-900">訂正依頼（差し戻し理由）</div>
+                        <div className="mt-2 whitespace-pre-wrap text-sm text-amber-950">
+                          {selectedMaterial.returnReason?.trim()
+                            ? selectedMaterial.returnReason
+                            : '（理由はまだ記録されていません）'}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="text-xs font-medium text-gray-500">必須項目</div>
+                      <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                        <div>
+                          <dt className="text-xs font-medium text-gray-500">送付</dt>
+                          <dd className="mt-0.5 text-gray-900">{selectedMaterial.required.deliveryMethod ?? '—'}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-medium text-gray-500">資料セット</dt>
+                          <dd className="mt-0.5 text-gray-900">{selectedMaterial.required.materialSet ?? '—'}</dd>
+                        </div>
+                      </dl>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="text-xs font-medium text-gray-500">自由メモ</div>
+                      <div className="mt-2 whitespace-pre-wrap rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-900">
+                        {selectedMaterial.freeMemo?.trim() ? selectedMaterial.freeMemo : '（空）'}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedMaterial.isUnreadForIs) {
+                            useMaterialRequestStore.getState().markRead(selectedMaterial.id)
+                          }
+                        }}
+                        className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        既読にする
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeDetail()
+                          enterEditMode('material', selectedMaterial.id)
+                        }}
+                        className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                      >
+                        修正して再送
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'recall' && (
+          <div className="shrink-0 space-y-4">
+            <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+              <h2 className="text-base font-semibold text-gray-900">再架電（一覧）</h2>
+              <p className="mt-1 text-sm text-gray-500">予定があるものだけ表示されます。</p>
+              {recallItems.length === 0 ? (
+                <div className="mt-4 rounded border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
+                  再架電リストは空です
+                </div>
+              ) : (
+                <ul className="mt-4 space-y-2">
+                  {recallItems.map((it) => {
+                    const scheduledStr = new Date(it.scheduledAt).toLocaleString('ja-JP', {
+                      month: 'numeric',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                    return (
+                      <li
+                        key={it.id}
+                        className="flex items-start justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-gray-900">{it.companyName}</div>
+                          <div className="text-xs text-gray-500">{scheduledStr}</div>
+                        </div>
+                        <Link
+                          href={it.pageLink}
+                          className="shrink-0 rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                        >
+                          直リンク
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'appo' && (
+          <div className="shrink-0 space-y-4">
+            {mode === 'edit' && appoEditId ? (
+              (() => {
+                const editing = appoItems.find((i) => i.id === appoEditId) ?? null
+                if (!editing) {
+                  return (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                      <div className="text-sm font-semibold text-amber-900">編集対象が見つかりません</div>
+                      <div className="mt-1 text-sm text-amber-900/80">一覧から選び直してください。</div>
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={exitEditMode}
+                          className="rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-50"
+                        >
+                          一覧へ戻る
+                        </button>
+                      </div>
+                    </div>
+                  )
+                }
+                return <AppoEditPanel item={editing} onCancel={exitEditMode} />
+              })()
+            ) : null}
+            <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+              <h2 className="text-base font-semibold text-gray-900">アポ（管理一覧）</h2>
+              <p className="mt-1 text-sm text-gray-500">差し戻し（returned）は色付きで表示されます。</p>
+              {appoItems.length === 0 ? (
+                <div className="mt-4 rounded border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
+                  アポ送信データはありません
+                </div>
+              ) : (
+                <ul className="mt-4 space-y-2">
+                  {appoItems
+                    .slice()
+                    .sort((a, b) => b.updatedAt - a.updatedAt)
+                    .map((it) => {
+                      const isReturned = it.status === 'returned'
+                      const returnReasonLine = it.returnReason?.trim()
+                      return (
+                        <li
+                          key={it.id}
+                          className={`rounded border px-3 py-2 ${
+                            isReturned
+                              ? 'border-amber-300 bg-amber-50'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            className="flex w-full items-start justify-between gap-3 text-left"
+                            onClick={() => {
+                              if (it.isUnreadForIs) useAppoSubmissionStore.getState().markRead(it.id)
+                              setDetailKind('appo')
+                              setDetailId(it.id)
+                              setDetailOpen(true)
+                            }}
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium text-gray-900">{it.companyName}</div>
+                              <div className="mt-1 text-xs text-gray-600">
+                                {it.required.appoDateTime ? `日時: ${it.required.appoDateTime}` : '日時: —'}
+                                {it.required.appoPlace ? ` / 場所: ${it.required.appoPlace}` : ''}
+                              </div>
+                              <div className="mt-1 text-xs font-medium">
+                                {statusToJa(it.status)}
+                              </div>
+                              {isReturned ? (
+                                <div className="mt-1 text-[11px] font-medium text-amber-900/80 truncate">
+                                  {returnReasonLine ? `理由: ${returnReasonLine}` : '理由: （未記録）'}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              {it.isUnreadForIs ? (
+                                <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+                                  未読
+                                </span>
+                              ) : null}
+                              <span className="text-[10px] text-gray-500">{new Date(it.updatedAt).toLocaleString('ja-JP')}</span>
+                            </div>
+                          </button>
+                        </li>
+                      )
+                    })}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'material' && (
+          <div className="shrink-0 space-y-4">
+            {mode === 'edit' && materialEditId ? (
+              (() => {
+                const editing = materialItems.find((i) => i.id === materialEditId) ?? null
+                if (!editing) {
+                  return (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                      <div className="text-sm font-semibold text-amber-900">編集対象が見つかりません</div>
+                      <div className="mt-1 text-sm text-amber-900/80">一覧から選び直してください。</div>
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={exitEditMode}
+                          className="rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-50"
+                        >
+                          一覧へ戻る
+                        </button>
+                      </div>
+                    </div>
+                  )
+                }
+                return <MaterialEditPanel item={editing} onCancel={exitEditMode} />
+              })()
+            ) : null}
+            <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+              <h2 className="text-base font-semibold text-gray-900">資料請求（管理一覧）</h2>
+              <p className="mt-1 text-sm text-gray-500">差し戻し（returned）は色付きで表示されます。</p>
+              {materialItems.length === 0 ? (
+                <div className="mt-4 rounded border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
+                  資料請求送信データはありません
+                </div>
+              ) : (
+                <ul className="mt-4 space-y-2">
+                  {materialItems
+                    .slice()
+                    .sort((a, b) => b.updatedAt - a.updatedAt)
+                    .map((it) => {
+                      const isReturned = it.status === 'returned'
+                      const returnReasonLine = it.returnReason?.trim()
+                      return (
+                        <li
+                          key={it.id}
+                          className={`rounded border px-3 py-2 ${
+                            isReturned
+                              ? 'border-amber-300 bg-amber-50'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            className="flex w-full items-start justify-between gap-3 text-left"
+                            onClick={() => {
+                              if (it.isUnreadForIs) useMaterialRequestStore.getState().markRead(it.id)
+                              setDetailKind('material')
+                              setDetailId(it.id)
+                              setDetailOpen(true)
+                            }}
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium text-gray-900">{it.companyName}</div>
+                              <div className="mt-1 text-xs text-gray-600">
+                                {it.required.deliveryMethod ? `送付: ${it.required.deliveryMethod}` : '送付: —'}
+                                {it.required.materialSet ? ` / セット: ${it.required.materialSet}` : ''}
+                              </div>
+                              <div className="mt-1 text-xs font-medium">
+                                {statusToJa(it.status)}
+                              </div>
+                              {isReturned ? (
+                                <div className="mt-1 text-[11px] font-medium text-amber-900/80 truncate">
+                                  {returnReasonLine ? `理由: ${returnReasonLine}` : '理由: （未記録）'}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              {it.isUnreadForIs ? (
+                                <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+                                  未読
+                                </span>
+                              ) : null}
+                              <span className="text-[10px] text-gray-500">{new Date(it.updatedAt).toLocaleString('ja-JP')}</span>
+                            </div>
+                          </button>
+                        </li>
+                      )
+                    })}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
 
         {activeTab === 'list' && (
           <div className="shrink-0 space-y-4">

@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   InternalServerErrorException,
+  NotFoundException,
   Post,
   Req,
   Res,
@@ -12,6 +14,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
@@ -109,5 +112,19 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getProfile(@Req() req: JwtRequest) {
     return this.authService.getProfile(req.user);
+  }
+
+  /** メール+パスワード利用者向けパスワード変更（変更後は refresh が失効） */
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  async changePassword(@Req() req: JwtRequest, @Body() dto: ChangePasswordDto) {
+    try {
+      return await this.authService.changePassword(req.user, dto);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      if (error instanceof UnauthorizedException) throw error;
+      if (error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('パスワード変更に失敗しました');
+    }
   }
 }

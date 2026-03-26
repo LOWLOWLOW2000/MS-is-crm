@@ -1,0 +1,161 @@
+---
+description: Figma MCP 連携用デザインシステムルール。Figma デザインをコードに落とす際のトークン・コンポーネント・スタイルの対応ルール。
+globs: 
+alwaysApply: false
+---
+
+# Design System Rules — Figma 連携用 (IS CRM)
+
+Figma デザインを Model Context Protocol (MCP) で取り込み、コードベースに統合する際のルールと対応表。
+
+---
+
+## 1. Token Definitions（デザイントークン）
+
+### 1.1 定義場所・形式
+
+- **Tailwind デフォルト**: `apps/web/tailwind.config.ts` で `theme.extend` のみ（カスタムトークン未定義）。
+- **実質のトークン**: Tailwind のデフォルトパレット（`gray-*`, `blue-*` 等）をそのまま利用。
+- **グローバル CSS**: `apps/web/app/globals.css` で `:root { color-scheme: light; }`、`body` に `@apply bg-white text-gray-900` のみ。CSS 変数は未使用。
+
+### 1.2 色の対応（Figma → Tailwind）
+
+| 用途       | Figma でよく使う名前 | コード側クラス例              |
+|------------|----------------------|-------------------------------|
+| 背景メイン | White / Gray 50      | `bg-white`, `bg-gray-50`      |
+| 背景サブ   | Gray 100             | `bg-gray-100`                 |
+| ボーダー   | Gray 200             | `border-gray-200`             |
+| テキスト主 | Gray 800/900         | `text-gray-800`, `text-gray-900` |
+| テキスト副 | Gray 500/600         | `text-gray-500`, `text-gray-600` |
+| アクセント | Blue 600             | `bg-blue-600`, `text-blue-600`, `ring-blue-200` |
+| 成功/承認  | Green / Amber        | `bg-green-50`, `border-amber-500` |
+| エラー     | Red                  | `bg-red-50`, `text-red-800`   |
+
+### 1.3 余白・スペーシング
+
+- Tailwind のデフォルトスケール（`p-2` = 8px, `p-4` = 16px, `p-6` = 24px 等）をそのまま使用。
+- コンポーネント間は `gap-2` ～ `gap-6`、セクションは `p-4` ～ `p-6` を標準とする。
+
+### 1.4 トークン変換
+
+- 現状トークン変換システム（Style Dictionary 等）はなし。Figma の色・余白は上記の Tailwind クラスに手でマッピングする。
+
+---
+
+## 2. Component Library（コンポーネント）
+
+### 2.1 定義場所
+
+- **ページ専用**: `apps/web/app/(dashboard)/**/_components/` 配下（例: `sales-room/_components/SalesRoomCallingUI.tsx`）。
+- **共通レイアウト**: `apps/web/app/(dashboard)/_components/`（`Header.tsx`, `Footer.tsx`, `DashboardNav.tsx`）。
+- **グローバル共通コンポーネント**: `apps/web/components/` は現状ほぼ未使用。必要ならここに追加。
+
+### 2.2 アーキテクチャ
+
+- 関数コンポーネント + アロー関数で統一（このワークスペース共通ルールと `IS_01/AGENTS.md` 準拠）。
+- Props は TypeScript で明示。`children` は `ReactNode`。
+- スタイルは **Tailwind クラスのみ**。CSS Modules / Styled Components は未使用。
+
+### 2.3 ドキュメント・Storybook
+
+- Storybook は未導入。コンポーネントの使い方は JSDoc と実装参照。
+
+---
+
+## 3. Frameworks & Libraries
+
+| 種別     | 技術                         |
+|----------|------------------------------|
+| UI       | React 18 + Next.js 14 (App Router) |
+| 言語     | TypeScript（strict）         |
+| スタイル | Tailwind CSS 3.x             |
+| アイコン | @carbon/icons-react          |
+| レイアウト分割 | react-resizable-panels |
+| 状態     | useState / Zustand           |
+| ビルド   | Next.js (webpack/turbopack)  |
+
+- shadcn/ui は過去の指示ファイルに記載があるが **package.json には未導入**。Figma 由来の UI は Tailwind + Carbon で再現する。
+
+---
+
+## 4. Asset Management
+
+- **画像**: `apps/web/public/` に配置し、`/filename.png` で参照。
+- **最適化**: Next.js の `<Image>` を使用する場合は `next/image` で最適化。
+- **CDN**: 特になし。同一オリジン想定。
+
+---
+
+## 5. Icon System
+
+- **ライブラリ**: `@carbon/icons-react`。
+- **インポート**: `import { ChevronUp, StarFilled } from '@carbon/icons-react'`。
+- **使用**: `<ChevronUp size={20} />` のように `size` で統一（16/18/20 が多用）。
+- **命名**: Carbon の公式名（PascalCase）。Figma のアイコンは最も近い Carbon アイコンにマッピングする。
+
+---
+
+## 6. Styling Approach
+
+- **手法**: **Utility-first（Tailwind のみ）**。クラスで完結。
+- **グローバル**: `app/globals.css` で `@tailwind base/components/utilities` と `body` のベースのみ。
+- **レスポンシブ**: `sm:`, `md:`, `lg:` で対応。モバイルは必要に応じて追加。
+- **コンポーネント内**: インラインスタイルは極力使わず、`className="..."` で Tailwind を列挙。
+
+### 6.1 よく使うパターン
+
+```tsx
+// カード風
+className="rounded border border-gray-200 bg-white p-4"
+
+// タブ・アクティブ
+className="rounded px-3 py-1.5 bg-white font-medium text-gray-800 shadow-sm ring-1 ring-gray-200"
+
+// 非アクティブ
+className="text-gray-600 hover:bg-gray-200"
+
+// リスト選択中
+className="bg-blue-50 ring-1 ring-blue-200"
+```
+
+---
+
+## 7. Project Structure
+
+```
+apps/web/
+├── app/
+│   ├── (auth)/          # ログイン等
+│   ├── (dashboard)/     # ダッシュボード・営業ルーム・KPI等
+│   │   ├── _components/ # 共通: Header, Footer, DashboardNav
+│   │   ├── dashboard/
+│   │   ├── sales-room/  # 営業ルーム（セールスルーム・電話制御・リスト・架電UI）
+│   │   ├── kpi/, ai-daily/, director/, ...
+│   ├── (ops)/           # 運営バックヤード
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── providers.tsx
+├── lib/                 # API・store・型
+├── types/               # next-auth 型拡張
+└── tailwind.config.ts
+```
+
+- **機能単位**: ルートグループ `(dashboard)` 配下で URL と対応。1画面 = 1 `page.tsx`。
+- **Figma 連携**: 新画面は `docs/ui-structure.md` の URL 一覧に合わせ、該当する `app/.../page.tsx` に実装する。
+
+---
+
+## 8. Figma デザインを取り込むときの手順
+
+1. **get_design_context** で nodeId/fileKey を指定し、コード・スクショ・ヒントを取得。
+2. **プロジェクトに合わせる**: 上記トークン（色は Tailwind gray/blue）、アイコンは Carbon、レイアウトは Tailwind の flex/grid で再現。
+3. **既存コンポーネントを優先**: `Header`, `DashboardNav`, 営業ルームの `_components` など、同じパターンがあれば流用。
+4. **セマンティクス**: 見出しは `h1`/`h2`、リストは `ul`/`li`、操作は `button` とし、`aria-label` を必要に応じて付与。
+
+---
+
+## 9. 参照ドキュメント
+
+- 画面構成・URL: `docs/ui-structure.md`
+- 確定仕様（過去）: `OLD/cursor/.cursorrules`（過去の指示ファイル。現行はデベルーム共通ルールと各アプリの `AGENTS.md` を正とする）
+- HTML モック: `docs/html-mock/`（営業ルーム・セールスルーム）

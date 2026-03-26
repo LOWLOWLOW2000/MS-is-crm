@@ -225,77 +225,12 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
     const run = async () => {
       setListsLoading(true)
       try {
-        // #region agent log
-        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'db6de1',
-          },
-          body: JSON.stringify({
-            sessionId: 'db6de1',
-            location: 'DistributeClient.tsx:fetchCallingLists:before',
-            hypothesisId: 'H1',
-            message: 'calling lists fetch start',
-            data: {
-              hasAccessToken: Boolean(accessToken),
-              accessTokenLength: accessToken.length,
-              initialListId,
-            },
-            timestamp: Date.now(),
-            runId: 'pre',
-          }),
-        }).catch(() => {})
-        // #endregion
         const next = await fetchCallingLists(accessToken)
         setLists(next.map((l) => ({ id: l.id, name: l.name, itemCount: l.itemCount })))
-        // #region agent log
-        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'db6de1',
-          },
-          body: JSON.stringify({
-            sessionId: 'db6de1',
-            location: 'DistributeClient.tsx:fetchCallingLists:after',
-            hypothesisId: 'H2',
-            message: 'calling lists fetch success',
-            data: {
-              listsCount: next.length,
-              hasInitialMatch: Boolean(
-                initialListId && next.some((l) => l.id === initialListId),
-              ),
-            },
-            timestamp: Date.now(),
-            runId: 'pre',
-          }),
-        }).catch(() => {})
-        // #endregion
         if (initialListId && next.some((l) => l.id === initialListId)) {
           setSelectedListIds([initialListId])
         }
       } catch (e) {
-        // #region agent log
-        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'db6de1',
-          },
-          body: JSON.stringify({
-            sessionId: 'db6de1',
-            location: 'DistributeClient.tsx:fetchCallingLists:catch',
-            hypothesisId: 'H2e',
-            message: 'calling lists fetch failed',
-            data: {
-              error: e instanceof Error ? e.message : String(e),
-            },
-            timestamp: Date.now(),
-            runId: 'pre',
-          }),
-        }).catch(() => {})
-        // #endregion
         setLastMessage((e as Error).message)
       } finally {
         setListsLoading(false)
@@ -311,43 +246,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
       try {
         const next = await fetchListIndustryMasters(accessToken)
         setIndustryMasters(next)
-        // #region agent log
-        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'db6de1',
-          },
-          body: JSON.stringify({
-            sessionId: 'db6de1',
-            location: 'DistributeClient.tsx:fetchListIndustryMasters:success',
-            hypothesisId: 'H3',
-            message: 'industry masters fetched',
-            data: { mastersCount: next.length },
-            timestamp: Date.now(),
-            runId: 'pre',
-          }),
-        }).catch(() => {})
-        // #endregion
       } catch (e) {
-        // #region agent log
-        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'db6de1',
-          },
-          body: JSON.stringify({
-            sessionId: 'db6de1',
-            location: 'DistributeClient.tsx:fetchListIndustryMasters:catch',
-            hypothesisId: 'H3e',
-            message: 'industry masters fetch failed',
-            data: { error: e instanceof Error ? e.message : String(e) },
-            timestamp: Date.now(),
-            runId: 'pre',
-          }),
-        }).catch(() => {})
-        // #endregion
         setLastMessage((e as Error).message)
       } finally {
         setMastersLoading(false)
@@ -363,43 +262,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
       try {
         const next = await fetchUsers(accessToken)
         setUsers(next)
-        // #region agent log
-        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'db6de1',
-          },
-          body: JSON.stringify({
-            sessionId: 'db6de1',
-            location: 'DistributeClient.tsx:fetchUsers:success',
-            hypothesisId: 'H4',
-            message: 'users fetched',
-            data: { usersCount: next.length },
-            timestamp: Date.now(),
-            runId: 'pre',
-          }),
-        }).catch(() => {})
-        // #endregion
       } catch (e) {
-        // #region agent log
-        void fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'db6de1',
-          },
-          body: JSON.stringify({
-            sessionId: 'db6de1',
-            location: 'DistributeClient.tsx:fetchUsers:catch',
-            hypothesisId: 'H4e',
-            message: 'users fetch failed',
-            data: { error: e instanceof Error ? e.message : String(e) },
-            timestamp: Date.now(),
-            runId: 'pre',
-          }),
-        }).catch(() => {})
-        // #endregion
         setLastMessage((e as Error).message)
       } finally {
         setUsersLoading(false)

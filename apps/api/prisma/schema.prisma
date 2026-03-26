@@ -14,7 +14,14 @@ model User {
   id           String    @id @default(cuid())
   tenantId     String
   email        String
+  /** 表示名（テナント内で一意） */
   name         String
+  /** 本名・姓（課金・請求用。プロフィール API では返却しない） */
+  familyName   String?
+  /** 本名・名（課金・請求用。プロフィール API では返却しない） */
+  givenName    String?
+  /** 部署名（任意） */
+  departmentName String?
   passwordHash String?
   /** 後方互換・単一ロール参照用（JWT の主ロール計算にも利用） */
   role         String
@@ -28,6 +35,8 @@ model User {
   prefecture   String?
   /** 携帯電話番号 */
   mobilePhone  String?
+  /** Slack メンバー ID（表示名・連携用） */
+  slackId      String?
   createdAt    String
   updatedAt    String
 
@@ -36,6 +45,8 @@ model User {
 
   @@unique([tenantId, email])
   @@index([tenantId])
+  /** 表示名の重複は API 層で同一テナント内を拒否（DB 一意制約は既存データ互換のため未付与） */
+  @@index([tenantId, name])
   @@index([email])
   @@map("users")
 }
@@ -70,11 +81,16 @@ model CallingRecord {
   result          String   // CallingResultType
   memo            String   @default("")
   nextCallAt      String?
+  /** ディレクター未読管理: null = 未読 */
+  directorReadAt  String?
+  /** 既読化したディレクターの userId */
+  directorReadBy  String?
   createdAt       String
   updatedAt       String
 
   @@index([tenantId])
   @@index([tenantId, nextCallAt])
+  @@index([tenantId, result, directorReadAt])
   @@map("calling_records")
 }
 

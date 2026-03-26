@@ -49,6 +49,27 @@ export type CallingResultType =
   | 'リスト除外'
   | '不通';
 
+export type DirectorRequestType = 'appointment' | 'material'
+
+export type DirectorRequestRow = {
+  id: string
+  type: DirectorRequestType
+  createdAt: string
+  companyName: string
+  targetUrl: string
+  memo: string
+  createdByUserId: string
+  createdByName?: string
+  isRead: boolean
+  directorReadAt: string | null
+}
+
+export type DirectorRequestSummary = {
+  unreadTotal: number
+  unreadAppointment: number
+  unreadMaterial: number
+}
+
 export interface SaveCallingRecordInput {
   companyName: string;
   companyPhone: string;

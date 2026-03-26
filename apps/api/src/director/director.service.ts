@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CallingService } from '../calling/calling.service';
 import { CallingHelpRequest } from '../calling/entities/calling-help-request.entity';
 import { hasAnyRole } from '../common/auth/role-utils';
@@ -85,4 +85,121 @@ export class DirectorService {
     });
     return { ok: true };
   };
+
+  getRequestsSummary = async (user: JwtPayload): Promise<{
+    unreadTotal: number
+    unreadAppointment: number
+    unreadMaterial: number
+  }> => {
+    this.assertDirectorRole(user)
+
+    const rows = await this.prisma.callingRecord.findMany({
+      where: {
+        tenantId: user.tenantId,
+        result: { in: ['アポ', '資料送付'] },
+        directorReadAt: null,
+      },
+      select: { result: true },
+    })
+    const unreadAppointment = rows.filter((r) => r.result === 'アポ').length
+    const unreadMaterial = rows.filter((r) => r.result === '資料送付').length
+    return {
+      unreadTotal: unreadAppointment + unreadMaterial,
+      unreadAppointment,
+      unreadMaterial,
+    }
+  }
+
+  getRequests = async (
+    user: JwtPayload,
+  ): Promise<
+    {
+      id: string
+      type: 'appointment' | 'material'
+      createdAt: string
+      companyName: string
+      targetUrl: string
+      memo: string
+      createdByUserId: string
+      createdByName?: string
+      isRead: boolean
+      directorReadAt: string | null
+    }[]
+  > => {
+    this.assertDirectorRole(user)
+
+    const rows = await this.prisma.callingRecord.findMany({
+      where: {
+        tenantId: user.tenantId,
+        result: { in: ['アポ', '資料送付'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: {
+        callingHistoryId: true,
+        createdAt: true,
+        companyName: true,
+        targetUrl: true,
+        memo: true,
+        createdBy: true,
+        result: true,
+        directorReadAt: true,
+      },
+    })
+
+    const createdByIds = [...new Set(rows.map((r) => r.createdBy))]
+    const users =
+      createdByIds.length === 0
+        ? []
+        : await this.prisma.user.findMany({
+            where: { tenantId: user.tenantId, id: { in: createdByIds } },
+            select: { id: true, name: true },
+          })
+    const nameById = new Map(users.map((u) => [u.id, u.name]))
+
+    return rows.map((r) => ({
+      id: r.callingHistoryId,
+      type: r.result === 'アポ' ? 'appointment' : 'material',
+      createdAt: r.createdAt,
+      companyName: r.companyName,
+      targetUrl: r.targetUrl,
+      memo: r.memo,
+      createdByUserId: r.createdBy,
+      createdByName: nameById.get(r.createdBy) ?? undefined,
+      isRead: r.directorReadAt != null,
+      directorReadAt: r.directorReadAt,
+    }))
+  }
+
+  markRequestsAsRead = async (
+    user: JwtPayload,
+    body: { ids?: string[]; markAll?: boolean },
+  ): Promise<{ updated: number }> => {
+    this.assertDirectorRole(user)
+
+    const nowIso = new Date().toISOString()
+    const markAll = body.markAll === true
+    const ids = Array.isArray(body.ids) ? body.ids.filter((v) => typeof v === 'string' && v.trim().length > 0) : []
+
+    if (!markAll && ids.length === 0) {
+      throw new BadRequestException('ids または markAll=true を指定してください')
+    }
+
+    const whereBase = {
+      tenantId: user.tenantId,
+      result: { in: ['アポ', '資料送付'] as string[] },
+      directorReadAt: null as null,
+    }
+
+    const result = await this.prisma.callingRecord.updateMany({
+      where: markAll ? whereBase : { ...whereBase, callingHistoryId: { in: ids } },
+      data: {
+        directorReadAt: nowIso,
+        directorReadBy: user.sub,
+        updatedAt: nowIso,
+      },
+    })
+
+    return { updated: result.count }
+  }
 }

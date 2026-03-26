@@ -44,6 +44,9 @@ export default function DashboardPage() {
             <li>
               <Link href="/director/daily-box" className="text-blue-600 no-underline hover:underline">日報BOX</Link>
             </li>
+            <li>
+              <Link href="/director/requests" className="text-blue-600 no-underline hover:underline">アポ・資料請求 管理</Link>
+            </li>
           </ul>
         </section>
       </div>

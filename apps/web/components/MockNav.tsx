@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
-import { fetchMyProfile } from '@/lib/calling-api'
+import { fetchDirectorRequestsSummary, fetchMyProfile } from '@/lib/calling-api'
 import type { UserRole } from '@/lib/types'
 
 /** レイヤー権限：インサイドセールス / 管理職 / 共通（両方に表示） */
@@ -20,6 +20,7 @@ export type MockNavItem = {
 export const MOCK_NAV_ITEMS: MockNavItem[] = [
   { label: '★架電ルーム', href: '/sales-room', layer: 'is' },
   { label: 'KPIページ（AI）', href: '/kpi', layer: 'common' },
+  { label: 'AIスコアカード', href: '/ai-score', layer: 'common' },
   { label: '日報（AI）', href: '/ai-daily', layer: 'common' },
   { label: 'タイムカード', href: '/timecard-invoice?tab=timecard', layer: 'common' },
   { label: '請求書・領収書', href: '/timecard-invoice?tab=invoice', layer: 'common' },
@@ -28,6 +29,7 @@ export const MOCK_NAV_ITEMS: MockNavItem[] = [
   { label: 'プロジェクトKPI', href: '/director/kpi', layer: 'director' },
   { label: 'AIレポート', href: '/director/ai-report', layer: 'director' },
   { label: '日報BOX', href: '/director/daily-box', layer: 'director' },
+  { label: '★アポ・資料請求管理', href: '/director/requests', layer: 'director' },
   { label: '★リスト格納', href: '/director/calling-lists/import', layer: 'director' },
   { label: '★リスト配布・管理', href: '/director/calling-lists/distribute', layer: 'director' },
   { label: '★役職変更・メンバー招待', href: '/admin', layer: 'director' },
@@ -56,6 +58,7 @@ export function MockNav() {
 
   const sessionRoles = status === 'authenticated' ? normalizeUserRoles(session?.user) : []
   const [resolvedRoles, setResolvedRoles] = useState<UserRole[]>([])
+  const [directorRequestBadgeCount, setDirectorRequestBadgeCount] = useState<number>(0)
   const effectiveRoles = resolvedRoles.length > 0 ? resolvedRoles : sessionRoles
 
   useEffect(() => {
@@ -88,6 +91,23 @@ export function MockNav() {
       if (typeof window !== 'undefined') {
         window.removeEventListener('roles:changed', onRolesChanged)
       }
+    }
+  }, [session?.accessToken])
+
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (!session?.accessToken) return
+      try {
+        const summary = await fetchDirectorRequestsSummary(session.accessToken)
+        if (!cancelled) setDirectorRequestBadgeCount(summary.unreadTotal)
+      } catch {
+        if (!cancelled) setDirectorRequestBadgeCount(0)
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
     }
   }, [session?.accessToken])
 
@@ -146,7 +166,18 @@ export function MockNav() {
                 className={`${baseButton} ${activeStyle} ${layerStyle}`}
                 role="button"
               >
-                {label}
+                <span className="flex items-center justify-between gap-2">
+                  <span className="truncate">{label}</span>
+                  {href.split('?')[0] === '/director/requests' && directorRequestBadgeCount > 0 ? (
+                    <span
+                      className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[11px] font-bold text-white"
+                      aria-label={`未確認 ${directorRequestBadgeCount} 件`}
+                      title={`未読: ${directorRequestBadgeCount}件`}
+                    >
+                      {directorRequestBadgeCount > 99 ? '99+' : directorRequestBadgeCount}
+                    </span>
+                  ) : null}
+                </span>
               </Link>
             </li>
           )

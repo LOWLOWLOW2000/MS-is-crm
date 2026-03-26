@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>未調査リスト精査 - IS架電管理CRM</title>
+  <link rel="stylesheet" href="css/common.css" />
+  <style>
+    .refinement-wrap { display: flex; gap: 1rem; }
+    .refinement-left { width: 288px; flex-shrink: 0; }
+    .refinement-left section { background: var(--bg-white); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+    .refinement-left h2 { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .refinement-left .btns { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    .refinement-main { flex: 1; background: var(--bg-white); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; }
+    .refinement-main input[type="search"] { width: 100%; max-width: 28rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; margin-top: 1rem; }
+    .refinement-main .placeholder-box { margin-top: 1.5rem; height: 12rem; border: 1px dashed var(--border); background: #f9fafb; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <div class="page-wrap">
+    <header class="site-header">
+      <div class="brand"><a href="dashboard.html">IS UI</a></div>
+      <div class="header-center">
+        <span style="font-size:0.75rem; color:var(--text-muted);">当日KPI（個人・チーム・PJ切り替え）</span>
+      </div>
+      <div class="header-right">
+        <a href="login.html">ログアウト</a>
+      </div>
+    </header>
+    <div class="site-body">
+      <nav class="site-nav">
+        <ul>
+          <li><a href="dashboard.html">ダッシュボード</a></li>
+          <li><a href="dashboard.html#kpi">KPIページ</a></li>
+          <li><a href="dashboard.html#ai-daily">AI日報</a></li>
+          <li><a href="inside-sales.html">インサイドセールス（IS UI）</a></li>
+          <li><a href="inside-sales-refinement.html" class="active">未調査リスト精査</a></li>
+          <li><a href="dashboard.html#director">ディレクター</a></li>
+          <li><a href="dashboard.html#director-kpi">プロジェクトKPI</a></li>
+          <li><a href="dashboard.html#ai-report">AIレポート</a></li>
+          <li><a href="dashboard.html#daily-box">日報BOX</a></li>
+        </ul>
+      </nav>
+      <main class="site-main">
+        <div class="refinement-wrap">
+          <aside class="refinement-left">
+            <span style="display:inline-block; background:#dbeafe; color:#1e40af; padding:0.25rem 0.75rem; border-radius:6px; font-size:0.875rem; font-weight:500; margin-bottom:1rem;">IS UI 未調査リスト精査モード</span>
+            <section>
+              <h2>承認ボタン...</h2>
+              <div class="btns">
+                <button type="button" class="btn btn-accent">一括承認</button>
+                <button type="button" class="btn btn-secondary">却下</button>
+              </div>
+            </section>
+            <section>
+              <h2>未承認リストステータス</h2>
+              <p style="font-size:12px; color:var(--text-muted); margin-top:0.5rem;">未承認のリストを表示</p>
+              <ul style="margin-top:0.75rem; font-size:0.875rem; color:var(--text-muted); list-style:none;">
+                <li>・待機中 3件</li>
+                <li>・確認中 1件</li>
+              </ul>
+            </section>
+          </aside>
+          <div class="refinement-main">
+            <h2 style="font-size:0.875rem; font-weight:600;">HP・INFO・検索窓</h2>
+            <p style="font-size:12px; color:var(--text-muted); margin-top:0.25rem;">企業HP、情報、検索</p>
+            <input type="search" placeholder="企業名・URL・メモで検索" />
+            <div class="placeholder-box">HP・INFO 表示エリア</div>
+          </div>
+        </div>
+      </main>
+      <aside class="site-aside"></aside>
+    </div>
+    <footer class="site-footer">コモンズとマリシからのお知らせ（無料枠はテキスト広告）</footer>
+  </div>
+</body>
+</html>

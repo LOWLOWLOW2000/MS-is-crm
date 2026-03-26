@@ -47,6 +47,67 @@ export class ReportsService {
     return { startAt, endAt };
   };
 
+  private sanitizeCategoryScores = (raw: unknown): AiCategoryScore[] => {
+    if (!Array.isArray(raw)) return []
+    return raw
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const row = item as {
+          category?: unknown
+          score?: unknown
+          tagCount?: unknown
+          tags?: unknown
+        }
+        const tags = Array.isArray(row.tags)
+          ? row.tags
+              .map((tag) => {
+                if (!tag || typeof tag !== 'object') return null
+                const t = tag as { tag?: unknown; value?: unknown }
+                if (typeof t.tag !== 'string') return null
+                if (typeof t.value !== 'string' && typeof t.value !== 'number') return null
+                return { tag: t.tag, value: t.value }
+              })
+              .filter((tag): tag is { tag: string; value: string | number } => tag !== null)
+              .sort((a, b) => a.tag.localeCompare(b.tag))
+          : []
+        const safeTagCount = typeof row.tagCount === 'number' && Number.isFinite(row.tagCount)
+          ? row.tagCount
+          : tags.length
+        return {
+          category: typeof row.category === 'string' ? row.category : 'unknown',
+          score: typeof row.score === 'number' && Number.isFinite(row.score) ? row.score : 0,
+          tagCount: safeTagCount,
+          tags,
+        } satisfies AiCategoryScore
+      })
+      .filter((item): item is AiCategoryScore => item !== null)
+      .sort((a, b) => b.score - a.score || a.category.localeCompare(b.category))
+  }
+
+  private toIsoStringOrNull = (raw: unknown): string | null => {
+    if (typeof raw !== 'string' && !(raw instanceof Date)) return null
+    const date = raw instanceof Date ? raw : new Date(raw)
+    return Number.isNaN(date.getTime()) ? null : date.toISOString()
+  }
+
+  private sanitizeNonEmptyString = (raw: unknown): string | null => {
+    if (typeof raw !== 'string') return null
+    const trimmed = raw.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  private sanitizeImprovementPoints = (raw: unknown): string[] | null => {
+    if (!Array.isArray(raw)) return null
+    const points = raw
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+    return points.length > 0 ? points : null
+  }
+
+  private resolveAiScorecardSortTimestamp = (entry: Pick<AiScorecardEntryDto, 'evaluatedAt' | 'callDate'>): number =>
+    new Date(entry.evaluatedAt ?? entry.callDate).getTime()
+
   getSummary = async (user: JwtPayload, rawPeriod: string | undefined): Promise<ReportSummaryDto> => {
     const period = this.resolvePeriod(rawPeriod);
     const { startAt, endAt } = this.resolveRange(period);
@@ -162,11 +223,13 @@ export class ReportsService {
       select: { id: true, email: true },
     });
     const emailByUserId = new Map(users.map((u) => [u.id, u.email]));
-    const entries: AiScorecardEntryDto[] = [];
-    for (const e of evals) {
-      const record = recordMap.get(e.callRecordId);
-      if (!record) continue;
-      const categoryScores = (e.categoryScores as unknown as AiCategoryScore[]) ?? [];
+    const entries: AiScorecardEntryDto[] = evals.flatMap((e) => {
+        const record = recordMap.get(e.callRecordId)
+        if (!record) return []
+
+        const evaluatedAt = this.toIsoStringOrNull(e.evaluatedAt)
+        const callDate = this.toIsoStringOrNull(record.createdAt) ?? new Date(0).toISOString()
+      const categoryScores = this.sanitizeCategoryScores(e.categoryScores)
       const avgScore =
         categoryScores.length > 0
           ? categoryScores.reduce((sum, c) => sum + (c.score ?? 0), 0) / categoryScores.length
@@ -175,27 +238,32 @@ export class ReportsService {
       const evaluation: AiCallEvaluationDto = {
         id: e.id,
         tenantId: e.tenantId,
-        callRecordId: e.callRecordId,
-        zoomCallLogId: null,
-        evaluatedAt: e.evaluatedAt,
-        categoryScores,
-        summary: e.summary ?? null,
-        improvementPoints: Array.isArray(e.improvementPoints) ? (e.improvementPoints as string[]) : null,
-      };
-      entries.push({
         callRecordId: record.callingHistoryId,
-        tenantId: record.tenantId,
-        companyName: record.companyName,
-        isMemberEmail: emailByUserId.get(record.createdBy) ?? '',
-        callDate: record.createdAt,
-        durationSeconds: 0,
-        result: record.result,
-        overallScore,
-        evaluatedAt: e.evaluatedAt,
-        evaluation,
-      });
-    }
-    return entries;
+        zoomCallLogId: null,
+        evaluatedAt: evaluatedAt ?? callDate,
+        categoryScores,
+        summary: this.sanitizeNonEmptyString(e.summary),
+        improvementPoints: this.sanitizeImprovementPoints(e.improvementPoints),
+      };
+        return [{
+          callRecordId: record.callingHistoryId,
+          tenantId: record.tenantId,
+          companyName: record.companyName,
+          isMemberEmail: emailByUserId.get(record.createdBy) ?? '',
+          callDate,
+          durationSeconds: 0,
+          result: record.result,
+          overallScore,
+          evaluatedAt,
+          evaluation,
+        } satisfies AiScorecardEntryDto]
+      })
+
+    return entries.sort((a, b) => {
+      const timeDiff = this.resolveAiScorecardSortTimestamp(b) - this.resolveAiScorecardSortTimestamp(a)
+      if (timeDiff !== 0) return timeDiff
+      return a.callRecordId.localeCompare(b.callRecordId)
+    })
   };
 
   /** Phase3 スタブ: 黄金トークパターン */

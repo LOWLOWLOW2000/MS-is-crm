@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "preflight": "bash scripts/check-ports.sh",
+    "monitor:agents": "node scripts/monitor-agent-transcripts.js --count 3",
     "dev:api": "cd apps/api && npm run start:dev",
     "dev:web": "cd apps/web && npm run dev",
     "dev:web:clean": "cd apps/web && rm -rf .next && npm run dev",

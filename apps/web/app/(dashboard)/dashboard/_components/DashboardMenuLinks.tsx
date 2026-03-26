@@ -39,6 +39,11 @@ export function DashboardMenuLinks() {
             </Link>
           </li>
           <li>
+            <Link href="/ai-score" className="text-blue-600 hover:underline">
+              AIスコアカード
+            </Link>
+          </li>
+          <li>
             <Link href="/dashboard?view=ai-daily" className="text-blue-600 hover:underline">
               日報（AI）
             </Link>

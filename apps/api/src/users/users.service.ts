@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -14,6 +15,7 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { upsertProjectMembershipInTx } from './project-membership.helper';
 import { toUserListApiRow, type UserListApiRow } from './user-list.mapper';
+import { type UpdateMeProfileDto } from './dto/update-me-profile.dto';
 import { type UpdateProfileImageDto } from './dto/update-profile-image.dto';
 
 const PROTECTED_ROLES: UR[] = [UR.EnterpriseAdmin, UR.IsAdmin, UR.Developer];
@@ -30,6 +32,8 @@ const USER_LIST_SELECT = {
   countryCode: true,
   prefecture: true,
   mobilePhone: true,
+  slackId: true,
+  departmentName: true,
   createdAt: true,
   projectMemberships: {
     take: 1,
@@ -38,6 +42,12 @@ const USER_LIST_SELECT = {
       project: { select: { id: true, name: true } },
     },
   },
+} as const;
+
+/** GET /users/me 用（hasPassword 算出のため passwordHash を含む） */
+const ME_PROFILE_SELECT = {
+  ...USER_LIST_SELECT,
+  passwordHash: true,
 } as const;
 
 const mergeTierIntoRoles = (oldRoles: UR[], box: 'director' | 'is'): UR[] => {
@@ -63,6 +73,13 @@ export class UsersService {
     profileImageUrl: string | null
     role: string
     roles: string[]
+    countryCode: string | null
+    prefecture: string | null
+    mobilePhone: string | null
+    slackId: string | null
+    departmentName: string | null
+    /** メール+パスワードでログイン可能か（OAuth のみなら false） */
+    hasPassword: boolean
     tenantCompanyName: string
     tenantProjectName: string
     projectAssignment: UserListApiRow['projectAssignment']
@@ -70,7 +87,7 @@ export class UsersService {
     const [row, tenant] = await Promise.all([
       this.prisma.user.findFirst({
         where: { id: jwt.sub, tenantId: jwt.tenantId },
-        select: USER_LIST_SELECT,
+        select: ME_PROFILE_SELECT,
       }),
       this.prisma.tenant.findFirst({
         where: { id: jwt.tenantId },
@@ -80,7 +97,8 @@ export class UsersService {
     if (!row) {
       throw new NotFoundException('ユーザーが見つかりません')
     }
-    const mapped = toUserListApiRow(row)
+    const { passwordHash, ...userRow } = row
+    const mapped = toUserListApiRow(userRow)
     const projectRaw = (tenant?.projectDisplayName ?? '').trim()
     const tenantProjectName = projectRaw.length > 0 ? projectRaw : '未設定'
     const tenantCompanyName = (tenant?.companyName ?? tenant?.name ?? '').trim() || '未設定'
@@ -92,10 +110,91 @@ export class UsersService {
       profileImageUrl: mapped.profileImageUrl,
       role: mapped.role,
       roles: mapped.roles,
+      countryCode: mapped.countryCode,
+      prefecture: mapped.prefecture,
+      mobilePhone: mapped.mobilePhone,
+      slackId: mapped.slackId,
+      departmentName: mapped.departmentName,
+      hasPassword: Boolean(passwordHash),
       tenantCompanyName,
       tenantProjectName,
       projectAssignment: mapped.projectAssignment,
     }
+  }
+
+  /** 自分自身のプロフィール更新（住所・電話・Slack・表示名） */
+  updateMeProfile = async (
+    jwt: JwtPayload,
+    dto: UpdateMeProfileDto,
+  ): Promise<Awaited<ReturnType<UsersService['getMeProfile']>>> => {
+    const data: {
+      name?: string
+      countryCode?: string | null
+      prefecture?: string | null
+      mobilePhone?: string | null
+      slackId?: string | null
+      departmentName?: string | null
+      updatedAt: string
+    } = { updatedAt: new Date().toISOString() }
+
+    if (dto.name !== undefined) {
+      const t = dto.name.trim()
+      if (t.length === 0) {
+        throw new BadRequestException('表示名は空にできません')
+      }
+      const dup = await this.prisma.user.findFirst({
+        where: {
+          tenantId: jwt.tenantId,
+          name: t,
+          NOT: { id: jwt.sub },
+        },
+        select: { id: true },
+      })
+      if (dup) {
+        throw new ConflictException('同一テナント内でこの表示名は既に使用されています')
+      }
+      data.name = t
+    }
+    if (dto.countryCode !== undefined) {
+      const raw = dto.countryCode?.trim() ?? ''
+      data.countryCode = raw.length === 2 ? raw.toUpperCase() : null
+    }
+    if (dto.prefecture !== undefined) {
+      const t = (dto.prefecture ?? '').trim()
+      data.prefecture = t.length > 0 ? t : null
+    }
+    if (dto.mobilePhone !== undefined) {
+      const t = (dto.mobilePhone ?? '').trim()
+      data.mobilePhone = t.length > 0 ? t : null
+    }
+    if (dto.slackId !== undefined) {
+      const t = (dto.slackId ?? '').trim()
+      data.slackId = t.length > 0 ? t : null
+    }
+    if (dto.departmentName !== undefined) {
+      const t = (dto.departmentName ?? '').trim()
+      data.departmentName = t.length > 0 ? t : null
+    }
+
+    const keys = Object.keys(data).filter((k) => k !== 'updatedAt')
+    if (keys.length === 0) {
+      return this.getMeProfile(jwt)
+    }
+
+    const owner = await this.prisma.user.findFirst({
+      where: { id: jwt.sub, tenantId: jwt.tenantId },
+      select: { id: true },
+    })
+    if (!owner) {
+      throw new NotFoundException('ユーザーが見つかりません')
+    }
+
+    const { updatedAt, ...patch } = data
+    await this.prisma.user.update({
+      where: { id: jwt.sub },
+      data: { ...patch, updatedAt },
+    })
+    return this.getMeProfile(jwt)
   }
 
   /** 自分自身のプロフ写真更新（MVP: dataURL文字列を保存） */

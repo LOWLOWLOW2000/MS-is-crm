@@ -4,6 +4,15 @@ node_modules/
 .next/
 **/.next/
 
+# Next.js generated artifacts (dev/build variants)
+.next-dev/
+**/.next-dev/
+.next-build/
+**/.next-build/
+
+*.tsbuildinfo
+**/*.tsbuildinfo
+
 dist/
 **/dist/
 

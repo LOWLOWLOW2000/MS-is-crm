@@ -94,6 +94,7 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
 
   const [listItem, setListItem] = useState<ListItem | null>(null)
   const [listItemLoading, setListItemLoading] = useState(false)
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
 
   const statusLabel = isCallActive ? (isOnHold ? '保留中' : '架電中') : '待機中'
   const targetText =
@@ -193,14 +194,12 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
 
   /** ディレクター等へのヘルプ要請（将来: WebRTC / キュー連携） */
   const handleHelpRequest = () => {
-    // eslint-disable-next-line no-alert
-    alert('ヘルプ要請を送信しました（モック）')
+    setActionMessage('ヘルプ要請を送信しました（暫定表示）')
   }
 
   const handleBack = () => {
     // 将来: 一覧へ戻る/前の企業へ戻る等に差し替え
-    // eslint-disable-next-line no-alert
-    alert('戻る（モック）')
+    setActionMessage('戻る操作は次の導線で実装予定です（暫定表示）')
   }
 
   const handleSendNext = () => {
@@ -208,17 +207,14 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
     if (!ok) return
     const run = async () => {
       if (!session?.accessToken || !listItemId) {
-        // eslint-disable-next-line no-alert
-        alert('listItemId が無いため、完了更新はスキップしました（モック）')
+        setActionMessage('listItemId が無いため、完了更新をスキップしました')
         return
       }
       try {
         await updateListItemStatus(session.accessToken, listItemId, 'done')
-        // eslint-disable-next-line no-alert
-        alert('完了にしました（done）')
+        setActionMessage('完了にしました（done）')
       } catch {
-        // eslint-disable-next-line no-alert
-        alert('完了更新に失敗しました')
+        setActionMessage('完了更新に失敗しました')
       }
     }
     void run()
@@ -385,6 +381,11 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
 
   return (
     <div className="relative rounded-md border border-gray-200 bg-white shadow-sm">
+      {actionMessage ? (
+        <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          {actionMessage}
+        </div>
+      ) : null}
       {/* ヘッダ：詳細表示（リスト名）＋ リスト変更 UI */}
       <header className="flex flex-wrap items-stretch gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
@@ -431,9 +432,6 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
 
         {/* 架電ステータス（ヘッダ右端。狭い画面では下段に折り返し） */}
         <section className="w-full shrink-0 rounded-md border border-slate-500/70 bg-slate-700 px-3 py-2 shadow-sm sm:ml-auto sm:w-auto sm:max-w-2xl">
-          <p className="mb-1.5 border-b border-slate-500/80 pb-1 text-[10px] font-semibold tracking-wide text-slate-400">
-            架電ステータス
-          </p>
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1.5 text-[13px] leading-snug">
               <div>
@@ -512,9 +510,6 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
               </button>
             </div>
           </div>
-          <p className="mt-1.5 text-[10px] leading-snug text-slate-400">
-            ヘルパーの声は相手に聞こえません
-          </p>
         </section>
       </header>
 

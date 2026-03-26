@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { upsertProjectMembershipInTx } from '../users/project-membership.helper';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { AuthUser } from './entities/auth-user.entity';
@@ -159,6 +161,26 @@ export class AuthService {
   /** 初回企業作成：テナント＋企業管理者＋ディレクター */
   async registerCompany(dto: RegisterCompanyDto): Promise<Awaited<ReturnType<AuthService['toResponse']>>> {
     const emailNorm = dto.email.trim().toLowerCase();
+    const domain = (emailNorm.split('@')[1] ?? '').trim().toLowerCase()
+    const blockedDomains = new Set([
+      'gmail.com',
+      'googlemail.com',
+      'yahoo.com',
+      'yahoo.co.jp',
+      'outlook.com',
+      'hotmail.com',
+      'live.com',
+      'icloud.com',
+      'aol.com',
+      'proton.me',
+      'protonmail.com',
+    ])
+    if (domain.length === 0) {
+      throw new BadRequestException('メールアドレスの形式が正しくありません')
+    }
+    if (blockedDomains.has(domain)) {
+      throw new BadRequestException('企業管理者のIDは企業ドメインのメールアドレスを指定してください（フリーメール不可）')
+    }
     const dup = await this.prisma.user.findFirst({
       where: { email: emailNorm },
     });
@@ -188,6 +210,17 @@ export class AuthService {
           updatedAt: now,
         },
       });
+
+      await tx.legalEntity.create({
+        data: {
+          tenantId: tenant.id,
+          name: dto.companyName,
+          headOfficeAddress: dto.headOfficeAddress,
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
 
       const u = await tx.user.create({
         data: {
@@ -264,6 +297,43 @@ export class AuthService {
     });
 
     return this.toResponse(this.toAuthUser(newRow));
+  }
+
+  /**
+   * メール+パスワード利用者のパスワード変更。成功後は既存 refresh を失効（再ログイン推奨）。
+   */
+  async changePassword(
+    payload: JwtPayload,
+    dto: ChangePasswordDto,
+  ): Promise<{ ok: true }> {
+    const row = await this.prisma.user.findFirst({
+      where: { id: payload.sub, tenantId: payload.tenantId },
+    });
+    if (!row) {
+      throw new NotFoundException('ユーザーが見つかりません');
+    }
+    if (!row.passwordHash) {
+      throw new BadRequestException(
+        'パスワードが未設定のため変更できません（OAuth のみでログインしている場合はパスワードを設定できません）',
+      );
+    }
+    const matched = await bcrypt.compare(dto.currentPassword, row.passwordHash);
+    if (!matched) {
+      throw new UnauthorizedException('現在のパスワードが正しくありません');
+    }
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException('新しいパスワードは現在と異なる値にしてください');
+    }
+    const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+    const now = new Date().toISOString();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.deleteMany({ where: { userId: row.id } });
+      await tx.user.update({
+        where: { id: row.id },
+        data: { passwordHash, updatedAt: now },
+      });
+    });
+    return { ok: true };
   }
 
   async getProfile(payload: JwtPayload): Promise<{

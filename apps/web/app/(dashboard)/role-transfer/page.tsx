@@ -6,7 +6,7 @@ import Link from 'next/link'
  */
 export default function RoleTransferPage() {
   const internalLinks = [
-    { href: '/dashboard', label: 'メニュー', description: 'ダッシュボードハブ' },
+    { href: '/pj-switch', label: 'メニュー', description: 'PJ選択（ログイン後のホーム）' },
     { href: '/dashboard/calendar', label: 'カレンダー', description: '予定・稼働・外部カレンダー連携' },
     { href: '/ops/members', label: 'メンバー・ロール管理', description: 'ユーザー一覧・ロール・有効/無効' },
     { href: '/corporate', label: '個人アカウント', description: '個人設定・アカウント' },

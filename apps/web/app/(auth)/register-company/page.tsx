@@ -24,6 +24,30 @@ export default function RegisterCompanyPage() {
     setError(null)
     setLoading(true)
     try {
+      const domain = (email.trim().toLowerCase().split('@')[1] ?? '').trim()
+      const blocked = new Set([
+        'gmail.com',
+        'googlemail.com',
+        'yahoo.com',
+        'yahoo.co.jp',
+        'outlook.com',
+        'hotmail.com',
+        'live.com',
+        'icloud.com',
+        'aol.com',
+        'proton.me',
+        'protonmail.com',
+      ])
+      if (domain.length === 0) {
+        setError('メールアドレスの形式が正しくありません')
+        setLoading(false)
+        return
+      }
+      if (blocked.has(domain)) {
+        setError('企業管理者のIDは企業ドメインのメールアドレスを指定してください（フリーメール不可）')
+        setLoading(false)
+        return
+      }
       await registerCompany({
         email: email.trim(),
         password: password.trim() || undefined,
@@ -44,7 +68,7 @@ export default function RegisterCompanyPage() {
           setLoading(false)
           return
         }
-        window.location.href = '/dashboard'
+        window.location.href = '/pj-switch'
         return
       }
       setError(null)
@@ -72,6 +96,7 @@ export default function RegisterCompanyPage() {
               onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
+            <p className="mt-1 text-xs text-gray-500">企業管理者は企業ドメインのメールのみ利用できます（例: `name@company.co.jp`）</p>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-700">パスワード（任意・8文字以上）</label>
