@@ -54,9 +54,10 @@ const elapsedHoursFromStartAt = (startAtIso: string | undefined): number => {
 
 function computeMemberKpis(member: ReportByMemberItem, elapsedHours: number) {
   const callsPerHour = member.totalCalls / elapsedHours
-  const appointmentRate = safeRate(member.appointmentCount, member.totalCalls)
-  const materialSendRate = safeRate(member.materialSendCount, member.totalCalls)
-  const redialAcquisitionRate = safeRate(member.recallScheduledCount, member.totalCalls)
+  // 有効会話（接続）からの出口/見込み率にする
+  const appointmentRate = safeRate(member.appointmentCount, member.connectedCount)
+  const materialSendRate = safeRate(member.materialSendCount, member.connectedCount)
+  const redialAcquisitionRate = safeRate(member.recallScheduledCount, member.connectedCount)
   const cutContactRate = safeRate(member.interestedCount, member.connectedCount)
 
   return { callsPerHour, appointmentRate, materialSendRate, redialAcquisitionRate, cutContactRate }
@@ -364,7 +365,7 @@ export default function KpiPage() {
                 actual={teamKpis.appointmentRate}
                 actualText={formatPercent(teamKpis.appointmentRate)}
                 unit="%"
-                statsText={`実数: ${teamStats.appointmentCount} / ${teamStats.totalCalls}`}
+                statsText={`実数: ${teamStats.appointmentCount} / 接続 ${teamStats.connectedCount}`}
               />
               <MetricCard
                 label="資料送付率（有効会話の質）"
@@ -372,7 +373,7 @@ export default function KpiPage() {
                 actual={teamKpis.materialSendRate}
                 actualText={formatPercent(teamKpis.materialSendRate)}
                 unit="%"
-                statsText={`実数: ${teamStats.materialSendCount} / ${teamStats.totalCalls}`}
+                statsText={`実数: ${teamStats.materialSendCount} / 接続 ${teamStats.connectedCount}`}
               />
               <MetricCard
                 label="再加電取得率（見込み管理）"
@@ -380,7 +381,7 @@ export default function KpiPage() {
                 actual={teamKpis.redialAcquisitionRate}
                 actualText={formatPercent(teamKpis.redialAcquisitionRate)}
                 unit="%"
-                statsText={`実数: ${teamStats.recallScheduledCount} / ${teamStats.totalCalls}`}
+                statsText={`実数: ${teamStats.recallScheduledCount} / 接続 ${teamStats.connectedCount}`}
               />
               <div className="md:col-span-2">
                 <MetricCard
