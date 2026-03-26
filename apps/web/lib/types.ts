@@ -393,6 +393,10 @@ export interface ReportByMemberItem {
   totalCalls: number;
   connectedCount: number;
   connectedRate: number;
+  appointmentCount: number;
+  materialSendCount: number;
+  interestedCount: number;
+  recallScheduledCount: number;
 }
 
 export interface ReportByMember {

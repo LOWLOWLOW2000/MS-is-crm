@@ -7,6 +7,14 @@ export interface ReportByMemberItemDto {
   totalCalls: number;
   connectedCount: number;
   connectedRate: number;
+  /** アポ数（CallingRecord.result が 'アポ'） */
+  appointmentCount: number;
+  /** 資料送付数（CallingRecord.result が '資料送付'） */
+  materialSendCount: number;
+  /** 興味接触数（CallingRecord.result が '担当者あり興味'） */
+  interestedCount: number;
+  /** 再加電の予定数（nextCallAt が null ではなく現在時刻より未来） */
+  recallScheduledCount: number;
 }
 
 export interface ReportByMemberDto {

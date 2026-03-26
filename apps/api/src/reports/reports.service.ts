@@ -154,6 +154,7 @@ export class ReportsService {
     const { startAt, endAt } = this.resolveRange(period);
     const startMs = startAt.getTime();
     const endMs = endAt.getTime();
+    const nowMs = Date.now();
 
     const tenantRecords = await this.callingService.getTenantRecords(user.tenantId);
     const periodRecords = tenantRecords.filter((record: CallingRecord) => {
@@ -161,12 +162,40 @@ export class ReportsService {
       return createdMs >= startMs && createdMs <= endMs;
     });
 
-    const byUserId = new Map<string, { total: number; connected: number }>();
+    const byUserId = new Map<
+      string,
+      {
+        total: number;
+        connected: number;
+        interested: number;
+        appointment: number;
+        materialSend: number;
+        recallScheduled: number;
+      }
+    >();
     for (const record of periodRecords) {
-      const cur = byUserId.get(record.createdBy) ?? { total: 0, connected: 0 };
+      const cur = byUserId.get(record.createdBy) ?? {
+        total: 0,
+        connected: 0,
+        interested: 0,
+        appointment: 0,
+        materialSend: 0,
+        recallScheduled: 0,
+      };
       cur.total += 1;
-      if (record.result === '担当者あり興味' || record.result === '担当者あり不要') {
+      if (record.result === '担当者あり興味') {
         cur.connected += 1;
+        cur.interested += 1;
+      } else if (record.result === '担当者あり不要') {
+        cur.connected += 1;
+      }
+
+      if (record.result === 'アポ') cur.appointment += 1;
+      if (record.result === '資料送付') cur.materialSend += 1;
+
+      if (record.nextCallAt) {
+        const nextMs = new Date(record.nextCallAt).getTime();
+        if (!Number.isNaN(nextMs) && nextMs > nowMs) cur.recallScheduled += 1;
       }
       byUserId.set(record.createdBy, cur);
     }
@@ -191,6 +220,10 @@ export class ReportsService {
         totalCalls: stats.total,
         connectedCount: stats.connected,
         connectedRate: stats.total === 0 ? 0 : Math.round((stats.connected / stats.total) * 100),
+        appointmentCount: stats.appointment,
+        materialSendCount: stats.materialSend,
+        interestedCount: stats.interested,
+        recallScheduledCount: stats.recallScheduled,
       });
     }
     members.sort((a, b) => b.totalCalls - a.totalCalls);
