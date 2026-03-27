@@ -91,6 +91,12 @@ const ScopeOptions: { value: Scope; label: string }[] = [
   { value: 'pj', label: 'PJ' },
 ]
 
+const PeriodOptions: { value: ReportPeriod; label: string }[] = [
+  { value: 'daily', label: '日次' },
+  { value: 'weekly', label: '週次' },
+  { value: 'monthly', label: '月次' },
+]
+
 function MetricCard({
   label,
   goal,
@@ -266,30 +272,57 @@ export default function KpiPage() {
       </header>
 
       <div className="mt-6 flex flex-col gap-6">
+        <section className="rounded-xl border border-blue-200 bg-blue-50/40 p-6 shadow-sm" aria-label="KPI重点指標">
+          <h2 className="text-base font-semibold text-blue-900">IS個人が最も気にする数字（重点5指標）</h2>
+          <ul className="mt-3 grid gap-2 text-sm text-blue-900 md:grid-cols-2">
+            <li>1時間あたりの加電数（行動量）</li>
+            <li>アポ率（最終成果）</li>
+            <li>資料送付率（有効会話の質）</li>
+            <li>再加電取得率（見込み管理）</li>
+            <li className="md:col-span-2">切り満接触率（ターゲット精度）</li>
+          </ul>
+        </section>
+
         <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="表示スコープ">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-gray-900">表示スコープ</h2>
-              <p className="mt-1 text-sm text-gray-500">全体・Team・個人（PJは暫定表示）</p>
+              <p className="mt-1 text-sm text-gray-500">全体・Team・個人（PJは暫定表示） + 期間切替</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {ScopeOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setScope(opt.value)}
-                  className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    scope === opt.value ? 'border-blue-400 bg-blue-50 text-blue-900' : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap gap-2">
+                {ScopeOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setScope(opt.value)}
+                    className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      scope === opt.value ? 'border-blue-400 bg-blue-50 text-blue-900' : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {PeriodOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPeriod(opt.value)}
+                    className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
+                      period === opt.value ? 'border-indigo-400 bg-indigo-50 text-indigo-900' : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           <div className="mt-4 text-xs text-gray-500">
-            経過時間: {Math.round(elapsedHours * 10) / 10}時間（計算用）
+            期間: {period === 'daily' ? '日次' : period === 'weekly' ? '週次' : '月次'} / 経過時間: {Math.round(elapsedHours * 10) / 10}時間（計算用）
           </div>
         </section>
 
@@ -401,6 +434,18 @@ export default function KpiPage() {
           <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="個人別 KPI">
             <h2 className="text-base font-semibold text-gray-900">IS個人別 KPI</h2>
             <p className="mt-1 text-sm text-gray-500">当日データから、5指標の達成状況を表示します</p>
+
+            {members.length > 0 ? (
+              <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/40 px-3 py-2 text-xs text-gray-700">
+                行動量（加電/h）ランキング: {' '}
+                {members
+                  .slice()
+                  .sort((a, b) => computeMemberKpis(b, elapsedHours).callsPerHour - computeMemberKpis(a, elapsedHours).callsPerHour)
+                  .slice(0, 3)
+                  .map((m, idx) => `${idx + 1}. ${m.name || '—'}`)
+                  .join(' / ')}
+              </div>
+            ) : null}
 
             {members.length === 0 ? (
               <div className="mt-4 rounded-lg border border-dashed border-gray-200 bg-gray-50/40 p-6 text-center text-sm text-gray-500">
