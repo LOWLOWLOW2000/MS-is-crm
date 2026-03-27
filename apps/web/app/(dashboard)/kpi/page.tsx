@@ -1,16 +1,17 @@
-// eslint-disable-next-line react-hooks/exhaustive-deps
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
-import { fetchReportByMember } from '@/lib/calling-api'
-import type { ReportByMember, ReportByMemberItem, ReportPeriod } from '@/lib/types'
+import { fetchKpiGoalMatrix, fetchReportByMember } from '@/lib/calling-api'
+import type { KpiGoalValues, ReportByMember, ReportByMemberItem, ReportPeriod } from '@/lib/types'
 
-type Scope = 'all' | 'team' | 'personal' | 'pj'
+type ViewMode = 'personal' | 'team'
 type LoadState = 'idle' | 'loading' | 'success' | 'error'
 
-type KpiGoals = {
+interface KpiGoals {
   callPerHour: number
+  keyPersonContactRate: number
   appointmentRate: number
   materialSendRate: number
   redialAcquisitionRate: number
@@ -19,153 +20,135 @@ type KpiGoals = {
 
 const DEFAULT_GOALS: KpiGoals = {
   callPerHour: 0,
+  keyPersonContactRate: 0,
   appointmentRate: 0,
   materialSendRate: 0,
   redialAcquisitionRate: 0,
   cutContactRate: 0,
 }
 
-const GOALS_STORAGE_KEY = 'is01:kpi:goals:v1'
-
-const clampPositive = (v: number): number => (Number.isFinite(v) && v > 0 ? v : 0)
-
-const safeRate = (numerator: number, denominator: number): number => {
-  if (denominator <= 0) return 0
-  return (numerator / denominator) * 100
-}
-
-const safeAchievementRate = (actual: number, goal: number): number | null => {
-  const g = clampPositive(goal)
-  if (g === 0) return null
-  return (actual / g) * 100
-}
-
-const formatPercent = (v: number): string => `${Math.round(v * 10) / 10}%`
-
-const elapsedHoursFromStartAt = (startAtIso: string | undefined): number => {
-  if (!startAtIso) return 1
-  const start = new Date(startAtIso)
-  const startMs = start.getTime()
-  if (Number.isNaN(startMs)) return 1
-  const nowMs = Date.now()
-  const diffHours = (nowMs - startMs) / (60 * 60 * 1000)
-  return Math.max(diffHours, 1 / 60)
-}
-
-function computeMemberKpis(member: ReportByMemberItem, elapsedHours: number) {
-  const callsPerHour = member.totalCalls / elapsedHours
-  // 有効会話（接続）からの出口/見込み率にする
-  const appointmentRate = safeRate(member.appointmentCount, member.connectedCount)
-  const materialSendRate = safeRate(member.materialSendCount, member.connectedCount)
-  const redialAcquisitionRate = safeRate(member.recallScheduledCount, member.connectedCount)
-  const cutContactRate = safeRate(member.interestedCount, member.connectedCount)
-
-  return { callsPerHour, appointmentRate, materialSendRate, redialAcquisitionRate, cutContactRate }
-}
-
-function sumMemberStats(members: ReportByMemberItem[]) {
-  const empty = {
-    totalCalls: 0,
-    connectedCount: 0,
-    appointmentCount: 0,
-    materialSendCount: 0,
-    interestedCount: 0,
-    recallScheduledCount: 0,
-  }
-
-  return members.reduce((acc, m) => {
-    acc.totalCalls += m.totalCalls
-    acc.connectedCount += m.connectedCount
-    acc.appointmentCount += m.appointmentCount
-    acc.materialSendCount += m.materialSendCount
-    acc.interestedCount += m.interestedCount
-    acc.recallScheduledCount += m.recallScheduledCount
-    return acc
-  }, empty)
-}
-
-const ScopeOptions: { value: Scope; label: string }[] = [
-  { value: 'all', label: '全体' },
-  { value: 'team', label: 'Team' },
-  { value: 'personal', label: '個人' },
-  { value: 'pj', label: 'PJ' },
-]
-
-const PeriodOptions: { value: ReportPeriod; label: string }[] = [
+const PERIOD_OPTIONS: { value: ReportPeriod; label: string }[] = [
   { value: 'daily', label: '日次' },
   { value: 'weekly', label: '週次' },
   { value: 'monthly', label: '月次' },
 ]
 
-function MetricCard({
-  label,
-  goal,
-  actual,
-  actualText,
-  unit,
-  statsText,
-}: {
-  label: string
-  goal: number
-  actual: number
-  actualText: string
-  unit?: string
-  statsText?: string
-}) {
-  const achievement = safeAchievementRate(actual, goal)
-  return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50/40 p-4">
-      <div className="text-xs font-medium text-gray-600">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-gray-900">{actualText}</div>
+const normalizeGoalValues = (raw: KpiGoalValues | null | undefined): KpiGoals => ({
+  callPerHour: raw?.callPerHour ?? 0,
+  appointmentRate: raw?.appointmentRate ?? 0,
+  materialSendRate: raw?.materialSendRate ?? 0,
+  redialAcquisitionRate: raw?.redialAcquisitionRate ?? 0,
+  cutContactRate: raw?.cutContactRate ?? 0,
+  keyPersonContactRate: raw?.keyPersonContactRate ?? 0,
+})
 
-      <div className="mt-3 flex items-start justify-between gap-3">
-        <div className="text-xs text-gray-500">{goal > 0 ? `目標: ${goal}${unit ?? ''}` : '目標: 未設定'}</div>
-        <div className="shrink-0 text-right text-xs font-bold text-gray-900">
-          {achievement === null ? '—' : `達成率 ${formatPercent(achievement)}`}
-        </div>
-      </div>
+const safeRate = (numerator: number, denominator: number): number =>
+  denominator <= 0 ? 0 : (numerator / denominator) * 100
 
-      {statsText ? <div className="mt-2 text-xs text-gray-600">{statsText}</div> : null}
-    </div>
-  )
+const safeAchievementRate = (actual: number, goal: number): number | null =>
+  goal > 0 ? (actual / goal) * 100 : null
+
+const formatPercent = (v: number): string => `${Math.round(v * 10) / 10}%`
+const roundOneDecimal = (v: number): number => Math.round(v * 10) / 10
+const roundCount = (v: number): number => Math.max(0, Math.round(v))
+
+const elapsedHoursFromStartAt = (startAtIso: string | undefined): number => {
+  if (!startAtIso) return 1
+  const startMs = new Date(startAtIso).getTime()
+  if (Number.isNaN(startMs)) return 1
+  const diffHours = (Date.now() - startMs) / (60 * 60 * 1000)
+  return Math.max(diffHours, 1 / 60)
 }
 
+const computeMemberKpis = (member: ReportByMemberItem, elapsedHours: number) => ({
+  callsPerHour: member.totalCalls / elapsedHours,
+  appointmentRate: safeRate(member.appointmentCount, member.connectedCount),
+  materialSendRate: safeRate(member.materialSendCount, member.connectedCount),
+  redialAcquisitionRate: safeRate(member.recallScheduledCount, member.connectedCount),
+  cutContactRate: safeRate(member.interestedCount, member.connectedCount),
+})
+
+const sumMemberStats = (members: ReportByMemberItem[]) =>
+  members.reduce(
+    (acc, member) => ({
+      totalCalls: acc.totalCalls + member.totalCalls,
+      connectedCount: acc.connectedCount + member.connectedCount,
+      appointmentCount: acc.appointmentCount + member.appointmentCount,
+      materialSendCount: acc.materialSendCount + member.materialSendCount,
+      interestedCount: acc.interestedCount + member.interestedCount,
+      recallScheduledCount: acc.recallScheduledCount + member.recallScheduledCount,
+    }),
+    {
+      totalCalls: 0,
+      connectedCount: 0,
+      appointmentCount: 0,
+      materialSendCount: 0,
+      interestedCount: 0,
+      recallScheduledCount: 0,
+    },
+  )
+
+const cardClass = 'rounded-2xl border border-zinc-100 bg-white p-6 shadow-sm'
+
+/**
+ * Kiranism 風の KPI ダッシュボード。
+ * 既存 KPI ロジック（目標・達成率・Team/Personal 集計）を維持しつつ Recharts で可視化する。
+ */
 export default function KpiPage() {
   const { data: session, status } = useSession()
   const accessToken = session?.accessToken ?? ''
-
-  const [loadState, setLoadState] = useState<LoadState>('idle')
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const userId = session?.user?.id ?? ''
+  const [viewMode, setViewMode] = useState<ViewMode>('personal')
   const [period, setPeriod] = useState<ReportPeriod>('daily')
   const [reloadSeq, setReloadSeq] = useState(0)
-
-  const [scope, setScope] = useState<Scope>('personal')
-  const [goals, setGoals] = useState<KpiGoals>(DEFAULT_GOALS)
-
+  const [loadState, setLoadState] = useState<LoadState>('idle')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isAllGoals, setIsAllGoals] = useState<KpiGoals>(DEFAULT_GOALS)
+  const [personalGoals, setPersonalGoals] = useState<KpiGoals>(DEFAULT_GOALS)
   const [reportByMember, setReportByMember] = useState<ReportByMember | null>(null)
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const raw = window.localStorage.getItem(GOALS_STORAGE_KEY)
-    if (!raw) return
-    try {
-      const parsed = JSON.parse(raw) as Partial<KpiGoals>
-      setGoals({
-        callPerHour: Number(parsed.callPerHour ?? 0),
-        appointmentRate: Number(parsed.appointmentRate ?? 0),
-        materialSendRate: Number(parsed.materialSendRate ?? 0),
-        redialAcquisitionRate: Number(parsed.redialAcquisitionRate ?? 0),
-        cutContactRate: Number(parsed.cutContactRate ?? 0),
-      })
-    } catch {
-      // 無視
+    if (!accessToken) return
+    let cancelled = false
+    const run = async () => {
+      try {
+        const matrix = await fetchKpiGoalMatrix(accessToken)
+        if (cancelled) return
+        const project = normalizeGoalValues(matrix.projectGoal)
+        const isAll = normalizeGoalValues(matrix.isAllGoal)
+        const isUser = normalizeGoalValues(
+          matrix.isUserGoals.find((goal) => goal.targetUserId === userId),
+        )
+        setIsAllGoals(isAll)
+        setPersonalGoals(
+          isUser.callPerHour > 0 ||
+            isUser.appointmentRate > 0 ||
+            isUser.materialSendRate > 0 ||
+            isUser.redialAcquisitionRate > 0 ||
+            isUser.cutContactRate > 0 ||
+            isUser.keyPersonContactRate > 0
+            ? isUser
+            : isAll.callPerHour > 0 ||
+                isAll.appointmentRate > 0 ||
+                isAll.materialSendRate > 0 ||
+                isAll.redialAcquisitionRate > 0 ||
+                isAll.cutContactRate > 0 ||
+                isAll.keyPersonContactRate > 0
+              ? isAll
+              : project,
+        )
+      } catch {
+        if (!cancelled) {
+          setIsAllGoals(DEFAULT_GOALS)
+          setPersonalGoals(DEFAULT_GOALS)
+        }
+      }
     }
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(goals))
-  }, [goals])
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken, userId])
 
   useEffect(() => {
     if (!accessToken) return
@@ -178,11 +161,10 @@ export default function KpiPage() {
         if (cancelled) return
         setReportByMember(data)
         setLoadState('success')
-      } catch (e) {
+      } catch (error) {
         if (cancelled) return
-        setReportByMember(null)
         setLoadState('error')
-        setErrorMessage(e instanceof Error ? e.message : 'KPIデータの取得に失敗しました')
+        setErrorMessage(error instanceof Error ? error.message : 'KPIデータの取得に失敗しました')
       }
     }
     void run()
@@ -193,65 +175,232 @@ export default function KpiPage() {
 
   const members = reportByMember?.members ?? []
   const elapsedHours = useMemo(() => elapsedHoursFromStartAt(reportByMember?.startAt), [reportByMember?.startAt])
-
   const teamStats = useMemo(() => sumMemberStats(members), [members])
-  const teamMemberForCalc = useMemo<ReportByMemberItem>(() => {
-    const connectedRate = teamStats.totalCalls === 0 ? 0 : safeRate(teamStats.connectedCount, teamStats.totalCalls)
-    return {
+
+  const teamMember = useMemo<ReportByMemberItem>(
+    () => ({
       userId: 'team',
       email: '',
       name: 'Team合計',
       totalCalls: teamStats.totalCalls,
       connectedCount: teamStats.connectedCount,
-      connectedRate,
+      connectedRate: safeRate(teamStats.connectedCount, teamStats.totalCalls),
       appointmentCount: teamStats.appointmentCount,
       materialSendCount: teamStats.materialSendCount,
       interestedCount: teamStats.interestedCount,
       recallScheduledCount: teamStats.recallScheduledCount,
+    }),
+    [teamStats],
+  )
+
+  const personalMember = useMemo(() => {
+    if (members.length === 0) return null
+    const byEmail = members.find((member) => member.email && member.email === session?.user?.email)
+    if (byEmail) return byEmail
+    const byName = members.find((member) => member.name && member.name === session?.user?.name)
+    if (byName) return byName
+    return [...members].sort((a, b) => b.totalCalls - a.totalCalls)[0]
+  }, [members, session?.user?.email, session?.user?.name])
+
+  const teamKpis = useMemo(() => computeMemberKpis(teamMember, elapsedHours), [teamMember, elapsedHours])
+  const personalKpis = useMemo(
+    () => (personalMember ? computeMemberKpis(personalMember, elapsedHours) : null),
+    [personalMember, elapsedHours],
+  )
+
+  const isPersonal = viewMode === 'personal'
+  const effectiveGoals = isPersonal ? personalGoals : isAllGoals
+
+  const activeCalls = isPersonal ? personalMember?.totalCalls ?? 0 : teamStats.totalCalls
+  const activeWinRate = isPersonal ? personalKpis?.appointmentRate ?? 0 : teamKpis.appointmentRate
+  const activeConnectedRate = isPersonal ? personalMember?.connectedRate ?? 0 : teamMember.connectedRate
+  const activeMetrics = isPersonal && personalKpis ? personalKpis : teamKpis
+  const activeStats = isPersonal
+    ? {
+        totalCalls: personalMember?.totalCalls ?? 0,
+        connectedCount: personalMember?.connectedCount ?? 0,
+        appointmentCount: personalMember?.appointmentCount ?? 0,
+        materialSendCount: personalMember?.materialSendCount ?? 0,
+        recallScheduledCount: personalMember?.recallScheduledCount ?? 0,
+        interestedCount: personalMember?.interestedCount ?? 0,
+      }
+    : {
+        totalCalls: teamStats.totalCalls,
+        connectedCount: teamStats.connectedCount,
+        appointmentCount: teamStats.appointmentCount,
+        materialSendCount: teamStats.materialSendCount,
+        recallScheduledCount: teamStats.recallScheduledCount,
+        interestedCount: teamStats.interestedCount,
+      }
+  const callGoalCount = effectiveGoals.callPerHour > 0 ? roundCount(effectiveGoals.callPerHour * elapsedHours) : 0
+  const topFiveAchievementPanels = [
+    {
+      id: 'materialSendRate',
+      label: '資料送付率',
+      actual: activeMetrics.materialSendRate,
+      goal: effectiveGoals.materialSendRate,
+      actualCount: activeStats.materialSendCount,
+      goalCount:
+        effectiveGoals.materialSendRate > 0
+          ? roundCount((activeStats.connectedCount * effectiveGoals.materialSendRate) / 100)
+          : null,
+    },
+    {
+      id: 'redialAcquisitionRate',
+      label: '再架電取得率',
+      actual: activeMetrics.redialAcquisitionRate,
+      goal: effectiveGoals.redialAcquisitionRate,
+      actualCount: activeStats.recallScheduledCount,
+      goalCount:
+        effectiveGoals.redialAcquisitionRate > 0
+          ? roundCount((activeStats.connectedCount * effectiveGoals.redialAcquisitionRate) / 100)
+          : null,
+    },
+    {
+      id: 'cutContactRate',
+      label: '需要あるキー接触率',
+      actual: activeMetrics.cutContactRate,
+      goal: effectiveGoals.cutContactRate,
+      actualCount: activeStats.interestedCount,
+      goalCount:
+        effectiveGoals.cutContactRate > 0
+          ? roundCount((activeStats.connectedCount * effectiveGoals.cutContactRate) / 100)
+          : null,
+    },
+  ] as const
+  const callAchievementRate = safeAchievementRate(activeMetrics.callsPerHour, effectiveGoals.callPerHour)
+  const callShortageCount = callGoalCount > 0 ? Math.max(callGoalCount - activeStats.totalCalls, 0) : null
+  const appointmentGoalCount =
+    effectiveGoals.appointmentRate > 0 ? roundCount((activeStats.connectedCount * effectiveGoals.appointmentRate) / 100) : null
+  const appointmentShortageCount =
+    appointmentGoalCount !== null ? Math.max(appointmentGoalCount - activeStats.appointmentCount, 0) : null
+  const contactGoalCount =
+    effectiveGoals.keyPersonContactRate > 0 ? roundCount((activeStats.totalCalls * effectiveGoals.keyPersonContactRate) / 100) : null
+  const contactShortageCount =
+    contactGoalCount !== null ? Math.max(contactGoalCount - activeStats.connectedCount, 0) : null
+  const materialGoalCount =
+    effectiveGoals.materialSendRate > 0 ? roundCount((activeStats.connectedCount * effectiveGoals.materialSendRate) / 100) : null
+  const materialShortageCount =
+    materialGoalCount !== null ? Math.max(materialGoalCount - activeStats.materialSendCount, 0) : null
+  const redialGoalCount =
+    effectiveGoals.redialAcquisitionRate > 0
+      ? roundCount((activeStats.connectedCount * effectiveGoals.redialAcquisitionRate) / 100)
+      : null
+  const redialShortageCount =
+    redialGoalCount !== null ? Math.max(redialGoalCount - activeStats.recallScheduledCount, 0) : null
+  const interestGoalCount =
+    effectiveGoals.cutContactRate > 0 ? roundCount((activeStats.connectedCount * effectiveGoals.cutContactRate) / 100) : null
+  const interestShortageCount =
+    interestGoalCount !== null ? Math.max(interestGoalCount - activeStats.interestedCount, 0) : null
+
+  const bottleneckCandidates = [
+    {
+      id: 'callPerHour',
+      label: '架電数',
+      achievement: callAchievementRate,
+      shortage: callShortageCount,
+      help: 'まず母数の架電量を引き上げると、他指標も連動して改善しやすくなります。',
+    },
+    {
+      id: 'keyPersonContactRate',
+      label: 'キーパーソン接触率',
+      achievement: safeAchievementRate(activeConnectedRate, effectiveGoals.keyPersonContactRate),
+      shortage: contactShortageCount,
+      help: '接続率と受付突破の改善を優先し、スクリプトの冒頭を見直します。',
+    },
+    {
+      id: 'appointmentRate',
+      label: 'アポ率',
+      achievement: safeAchievementRate(activeWinRate, effectiveGoals.appointmentRate),
+      shortage: appointmentShortageCount,
+      help: 'ヒアリング後半のオファー設計を調整して、クロージング率を上げます。',
+    },
+    {
+      id: 'materialSendRate',
+      label: '資料送付率',
+      achievement: safeAchievementRate(activeMetrics.materialSendRate, effectiveGoals.materialSendRate),
+      shortage: materialShortageCount,
+      help: '送付導線をテンプレート化し、会話中に送付合意を取り切ります。',
+    },
+    {
+      id: 'redialAcquisitionRate',
+      label: '再架電取得率',
+      achievement: safeAchievementRate(activeMetrics.redialAcquisitionRate, effectiveGoals.redialAcquisitionRate),
+      shortage: redialShortageCount,
+      help: '次回接触日時を必ず確定し、再架電理由をメモに残します。',
+    },
+    {
+      id: 'cutContactRate',
+      label: '需要あるキー接触率',
+      achievement: safeAchievementRate(activeMetrics.cutContactRate, effectiveGoals.cutContactRate),
+      shortage: interestShortageCount,
+      help: '業種別の訴求軸を分け、刺さる質問を先に置きます。',
+    },
+  ].filter((candidate) => candidate.achievement !== null)
+
+  const bottleneck = [...bottleneckCandidates].sort((a, b) => (a.achievement ?? 0) - (b.achievement ?? 0))[0] ?? null
+
+  const nextAction = (() => {
+    if (!bottleneck) {
+      return {
+        title: 'ボトルネックが判定できません',
+        description: 'まず KPI 目標値を設定してから再評価してください。',
+        ctaLabel: 'KPI目標設定を開く',
+        href: '/director/kpi-goals',
+      }
     }
-  }, [teamStats])
-
-  const teamKpis = useMemo(() => computeMemberKpis(teamMemberForCalc, elapsedHours), [teamMemberForCalc, elapsedHours])
-
-  const aiDiagnosis = useMemo(() => {
-    const notes: string[] = []
-    if (goals.callPerHour > 0 && teamKpis.callsPerHour < goals.callPerHour) notes.push('加電数（行動量）が不足しています')
-    if (goals.appointmentRate > 0 && teamKpis.appointmentRate < goals.appointmentRate) notes.push('アポ率が目標未達です')
-    if (goals.materialSendRate > 0 && teamKpis.materialSendRate < goals.materialSendRate) notes.push('資料送付率が目標未達です')
-    if (goals.redialAcquisitionRate > 0 && teamKpis.redialAcquisitionRate < goals.redialAcquisitionRate) notes.push('再加電取得率が目標未達です')
-    if (goals.cutContactRate > 0 && teamKpis.cutContactRate < goals.cutContactRate) notes.push('切り満接触率（ターゲット精度）が目標未達です')
-    if (notes.length === 0) return '目標に対して大きな未達は見当たりません。次は細部を調整しましょう。'
-    return notes.join(' / ')
-  }, [goals, teamKpis])
+    if (bottleneck.id === 'callPerHour' || bottleneck.id === 'keyPersonContactRate') {
+      return {
+        title: '接触量の改善に集中',
+        description: '架電母数と接触導線の改善が最優先です。直近の実行量を増やしてください。',
+        ctaLabel: '架電ルームへ',
+        href: '/sales-room',
+      }
+    }
+    if (bottleneck.id === 'appointmentRate') {
+      return {
+        title: 'アポ化率の改善に集中',
+        description: '接触後の提案からクロージングまでの会話設計を見直す局面です。',
+        ctaLabel: '架電ルームへ',
+        href: '/sales-room',
+      }
+    }
+    return {
+      title: 'フォロー品質の改善に集中',
+      description: '送付・再架電・興味化のフォロー設計を改善し、取りこぼしを減らしてください。',
+      ctaLabel: 'KPI目標設定を開く',
+      href: '/director/kpi-goals',
+    }
+  })()
 
   if (status === 'loading' || loadState === 'loading') {
     return (
-      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-6" aria-busy="true">
-        <div className="h-8 w-48 animate-pulse rounded bg-gray-200" />
-        <div className="mt-4 h-24 animate-pulse rounded bg-gray-100" />
+      <div className="mx-auto w-full max-w-7xl space-y-4">
+        <div className="h-8 w-56 animate-pulse rounded-md bg-zinc-200" />
+        <div className="h-36 animate-pulse rounded-2xl bg-zinc-100" />
       </div>
     )
   }
 
   if (!accessToken) {
     return (
-      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-6">
-        <h1 className="text-xl font-bold text-gray-900">KPIページ（AI）</h1>
-        <p className="mt-2 text-sm text-gray-600">表示するにはログインしてください。</p>
+      <div className="mx-auto w-full max-w-7xl">
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-900">KPI Dashboard</h1>
+        <p className="mt-2 text-sm text-zinc-500">表示するにはログインしてください。</p>
       </div>
     )
   }
 
   if (loadState === 'error') {
     return (
-      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-6">
-        <h1 className="text-xl font-bold text-gray-900">KPIページ（AI）</h1>
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
-          <p>{errorMessage ?? '取得に失敗しました'}</p>
+      <div className="mx-auto w-full max-w-7xl">
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-900">KPI Dashboard</h1>
+        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-5">
+          <p className="text-sm text-rose-800">{errorMessage ?? '取得に失敗しました'}</p>
           <button
             type="button"
-            onClick={() => setReloadSeq((v) => v + 1)}
-            className="mt-2 inline-flex rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+            onClick={() => setReloadSeq((value) => value + 1)}
+            className="mt-3 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-800 hover:bg-rose-50"
           >
             再試行
           </button>
@@ -260,256 +409,245 @@ export default function KpiPage() {
     )
   }
 
-  const showTeam = scope === 'all' || scope === 'team' || scope === 'pj'
-
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6">
-      <header className="shrink-0">
-        <h1 className="text-xl font-bold text-gray-900">KPIページ（AI）</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          KPIの目標（Target）・実績（Actual）・達成率（Achievement）を5指標で可視化します。
-        </p>
+    <div className="mx-auto w-full max-w-7xl space-y-8">
+      <style jsx>{`
+        @keyframes kpiSevenColorBlink {
+          0% {
+            color: #3b82f6
+          }
+          14% {
+            color: #06b6d4
+          }
+          28% {
+            color: #eab308
+          }
+          42% {
+            color: #22c55e
+          }
+          56% {
+            color: #14b8a6
+          }
+          70% {
+            color: #8b5cf6
+          }
+          84% {
+            color: #ef4444
+          }
+          100% {
+            color: #3b82f6
+          }
+        }
+      `}</style>
+      <header className="space-y-4">
+        <nav className="text-xs text-zinc-500" aria-label="パンくず">
+          <Link href="/dashboard" className="hover:text-zinc-700">
+            ダッシュボード
+          </Link>
+          <span className="mx-1.5 text-zinc-400">/</span>
+          <span className="font-medium text-zinc-700">KPI</span>
+        </nav>
+
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">KPI Dashboard</h1>
+            <p className="mt-2 text-sm text-zinc-500">
+              インサイドセールスの個人・チーム実績を可視化し、目標達成率を確認します。
+            </p>
+          </div>
+
+          <div className="inline-flex rounded-xl border border-zinc-200 bg-white p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setViewMode('personal')}
+              className={`rounded-lg px-6 py-2 text-sm font-medium transition ${
+                isPersonal ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              個人成績
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('team')}
+              className={`rounded-lg px-6 py-2 text-sm font-medium transition ${
+                !isPersonal ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              チーム / プロジェクト
+            </button>
+          </div>
+        </div>
       </header>
 
-      <div className="mt-6 flex flex-col gap-6">
-        <section className="rounded-xl border border-blue-200 bg-blue-50/40 p-6 shadow-sm" aria-label="KPI重点指標">
-          <h2 className="text-base font-semibold text-blue-900">IS個人が最も気にする数字（重点5指標）</h2>
-          <ul className="mt-3 grid gap-2 text-sm text-blue-900 md:grid-cols-2">
-            <li>1時間あたりの加電数（行動量）</li>
-            <li>アポ率（最終成果）</li>
-            <li>資料送付率（有効会話の質）</li>
-            <li>再加電取得率（見込み管理）</li>
-            <li className="md:col-span-2">切り満接触率（ターゲット精度）</li>
-          </ul>
-        </section>
-
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="表示スコープ">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-gray-900">表示スコープ</h2>
-              <p className="mt-1 text-sm text-gray-500">全体・Team・個人（PJは暫定表示） + 期間切替</p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap gap-2">
-                {ScopeOptions.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setScope(opt.value)}
-                    className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                      scope === opt.value ? 'border-blue-400 bg-blue-50 text-blue-900' : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {PeriodOptions.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setPeriod(opt.value)}
-                    className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
-                      period === opt.value ? 'border-indigo-400 bg-indigo-50 text-indigo-900' : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+      <section className={cardClass}>
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900">表示期間</h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              期間: {period === 'daily' ? '日次' : period === 'weekly' ? '週次' : '月次'} / 経過時間:{' '}
+              {roundOneDecimal(elapsedHours)}h
+            </p>
           </div>
-
-          <div className="mt-4 text-xs text-gray-500">
-            期間: {period === 'daily' ? '日次' : period === 'weekly' ? '週次' : '月次'} / 経過時間: {Math.round(elapsedHours * 10) / 10}時間（計算用）
+          <div className="flex flex-wrap gap-2">
+            {PERIOD_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setPeriod(option.value)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                  period === option.value
+                    ? 'border-zinc-900 bg-zinc-900 text-white'
+                    : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="目標設定">
-          <h2 className="text-base font-semibold text-gray-900">KPI目標（入力）</h2>
-          <p className="mt-1 text-sm text-gray-500">未設定（0）の項目は達成率を「—」で表示します</p>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <label className="block text-sm">
-              <span className="text-xs font-medium text-gray-600">1時間あたりの加電数（行動量）目標</span>
-              <input
-                inputMode="decimal"
-                className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm"
-                value={goals.callPerHour}
-                onChange={(e) => setGoals((g) => ({ ...g, callPerHour: Number(e.target.value) }))}
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs font-medium text-gray-600">アポ率（最終成果）目標（%）</span>
-              <input
-                inputMode="decimal"
-                className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm"
-                value={goals.appointmentRate}
-                onChange={(e) => setGoals((g) => ({ ...g, appointmentRate: Number(e.target.value) }))}
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs font-medium text-gray-600">資料送付率（有効会話の質）目標（%）</span>
-              <input
-                inputMode="decimal"
-                className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm"
-                value={goals.materialSendRate}
-                onChange={(e) => setGoals((g) => ({ ...g, materialSendRate: Number(e.target.value) }))}
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs font-medium text-gray-600">再加電取得率（見込み管理）目標（%）</span>
-              <input
-                inputMode="decimal"
-                className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm"
-                value={goals.redialAcquisitionRate}
-                onChange={(e) => setGoals((g) => ({ ...g, redialAcquisitionRate: Number(e.target.value) }))}
-              />
-            </label>
-            <label className="block text-sm md:col-span-2">
-              <span className="text-xs font-medium text-gray-600">切り満接触率（ターゲット精度）目標（%）</span>
-              <input
-                inputMode="decimal"
-                className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm"
-                value={goals.cutContactRate}
-                onChange={(e) => setGoals((g) => ({ ...g, cutContactRate: Number(e.target.value) }))}
-              />
-            </label>
+      <section className={cardClass}>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-900">KPIサマリー</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+            <p className="text-xs font-medium text-zinc-600">今月のコール数</p>
+            <p className="mt-2 text-4xl font-semibold tracking-tight text-zinc-900">{activeCalls.toLocaleString()}</p>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              達成率 {callGoalCount > 0 ? formatPercent((activeCalls / callGoalCount) * 100) : '—'}
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              架電数 {activeCalls.toLocaleString()} / 架電目標数 {callGoalCount > 0 ? callGoalCount.toLocaleString() : '未設定'}
+            </p>
           </div>
-        </section>
-
-        {showTeam ? (
-          <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="結果（Team/全体）">
-            <h2 className="text-base font-semibold text-gray-900">実施結果（当日・合計）</h2>
-            <div className="mt-2 text-xs text-gray-500">計測は当日（daily）データです</div>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <MetricCard
-                label="1時間あたりの加電数（行動量）"
-                goal={goals.callPerHour}
-                actual={teamKpis.callsPerHour}
-                actualText={`${Math.round(teamKpis.callsPerHour * 10) / 10} /h`}
-                statsText={`実数: ${teamStats.totalCalls} calls`}
-              />
-              <MetricCard
-                label="アポ率（最終成果）"
-                goal={goals.appointmentRate}
-                actual={teamKpis.appointmentRate}
-                actualText={formatPercent(teamKpis.appointmentRate)}
-                unit="%"
-                statsText={`実数: ${teamStats.appointmentCount} / 接続 ${teamStats.connectedCount}`}
-              />
-              <MetricCard
-                label="資料送付率（有効会話の質）"
-                goal={goals.materialSendRate}
-                actual={teamKpis.materialSendRate}
-                actualText={formatPercent(teamKpis.materialSendRate)}
-                unit="%"
-                statsText={`実数: ${teamStats.materialSendCount} / 接続 ${teamStats.connectedCount}`}
-              />
-              <MetricCard
-                label="再加電取得率（見込み管理）"
-                goal={goals.redialAcquisitionRate}
-                actual={teamKpis.redialAcquisitionRate}
-                actualText={formatPercent(teamKpis.redialAcquisitionRate)}
-                unit="%"
-                statsText={`実数: ${teamStats.recallScheduledCount} / 接続 ${teamStats.connectedCount}`}
-              />
-              <div className="md:col-span-2">
-                <MetricCard
-                  label="切り満接触率（ターゲット精度）"
-                  goal={goals.cutContactRate}
-                  actual={teamKpis.cutContactRate}
-                  actualText={formatPercent(teamKpis.cutContactRate)}
-                  unit="%"
-                  statsText={`実数: 興味 ${teamStats.interestedCount} / 接続 ${teamStats.connectedCount}`}
-                />
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        {scope === 'personal' ? (
-          <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="個人別 KPI">
-            <h2 className="text-base font-semibold text-gray-900">IS個人別 KPI</h2>
-            <p className="mt-1 text-sm text-gray-500">当日データから、5指標の達成状況を表示します</p>
-
-            {members.length > 0 ? (
-              <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/40 px-3 py-2 text-xs text-gray-700">
-                行動量（加電/h）ランキング: {' '}
-                {members
-                  .slice()
-                  .sort((a, b) => computeMemberKpis(b, elapsedHours).callsPerHour - computeMemberKpis(a, elapsedHours).callsPerHour)
-                  .slice(0, 3)
-                  .map((m, idx) => `${idx + 1}. ${m.name || '—'}`)
-                  .join(' / ')}
-              </div>
-            ) : null}
-
-            {members.length === 0 ? (
-              <div className="mt-4 rounded-lg border border-dashed border-gray-200 bg-gray-50/40 p-6 text-center text-sm text-gray-500">
-                該当する架電データがありません
-              </div>
-            ) : (
-              <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                {members
-                  .slice()
-                  .sort((a, b) => b.totalCalls - a.totalCalls)
-                  .map((m) => {
-                    const kpis = computeMemberKpis(m, elapsedHours)
-                    return (
-                      <div key={m.userId} className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-semibold text-gray-900">{m.name || '—'}</div>
-                            <div className="mt-1 text-xs text-gray-600">実数: {m.totalCalls} calls</div>
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            接続: {m.connectedCount} ({formatPercent(m.connectedRate)})
-                          </div>
-                        </div>
-
-                        <div className="mt-3 space-y-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-xs text-gray-600">加電 /h</div>
-                            <div className="text-xs font-semibold text-gray-900">
-                              {Math.round(kpis.callsPerHour * 10) / 10} /h
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-xs text-gray-600">アポ率</div>
-                            <div className="text-xs font-semibold text-gray-900">{formatPercent(kpis.appointmentRate)}</div>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-xs text-gray-600">資料送付率</div>
-                            <div className="text-xs font-semibold text-gray-900">{formatPercent(kpis.materialSendRate)}</div>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-xs text-gray-600">再加電取得率</div>
-                            <div className="text-xs font-semibold text-gray-900">{formatPercent(kpis.redialAcquisitionRate)}</div>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-xs text-gray-600">切り満接触率</div>
-                            <div className="text-xs font-semibold text-gray-900">{formatPercent(kpis.cutContactRate)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="AI診断（簡易）">
-          <h2 className="text-base font-semibold text-gray-900">AI診断（簡易）</h2>
-          <p className="mt-1 text-sm text-gray-500">目標に対する未達ポイントをルールベースで要約します</p>
-          <div className="mt-4 min-h-[80px] rounded-lg border border-dashed border-gray-200 bg-gray-50/50 p-4 text-sm text-gray-800 whitespace-pre-wrap">
-            {aiDiagnosis}
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+            <p className="text-xs font-medium text-zinc-600">アポ率（Win Rate）</p>
+            <p className="mt-2 text-4xl font-semibold tracking-tight text-zinc-900">{formatPercent(activeWinRate)}</p>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              結果 {formatPercent(activeWinRate)}（{activeStats.appointmentCount}件） / 目標{' '}
+              {effectiveGoals.appointmentRate > 0
+                ? `${formatPercent(effectiveGoals.appointmentRate)}（${roundCount((activeStats.connectedCount * effectiveGoals.appointmentRate) / 100)}件）`
+                : '未設定'}
+            </p>
           </div>
-        </section>
-      </div>
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+            <p className="text-xs font-medium text-zinc-600">キーパーソン接触率</p>
+            <p className="mt-2 text-4xl font-semibold tracking-tight text-zinc-900">{formatPercent(activeConnectedRate)}</p>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              結果 {formatPercent(activeConnectedRate)}（{activeStats.connectedCount}件） / 目標{' '}
+              {effectiveGoals.keyPersonContactRate > 0
+                ? `${formatPercent(effectiveGoals.keyPersonContactRate)}（${roundCount((activeStats.totalCalls * effectiveGoals.keyPersonContactRate) / 100)}件）`
+                : '未設定'}
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+          {topFiveAchievementPanels.map(({ id, label, actual, goal, actualCount, goalCount }) => {
+            const achievement = safeAchievementRate(actual, goal)
+            const compareRate = achievement ?? actual
+            const gimmickClass =
+              compareRate >= 150
+                ? 'animate-[kpiSevenColorBlink_6s_ease-in-out_infinite] text-red-600'
+                : compareRate >= 100
+                  ? 'text-blue-600'
+                  : compareRate >= 80
+                    ? 'text-cyan-500'
+                    : compareRate > 70
+                      ? 'text-yellow-500'
+                      : 'text-red-600'
+            return (
+              <div key={id} className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+                <p className="text-xs font-medium text-zinc-600">{label}</p>
+                <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="text-sm font-semibold text-zinc-700">結果</span>
+                  <span className={`text-4xl font-semibold tracking-tight ${gimmickClass}`}>{formatPercent(actual)}</span>
+                  <span className="text-2xl font-semibold tracking-tight text-zinc-700">（{actualCount}件）</span>
+                </div>
+                <p className="mt-1 text-[11px] leading-snug text-zinc-500">
+                  KPI目標実数・達成率
+                  <br />
+                  目標{' '}
+                  {goal > 0 && goalCount !== null ? `${formatPercent(goal)}（${goalCount}件）` : '未設定'} / 達成率{' '}
+                  {achievement === null ? '—' : formatPercent(achievement)}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className={`${cardClass} lg:col-span-1`}>
+          <h3 className="text-base font-medium text-zinc-900">ボトルネック判定</h3>
+          {bottleneck ? (
+            <>
+              <p className="mt-4 text-sm text-zinc-500">現在もっとも改善余地が大きい指標</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">{bottleneck.label}</p>
+              <p className="mt-2 text-sm text-zinc-600">
+                達成率 {bottleneck.achievement === null ? '—' : formatPercent(bottleneck.achievement)}
+              </p>
+              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {bottleneck.help}
+              </p>
+            </>
+          ) : (
+            <p className="mt-4 text-sm text-zinc-500">目標値が未設定のため判定できません。</p>
+          )}
+        </div>
+
+        <div className={`${cardClass} lg:col-span-2`}>
+          <h3 className="text-base font-medium text-zinc-900">あと何件で目標到達か</h3>
+          <p className="mt-1 text-xs text-zinc-500">不足件数ベースで、次に増やすべき行動量を可視化します。</p>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { label: '架電', shortage: callShortageCount, unit: '件' },
+              { label: 'キーパーソン接触', shortage: contactShortageCount, unit: '件' },
+              { label: 'アポ獲得', shortage: appointmentShortageCount, unit: '件' },
+              { label: '資料送付', shortage: materialShortageCount, unit: '件' },
+              { label: '再架電取得', shortage: redialShortageCount, unit: '件' },
+              { label: '需要あり接触', shortage: interestShortageCount, unit: '件' },
+            ].map((item) => (
+              <div key={item.label} className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+                <p className="text-xs font-medium text-zinc-600">{item.label}</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">
+                  {item.shortage === null ? '—' : item.shortage.toLocaleString()}
+                </p>
+                <p className="mt-1 text-[11px] text-zinc-500">{item.shortage === null ? '目標未設定' : item.unit}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className={cardClass}>
+        <h3 className="text-base font-medium text-zinc-900">次にやること</h3>
+        <p className="mt-2 text-sm text-zinc-600">{nextAction.title}</p>
+        <p className="mt-1 text-sm text-zinc-500">{nextAction.description}</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href={nextAction.href}
+            className="inline-flex items-center rounded-lg border border-zinc-900 bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
+          >
+            {nextAction.ctaLabel}
+          </Link>
+          <Link
+            href="/director/kpi-goals"
+            className="inline-flex items-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+          >
+            KPI目標を調整
+          </Link>
+        </div>
+      </section>
+
+      <section className={`${cardClass} text-center`}>
+        <p className="text-sm text-zinc-500">
+          {isPersonal
+            ? `${personalMember?.name ?? '個人'} のパフォーマンスを表示中。重要指標の達成率を継続確認してください。`
+            : 'チーム全体のパフォーマンスを表示中。行動量とアポ率の相関を優先して改善してください。'}
+        </p>
+      </section>
     </div>
   )
 }
