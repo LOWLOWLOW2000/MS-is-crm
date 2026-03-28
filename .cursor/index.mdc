@@ -9,4 +9,4 @@ alwaysApply: true
 2. `core.mdc` — TS, React, Tailwind, tests, secrets
 3. `git.mdc` — commits, branches, ignore/cache
 
-Globs under `.cursor/rules/` override when scoped. Be concise; no duplicated prose across files.
+Scoped: `sales-room.mdc`, `design-system-figma.mdc`, `twenty/*` (submodule). Be concise; no duplicate prose.
