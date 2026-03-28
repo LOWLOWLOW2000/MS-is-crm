@@ -10,7 +10,7 @@ export default function OfficeLayout({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col bg-white">
       <header className="flex h-14 shrink-0 items-center justify-start gap-3 border-b border-gray-200 bg-white px-4">
         <Link
-          href="/sales-room"
+          href="/sales-room/v2"
           className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
           営業ルームへ

@@ -65,7 +65,7 @@ export default function PjSwitchPage() {
               <article className="flex h-full flex-col rounded-xl border border-blue-200 bg-gradient-to-b from-blue-50/90 to-white p-5 shadow-sm ring-1 ring-blue-100">
                 <div className="flex justify-start">
                   <Link
-                    href="/sales-room"
+                    href="/sales-room/v2"
                     className="inline-flex shrink-0 items-center justify-center rounded-lg border border-blue-400 bg-white px-3 py-2 text-sm font-semibold text-blue-800 shadow-sm hover:bg-blue-50"
                   >
                     案件の架電ルームへ移動
@@ -90,19 +90,25 @@ export default function PjSwitchPage() {
             </li>
           ) : (
             <li className="md:col-span-2">
-              <article className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm text-gray-700">
-                <h2 className="text-base font-semibold text-gray-900">アサインされている案件がありません</h2>
-                <p className="mt-2 leading-relaxed">
-                  所属: {profile.tenantCompanyName} / 表示PJ名: {profile.tenantProjectName}
-                  <br />
-                  企業管理者またはディレクターがPJへアサインすると、ここにパネルが表示されます。
+              <article className="rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/90 to-white px-6 py-10 text-center shadow-sm ring-1 ring-amber-100">
+                <p className="text-xl font-bold leading-snug text-amber-950 sm:text-2xl">
+                  管理者かディレクターに招待をリクエストして下さい
                 </p>
-                <Link
-                  href="/admin"
-                  className="mt-4 inline-block font-semibold text-blue-600 hover:underline"
-                >
-                  メンバー招待・PJアサイン（管理）
-                </Link>
+                <p className="mt-4 text-sm leading-relaxed text-slate-600">
+                  所属: {profile.tenantCompanyName}
+                  <br />
+                  テナント表示PJ名: {profile.tenantProjectName}
+                  <br />
+                  PJにアサインされると、ここから架電ルームへ進めます。
+                </p>
+                {profile.roles.some((r) => r === 'enterprise_admin' || r === 'director') ? (
+                  <Link
+                    href="/admin"
+                    className="mt-6 inline-block rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                  >
+                    メンバー招待・PJアサイン（管理）へ
+                  </Link>
+                ) : null}
               </article>
             </li>
           )}

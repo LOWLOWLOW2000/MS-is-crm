@@ -504,16 +504,16 @@ export default function KpiPage() {
       return {
         title: '接触量の改善に集中',
         description: '架電母数と接触導線の改善が最優先です。直近の実行量を増やしてください。',
-        ctaLabel: '架電ルームへ',
-        href: '/sales-room',
+        ctaLabel: '架電ルーム ver2 へ',
+        href: '/sales-room/v2',
       }
     }
     if (bottleneck.id === 'appointmentRate') {
       return {
         title: 'アポ化率の改善に集中',
         description: '接触後の提案からクロージングまでの会話設計を見直す局面です。',
-        ctaLabel: '架電ルームへ',
-        href: '/sales-room',
+        ctaLabel: '架電ルーム ver2 へ',
+        href: '/sales-room/v2',
       }
     }
     return {

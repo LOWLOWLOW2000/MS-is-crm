@@ -20,6 +20,7 @@ import {
   JAPAN_PREFECTURES,
   citiesForPrefecture,
 } from '@/lib/data/japan-regions'
+import { CALLING_RESULT_VALUES } from '@/lib/calling-result-canonical'
 
 const KPI_STATUS_KEYS = ['unstarted', 'calling', 'done', 'excluded'] as const
 
@@ -32,7 +33,7 @@ const KPI_STATUS_LABEL: Record<(typeof KPI_STATUS_KEYS)[number], string> = {
 
 /**
  * プロフ画像未設定時の簡易イニシャル表示
- * （配布先リストで写真を「ステータス」として左端に出す）
+ * （配布先リストで写真を左端に出す）
  */
 const initialsFromName = (name: string): string => {
   const t = name.trim()
@@ -44,19 +45,7 @@ const initialsFromName = (name: string): string => {
   return t.slice(0, 2).toUpperCase()
 }
 
-const STATUS_OPTIONS = [
-  '担当者あり興味',
-  '担当者あり不要',
-  '不在',
-  '番号違い',
-  '断り',
-  '折り返し依頼',
-  '留守電',
-  '資料送付',
-  'アポ',
-  'リスト除外',
-  '不通',
-] as const
+const STATUS_OPTIONS = CALLING_RESULT_VALUES
 
 export function DistributeClient({ initialListId }: { initialListId?: string }) {
   const { data: session } = useSession()
@@ -309,7 +298,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
   }, [accessToken, selectedListIds])
 
   useEffect(() => {
-    // リスト選択後に、KPI（割当×ステータス）を自動反映する
+    // リスト選択後に、KPI（割当×進捗ステータス）を自動反映する
     void refreshKpi()
   }, [refreshKpi])
 
@@ -349,7 +338,8 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
         total += result.matchCount
       }
       setMatchCount(total)
-      const statusLabel = selectedStatuses.length === 0 ? 'ステータス指定なし' : selectedStatuses.join(' / ')
+      const statusLabel =
+        selectedStatuses.length === 0 ? '架電結果指定なし' : selectedStatuses.join(' / ')
       setLastMessage(
         `条件に一致する件数（選択リスト合計）: ${total}件（住所: ${addressFilterSummaryForMessage}・${statusLabel}・${selectedListIds.length}リスト）`,
       )
@@ -373,7 +363,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
     }
     if (selectedStatuses.length > 0) {
       const ok = window.confirm(
-        'ステータスで絞り込み配布します。既存の割当が上書きされる場合があります。続行しますか？',
+        '架電結果（★架電ルーム）で絞り込み配布します。既存の割当が上書きされる場合があります。続行しますか？',
       )
       if (!ok) return
     }
@@ -416,7 +406,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
 
     if (selectedStatuses.length > 0) {
       const ok = window.confirm(
-        'ステータスで絞り込み配布します。既存の割当が上書きされる場合があります。続行しますか？',
+        '架電結果（★架電ルーム）で絞り込み配布します。既存の割当が上書きされる場合があります。続行しますか？',
       )
       if (!ok) return
     }
@@ -617,7 +607,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <fieldset className="rounded border border-gray-200 bg-white px-3 py-2">
             <legend className="px-1 text-xs font-semibold text-gray-700">
-              ステータス（ListItem.status）
+              架電結果（★架電ルーム / ListItem.callingResult）
             </legend>
             <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {STATUS_OPTIONS.map((s) => {
@@ -644,7 +634,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
               })}
             </div>
             <div className="mt-1 text-[11px] text-gray-500">
-              未選択＝ステータスで絞り込みなし（他の条件のみ）
+              未選択＝架電結果で絞り込みなし（他の条件のみ）
             </div>
           </fieldset>
           <fieldset className="rounded border border-gray-200 bg-white px-3 py-2">
@@ -887,7 +877,7 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
                     : 'from-slate-200 to-slate-300'
                   return (
                     <li key={u.id} className="flex items-start gap-2 p-3">
-                      {/* 写真（=ステータス）を左端表示 */}
+                      {/* 写真を左端表示 */}
                       <div
                         className={`relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gradient-to-br ring-1 ${ringClass} ${bgGradient}`}
                         title={displayName}

@@ -129,6 +129,12 @@ model CallingHelpRequest {
 model CallingSettings {
   tenantId            String @id
   humanApprovalEnabled Boolean
+  /** mock | zoom_embed | external_url | webhook */
+  callProviderKind    String  @default("mock")
+  callProviderConfig  Json?
+  /** 架電ルーム「内容確認・承認」をテナント内で1回済ませた日時（全ユーザーでボタン非表示） */
+  salesRoomContentAckAt  String?
+  salesRoomContentAckBy  String?
   updatedBy           String
   updatedAt           String
 
@@ -196,6 +202,8 @@ model ListItem {
   completedAt     String?
   /** AIリスト判定ティア（A|B|C）。未設定可 */
   aiListTier      String?
+  /** 架電ルームで記録した最新の架電結果（正規名）。未記録は null。配布画面の架電結果フィルタと一致 */
+  callingResult   String?
   createdAt      String
 
   list        CallingList  @relation(fields: [listId], references: [id], onDelete: Cascade)
@@ -476,6 +484,8 @@ model Tenant {
   accountStatus      String   @default("active")
   /** ヘッダー等に出すPJ名（任意・未設定時は UI で「未設定」） */
   projectDisplayName String?
+  /** 企業管理者が指定する AM（同一テナントの User.id） */
+  accountManagerUserIds String[] @default([])
   createdAt          String
   updatedAt          String
 
@@ -496,9 +506,44 @@ model Project {
 
   tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships ProjectMembership[]
+  talkScriptTemplates TalkScriptTemplate[]
 
   @@index([tenantId])
   @@map("projects")
+}
+
+/** PJ単位・型別（linear | branching）1 テンプレート。版は TalkScriptVersion */
+model TalkScriptTemplate {
+  id        String   @id @default(cuid())
+  tenantId  String
+  projectId String
+  type      String
+  createdAt String
+  updatedAt String
+
+  project  Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions TalkScriptVersion[]
+
+  @@unique([projectId, type])
+  @@index([tenantId])
+  @@map("talk_script_templates")
+}
+
+model TalkScriptVersion {
+  id              String   @id @default(cuid())
+  templateId      String
+  label           String
+  status          String
+  content         Json
+  createdByUserId String
+  createdAt       String
+  updatedAt       String
+  publishedAt     String?
+
+  template TalkScriptTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, status])
+  @@map("talk_script_versions")
 }
 
 /** PJ単位の配役（User の director / is_member と同一トランザクションで更新） */

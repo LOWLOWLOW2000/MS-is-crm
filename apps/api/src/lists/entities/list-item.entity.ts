@@ -2,6 +2,10 @@ export interface ListItem {
   id: string;
   tenantId: string;
   listId: string;
+  /** 親リストの表示名（ディレクターが命名・格納時） */
+  listName: string | null;
+  /** 架電ルームで記録した最新の架電結果（正規名） */
+  callingResult: string | null;
   companyName: string;
   phone: string;
   address: string;

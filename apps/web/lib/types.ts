@@ -32,22 +32,34 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
-/**
- * 汎用の架電結果（正のデータはこれのみ。DIP等は入力UX・エクスポート時にマッピング）。
- * docs/dip-mvp-spec.md §5
- */
-export type CallingResultType =
-  | '担当者あり興味'
-  | '担当者あり不要'
-  | '不在'
-  | '番号違い'
-  | '断り'
-  | '折り返し依頼'
-  | '留守電'
-  | '資料送付'
-  | 'アポ'
-  | 'リスト除外'
-  | '不通';
+import type { CallingResultType } from './calling-result-canonical';
+export type { CallingResultType } from './calling-result-canonical';
+export { CALLING_RESULT_VALUES, normalizeCallingResult } from './calling-result-canonical';
+
+/** テナント（企業アカウント）プロフィール。GET/PATCH /tenants/me */
+export interface TenantProfile {
+  id: string
+  name: string
+  companyName: string | null
+  headOfficeAddress: string | null
+  headOfficePhone: string | null
+  representativeName: string | null
+  accountStatus: string
+  projectDisplayName: string | null
+  accountManagerUserIds: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UpdateTenantBody {
+  companyName?: string
+  headOfficeAddress?: string
+  headOfficePhone?: string
+  representativeName?: string
+  projectDisplayName?: string
+  accountStatus?: string
+  accountManagerUserIds?: string[]
+}
 
 export type DirectorRequestType = 'appointment' | 'material'
 
@@ -78,6 +90,8 @@ export interface SaveCallingRecordInput {
   approved: boolean;
   approvedAt?: string;
   result: CallingResultType;
+  /** 指定時は ListItem.callingResult を更新（架電ルームと配布の整合） */
+  listItemId?: string;
   memo?: string;
   nextCallAt?: string;
 }
@@ -287,6 +301,10 @@ export interface ListItem {
   id: string;
   tenantId: string;
   listId: string;
+  /** 親リストの表示名（ディレクターが命名・格納時） */
+  listName?: string | null;
+  /** 架電ルームで記録した最新の架電結果（正規名） */
+  callingResult?: string | null;
   companyName: string;
   phone: string;
   address: string;
@@ -424,11 +442,53 @@ export interface KpiTimeseries {
   points: KpiTimeseriesPoint[]
 }
 
+export type CallProviderKind = 'mock' | 'zoom_embed' | 'external_url' | 'webhook'
+
 export interface CallingSettings {
   tenantId: string;
   humanApprovalEnabled: boolean;
+  callProviderKind: CallProviderKind;
+  callProviderConfig: Record<string, unknown> | null;
+  /** テナントで1回承認済みのとき ISO 8601（全ユーザーで架電ルーム承認ボタン非表示） */
+  salesRoomContentAckAt: string | null;
+  salesRoomContentAckBy: string | null;
   updatedBy: string;
   updatedAt: string;
+}
+
+export type TalkScriptType = 'linear' | 'branching'
+
+/** 公開版サマリ（一覧用） */
+export interface TalkScriptPublishedSummary {
+  id: string;
+  label: string;
+  publishedAt: string | null;
+  updatedAt: string;
+}
+
+/** 下書きサマリ */
+export interface TalkScriptDraftSummary {
+  id: string;
+  label: string;
+  status: string;
+  updatedAt: string;
+}
+
+/** 公開版の本文付き */
+export interface TalkScriptPublishedDetail {
+  id: string;
+  type: TalkScriptType;
+  label: string;
+  content: unknown;
+}
+
+/** 編集用 */
+export interface TalkScriptDraftDetail {
+  id: string;
+  type: TalkScriptType;
+  label: string;
+  status: string;
+  content: unknown;
 }
 
 export type KpiGoalScope = 'project' | 'is_all' | 'is_user'

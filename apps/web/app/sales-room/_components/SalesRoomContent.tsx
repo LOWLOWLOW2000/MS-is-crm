@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { CompanyDetailTemplate } from './CompanyDetailTemplate'
+import { SalesRoomTalkScriptPanel } from './SalesRoomTalkScriptPanel'
 import { SalesRoomActionResultPanel } from './SalesRoomActionResultPanel'
 import { RecallReminderBanner } from './RecallReminderBanner'
 import { useTalkScriptStore } from '@/lib/stores/talk-script-store'
@@ -12,12 +13,10 @@ import { NotionBlockEditor } from './NotionBlockEditor'
 import { useRecallListStore } from '@/lib/stores/recall-list-store'
 import { useAppoSubmissionStore } from '@/lib/stores/appo-submission-store'
 import { useMaterialRequestStore } from '@/lib/stores/material-request-store'
-import {
-  fetchAssignedCallingLists,
-  fetchCallingLists,
-  fetchListItems,
-} from '@/lib/calling-api'
-import type { ListItem } from '@/lib/types'
+import { useCallingListRows } from '@/lib/hooks/use-calling-list-rows'
+import { SALES_ROOM_V2_BASE } from '@/lib/sales-room-paths'
+import { fetchRecallList } from '@/lib/calling-api'
+import type { CallingRecord, ListItem } from '@/lib/types'
 import type { AppoSubmissionItem } from '@/lib/stores/appo-submission-store'
 import type { MaterialRequestItem } from '@/lib/stores/material-request-store'
 
@@ -257,41 +256,6 @@ const TIME_SLOT_OPTIONS = [
   { key: '14-18', label: '14–18時' },
 ] as const
 
-const SEED_LIST_ID = 'seed-calling-list-distribute-demo'
-
-/** 未ログイン・API 空時の一覧用デモ行（DB シードと近い見た目） */
-const buildDemoListItems = (): ListItem[] => {
-  const ts = new Date().toISOString()
-  return [
-    {
-      id: 'local-demo-1',
-      tenantId: 'tenant-demo-01',
-      listId: 'local-demo',
-      companyName: 'デモ飲食 銀座（ローカル表示）',
-      phone: '03-0000-0001',
-      address: '東京都中央区銀座1-1-1',
-      targetUrl: 'https://example.com',
-      industryTag: '飲食・レストラン',
-      aiListTier: 'A',
-      status: 'unstarted',
-      createdAt: ts,
-    },
-    {
-      id: 'local-demo-2',
-      tenantId: 'tenant-demo-01',
-      listId: 'local-demo',
-      companyName: 'デモIT 渋谷（ローカル表示）',
-      phone: '03-1000-0001',
-      address: '東京都渋谷区神南1-1-1',
-      targetUrl: 'https://example.com',
-      industryTag: 'IT・ソフトウェア',
-      aiListTier: 'B',
-      status: 'unstarted',
-      createdAt: ts,
-    },
-  ]
-}
-
 const prefectureFromAddress = (address: string): string => {
   const m = address.match(/^(.+?[都道府県])/)
   if (m?.[1]) return m[1]
@@ -344,14 +308,40 @@ export function SalesRoomContent() {
   const updateSelfTabContent = useTalkScriptStore((s) => s.updateSelfTabContent)
   const addSelfTab = useTalkScriptStore((s) => s.addSelfTab)
 
-  const [callingRows, setCallingRows] = useState<ListItem[]>([])
-  const [callingListSource, setCallingListSource] = useState<'api' | 'demo'>('demo')
-  const [callingListHint, setCallingListHint] = useState<string | null>(
-    'ログイン後、配布リストの明細を表示します。未ログイン時はデモ行です。',
-  )
-  const [callingListLoading, setCallingListLoading] = useState(false)
+  const {
+    rows: callingRows,
+    source: callingListSource,
+    hint: callingListHint,
+    loading: callingListLoading,
+    openCompanyFromRow,
+  } = useCallingListRows()
 
   const recallItems = useRecallListStore((s) => s.items)
+  const [apiRecallRecords, setApiRecallRecords] = useState<CallingRecord[]>([])
+
+  const serverRecallRows = useMemo(
+    () =>
+      apiRecallRecords
+        .filter((r) => r.nextCallAt != null && String(r.nextCallAt).trim() !== '')
+        .map((r) => {
+          const t = new Date(r.nextCallAt as string).getTime()
+          return {
+            id: `api-recall-${r.callingHistoryId}`,
+            companyName: r.companyName,
+            scheduledStr: Number.isFinite(t)
+              ? new Date(t).toLocaleString('ja-JP', {
+                  month: 'numeric',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : '—',
+            targetUrl: r.targetUrl,
+          }
+        }),
+    [apiRecallRecords],
+  )
+
   const appoItems = useAppoSubmissionStore((s) => s.items)
   const materialItems = useMaterialRequestStore((s) => s.items)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -376,7 +366,7 @@ export function SalesRoomContent() {
     params.delete('mode')
     params.delete('appoId')
     params.delete('materialId')
-    router.push(`/sales-room?${params.toString()}`)
+    router.push(`${SALES_ROOM_V2_BASE}?${params.toString()}`)
   }, [router, searchParams])
 
   const enterEditMode = useCallback(
@@ -391,7 +381,7 @@ export function SalesRoomContent() {
         params.set('materialId', id)
         params.delete('appoId')
       }
-      router.push(`/sales-room?${params.toString()}`)
+      router.push(`${SALES_ROOM_V2_BASE}?${params.toString()}`)
     },
     [router, searchParams],
   )
@@ -401,82 +391,20 @@ export function SalesRoomContent() {
   }, [tabKeys.join(',')])
 
   useEffect(() => {
+    if (sessionStatus !== 'authenticated' || !session?.accessToken) return
     let cancelled = false
-    const run = async () => {
-      if (sessionStatus === 'loading') return
-      if (!session?.accessToken) {
-        if (!cancelled) {
-          setCallingRows(buildDemoListItems())
-          setCallingListSource('demo')
-          setCallingListHint('ログイン後、API の配布リストが表示されます（未ログイン時はデモ行）。')
-          setCallingListLoading(false)
-        }
-        return
-      }
-      setCallingListLoading(true)
-      setCallingListHint(null)
+    void (async () => {
       try {
-        const role = session.user?.role
-        let listId: string | null = null
-        if (role === 'is_member') {
-          const assigned = await fetchAssignedCallingLists(session.accessToken)
-          listId = assigned[0]?.id ?? null
-        } else {
-          const all = await fetchCallingLists(session.accessToken)
-          const seed = all.find((l) => l.id === SEED_LIST_ID)
-          listId = seed?.id ?? all[0]?.id ?? null
-        }
-        if (!listId) {
-          if (!cancelled) {
-            setCallingRows(buildDemoListItems())
-            setCallingListSource('demo')
-            setCallingListHint(
-              '配布リストが見つかりません。`npm run db:seed`（API）でシードするか、ディレクターがリストを配布してください。',
-            )
-          }
-          return
-        }
-        const items = await fetchListItems(session.accessToken, listId)
-        if (cancelled) return
-        if (items.length > 0) {
-          setCallingRows(items)
-          setCallingListSource('api')
-          setCallingListHint(null)
-        } else {
-          setCallingRows(buildDemoListItems())
-          setCallingListSource('demo')
-          setCallingListHint('リスト明細が空です。シードの再実行または配布を確認してください。')
-        }
+        const rows = await fetchRecallList(session.accessToken)
+        if (!cancelled) setApiRecallRecords(rows)
       } catch {
-        if (!cancelled) {
-          setCallingRows(buildDemoListItems())
-          setCallingListSource('demo')
-          setCallingListHint('一覧の取得に失敗しました。API 起動とログインを確認してください。')
-        }
-      } finally {
-        if (!cancelled) setCallingListLoading(false)
+        if (!cancelled) setApiRecallRecords([])
       }
-    }
-    void run()
+    })()
     return () => {
       cancelled = true
     }
-  }, [session?.accessToken, session?.user?.role, sessionStatus])
-
-  const openCompanyFromRow = useCallback(
-    (item: ListItem) => {
-      if (callingListSource === 'api') {
-        const legalEntityId = item.legalEntityId ?? ''
-        const qs = legalEntityId
-          ? `&legalEntityId=${encodeURIComponent(legalEntityId)}`
-          : ''
-        router.push(`/sales-room?tab=company&listItemId=${encodeURIComponent(item.id)}${qs}`)
-        return
-      }
-      router.push('/sales-room?tab=company')
-    },
-    [callingListSource, router],
-  )
+  }, [session?.accessToken, sessionStatus])
 
   const persistOrder = useCallback((next: string[]) => {
     setTabOrder(next)
@@ -576,7 +504,7 @@ export function SalesRoomContent() {
                   </svg>
                 </span>
                 <Link
-                  href={`/sales-room?${params.toString()}`}
+                  href={`${SALES_ROOM_V2_BASE}?${params.toString()}`}
                   className={`rounded px-2 py-2 text-sm font-medium transition-colors ${
                     isActive ? 'text-white' : 'text-gray-600 hover:text-gray-900'
                   }`}
@@ -785,40 +713,75 @@ export function SalesRoomContent() {
           <div className="shrink-0 space-y-4">
             <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
               <h2 className="text-base font-semibold text-gray-900">再架電（一覧）</h2>
-              <p className="mt-1 text-sm text-gray-500">予定があるものだけ表示されます。</p>
-              {recallItems.length === 0 ? (
-                <div className="mt-4 rounded border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
-                  再架電リストは空です
-                </div>
-              ) : (
-                <ul className="mt-4 space-y-2">
-                  {recallItems.map((it) => {
-                    const scheduledStr = new Date(it.scheduledAt).toLocaleString('ja-JP', {
-                      month: 'numeric',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                    return (
+              <p className="mt-1 text-sm text-gray-500">
+                サーバの再架電予定（/calling/recall）と、このブラウザに保存したローカル予定を併記します。
+              </p>
+              <section className="mt-4">
+                <h3 className="text-sm font-semibold text-gray-800">サーバ（再架電予定）</h3>
+                {serverRecallRows.length === 0 ? (
+                  <div className="mt-2 rounded border border-dashed border-gray-200 bg-gray-50/50 p-4 text-center text-sm text-gray-400">
+                    サーバ側の予定はありません
+                  </div>
+                ) : (
+                  <ul className="mt-2 space-y-2">
+                    {serverRecallRows.map((row) => (
                       <li
-                        key={it.id}
+                        key={row.id}
                         className="flex items-start justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2"
                       >
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-gray-900">{it.companyName}</div>
-                          <div className="text-xs text-gray-500">{scheduledStr}</div>
+                          <div className="truncate text-sm font-medium text-gray-900">{row.companyName}</div>
+                          <div className="text-xs text-gray-500">{row.scheduledStr}</div>
                         </div>
-                        <Link
-                          href={it.pageLink}
-                          className="shrink-0 rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                        <a
+                          href={row.targetUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 rounded bg-slate-50 px-2 py-1 text-xs font-medium text-slate-800 hover:bg-slate-100"
                         >
-                          直リンク
-                        </Link>
+                          URL
+                        </a>
                       </li>
-                    )
-                  })}
-                </ul>
-              )}
+                    ))}
+                  </ul>
+                )}
+              </section>
+              <section className="mt-6">
+                <h3 className="text-sm font-semibold text-gray-800">ローカル（この端末）</h3>
+                {recallItems.length === 0 ? (
+                  <div className="mt-2 rounded border border-dashed border-gray-200 bg-gray-50/50 p-4 text-center text-sm text-gray-400">
+                    ローカル再架電リストは空です
+                  </div>
+                ) : (
+                  <ul className="mt-2 space-y-2">
+                    {recallItems.map((it) => {
+                      const scheduledStr = new Date(it.scheduledAt).toLocaleString('ja-JP', {
+                        month: 'numeric',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                      return (
+                        <li
+                          key={it.id}
+                          className="flex items-start justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-gray-900">{it.companyName}</div>
+                            <div className="text-xs text-gray-500">{scheduledStr}</div>
+                          </div>
+                          <Link
+                            href={it.pageLink}
+                            className="shrink-0 rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                          >
+                            直リンク
+                          </Link>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </section>
             </div>
           </div>
         )}
@@ -851,6 +814,9 @@ export function SalesRoomContent() {
             <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
               <h2 className="text-base font-semibold text-gray-900">アポ（管理一覧）</h2>
               <p className="mt-1 text-sm text-gray-500">差し戻し（returned）は色付きで表示されます。</p>
+              <p className="mt-1 text-xs text-amber-800">
+                送信データのサーバ永続化はバックログ。現状はブラウザ内ストアのみです。
+              </p>
               {appoItems.length === 0 ? (
                 <div className="mt-4 rounded border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
                   アポ送信データはありません
@@ -943,6 +909,9 @@ export function SalesRoomContent() {
             <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
               <h2 className="text-base font-semibold text-gray-900">資料請求（管理一覧）</h2>
               <p className="mt-1 text-sm text-gray-500">差し戻し（returned）は色付きで表示されます。</p>
+              <p className="mt-1 text-xs text-amber-800">
+                送信データのサーバ永続化はバックログ。現状はブラウザ内ストアのみです。
+              </p>
               {materialItems.length === 0 ? (
                 <div className="mt-4 rounded border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
                   資料請求送信データはありません
@@ -1132,26 +1101,12 @@ export function SalesRoomContent() {
                 {/* コンテンツ：管理職タブ / 自分タブごとに内部タブ構造を持つ */}
                 <div className="min-h-[220px] rounded border border-gray-200 bg-gray-50/50 p-3">
                   {talkSubTab === 'manager' ? (
-                    <div className="flex h-full flex-col">
-                      {/* 管理職がセットしたスクリプトタブ（ダミーデータ） */}
-                      <div className="mb-2 flex flex-wrap gap-1 border-b border-gray-200 pb-1 text-xs">
-                        {['受付突破トーク', '導入トーク', '反論対応', 'クロージング'].map((name, idx) => (
-                          <button
-                            key={name}
-                            type="button"
-                            className={`rounded-t border px-2.5 py-1 ${
-                              idx === 0
-                                ? 'border-b-0 border-blue-300 bg-white text-blue-700 shadow-sm'
-                                : 'border-transparent text-gray-600 hover:bg-white/70'
-                            }`}
-                          >
-                            {name}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex-1 rounded border border-dashed border-gray-300 bg-white/70 px-3 py-2 text-sm text-gray-600">
-                        管理職がセットしたメモ・スクリプトがここに表示されます。（読み取り優先）
-                      </div>
+                    <div className="flex min-h-[240px] flex-col">
+                      {sessionStatus === 'authenticated' && session?.accessToken ? (
+                        <SalesRoomTalkScriptPanel accessToken={session.accessToken} />
+                      ) : (
+                        <p className="text-sm text-gray-500">ログイン後にディレクター公開スクリプトを表示します。</p>
+                      )}
                     </div>
                   ) : (
                     <div className="flex h-full flex-col">
@@ -1217,6 +1172,9 @@ export function SalesRoomContent() {
             <div className="rounded-md border border-gray-200 bg-white p-6 shadow-sm">
               <h2 className="text-base font-semibold text-gray-900">案件ルール</h2>
               <p className="mt-2 text-sm text-gray-500">管理職がPJ（プロジェクト）ごとにセットするルール・スクリプト・判定基準を表示します。</p>
+              <p className="mt-1 text-xs text-amber-800">
+                MVP: ディレクター設定 API との接続はバックログ。現状はプレースホルダです。
+              </p>
               <div className="mt-4 min-h-[200px] rounded border border-dashed border-gray-300 bg-gray-50/50 p-4">
                 <p className="text-sm text-gray-500">PJを選択すると、そのPJ用に設定されたルールが表示されます。</p>
               </div>
@@ -1229,6 +1187,9 @@ export function SalesRoomContent() {
             <div className="rounded-md border border-gray-200 bg-white p-6 shadow-sm">
               <h2 className="text-base font-semibold text-gray-900">KPI</h2>
               <p className="mt-2 text-sm text-gray-500">PJごとに全体・Team・個人のKPIを表示。グラフで比較できます。</p>
+              <p className="mt-1 text-xs text-amber-800">
+                MVP: レポート・目標 API とのグラフ連携はバックログ。スコープ切替のみ先行です。
+              </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {KPI_SCOPES.map(({ key, label }) => (
                   <button

@@ -30,6 +30,7 @@ export type ListItemDistributeFilters = {
   industryNames?: string[];
   /** 未指定時は unstarted（後方互換） */
   callProgress?: 'unstarted' | 'contacted' | 'any';
+  /** 架電結果（★架電ルームの正規名）。ListItem.callingResult でフィルタ。キー名は後方互換で `statuses` */
   statuses?: string[];
   aiTiers?: string[];
 };
@@ -49,9 +50,9 @@ export class ListsService {
       listId,
     };
 
-    const statuses = filters?.statuses?.filter((s) => s.trim().length > 0);
-    if (statuses && statuses.length > 0) {
-      where.status = { in: statuses };
+    const callingResults = filters?.statuses?.map((s) => s.trim()).filter((s) => s.length > 0) ?? [];
+    if (callingResults.length > 0) {
+      where.callingResult = { in: callingResults };
     } else {
       const progress = filters?.callProgress ?? 'unstarted';
       if (progress === 'unstarted') {
@@ -222,10 +223,14 @@ export class ListsService {
     completedAt: string | null;
     aiListTier: string | null;
     createdAt: string;
+    callingResult: string | null;
+    list?: { name: string } | null;
   }): ListItem => ({
     id: row.id,
     tenantId: row.tenantId,
     listId: row.listId,
+    listName: row.list?.name ?? null,
+    callingResult: row.callingResult ?? null,
     companyName: row.companyName,
     phone: row.phone,
     address: row.address,
@@ -332,6 +337,7 @@ export class ListsService {
     const rows = await this.prisma.listItem.findMany({
       where: { tenantId: user.tenantId, listId },
       orderBy: { createdAt: 'asc' },
+      include: { list: { select: { name: true } } },
     });
     return rows.map((r) => this.toItem(r));
   };
@@ -350,6 +356,7 @@ export class ListsService {
     const rows = await this.prisma.listItem.findMany({
       where: { tenantId: user.tenantId, listId, assignedToUserId: user.sub },
       orderBy: { createdAt: 'asc' },
+      include: { list: { select: { name: true } } },
     });
     return rows.map((r) => this.toItem(r));
   };
@@ -603,6 +610,7 @@ export class ListsService {
         statusUpdatedAt: nowIso,
         completedAt: status === 'done' ? nowIso : null,
       },
+      include: { list: { select: { name: true } } },
     });
     return this.toItem(updated);
   };
@@ -610,6 +618,7 @@ export class ListsService {
   getListItemById = async (user: JwtPayload, itemId: string): Promise<ListItem> => {
     const item = await this.prisma.listItem.findFirst({
       where: { id: itemId, tenantId: user.tenantId },
+      include: { list: { select: { name: true } } },
     });
     if (!item) {
       throw new NotFoundException('対象の企業が見つかりません');

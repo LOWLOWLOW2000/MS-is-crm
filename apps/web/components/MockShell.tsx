@@ -2,11 +2,22 @@
 
 import { useRef, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { MockNav } from './MockNav'
 import { FooterChatRollup } from './FooterChatRollup'
 import { DailyKpiSection } from './DailyKpiSection'
 import { fetchMyProfile } from '@/lib/calling-api'
+
+/** 認証済みユーザーの PJ 配役状態（未アサイン時は /pj-switch のみ許可し左ナビを隠す） */
+type PjAssignmentGate = 'idle' | 'loading' | 'assigned' | 'unassigned' | 'error'
+
+function pathAllowedWithoutPjAssignment(path: string, roles: string[]): boolean {
+  if (path === '/pj-switch') return true
+  const canOpenAdmin = roles.includes('enterprise_admin') || roles.includes('director')
+  if (canOpenAdmin && (path === '/admin' || path.startsWith('/admin/'))) return true
+  return false
+}
 
 export interface MockShellProps {
   children: React.ReactNode
@@ -31,12 +42,20 @@ export function MockShell({
   hideScrollbars = false,
 }: MockShellProps) {
   const { data: session, status } = useSession()
+  const pathname = usePathname()
+  const router = useRouter()
   const leftColWidth = leftPanelBelowNav ? 'w-72' : 'w-52'
   const [profilePopupOpen, setProfilePopupOpen] = useState(false)
   const [kpiAdDismissed, setKpiAdDismissed] = useState(false)
   const [headerProfileImageUrl, setHeaderProfileImageUrl] = useState<string | null>(null)
   const [headerProfileImageLoading, setHeaderProfileImageLoading] = useState(false)
+  const [pjGate, setPjGate] = useState<PjAssignmentGate>('idle')
+  /** PJ 未アサイン時のリダイレクト例外判定用（fetchMyProfile の roles） */
+  const [profileRoles, setProfileRoles] = useState<string[]>([])
   const profileRef = useRef<HTMLDivElement>(null)
+
+  const hideLeftNavForNoPjAssignment =
+    status === 'authenticated' && pjGate === 'unassigned'
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -51,14 +70,25 @@ export function MockShell({
   useEffect(() => {
     let cancelled = false
     const run = async () => {
-      if (!session?.accessToken) return
+      if (status !== 'authenticated' || !session?.accessToken) {
+        setPjGate('idle')
+        setProfileRoles([])
+        return
+      }
       setHeaderProfileImageLoading(true)
+      setPjGate('loading')
       try {
         const me = await fetchMyProfile(session.accessToken)
         if (cancelled) return
         setHeaderProfileImageUrl(me.profileImageUrl)
+        setProfileRoles(me.roles ?? [])
+        setPjGate(me.projectAssignment ? 'assigned' : 'unassigned')
       } catch {
-        if (!cancelled) setHeaderProfileImageUrl(null)
+        if (!cancelled) {
+          setHeaderProfileImageUrl(null)
+          setProfileRoles([])
+          setPjGate('error')
+        }
       } finally {
         if (!cancelled) setHeaderProfileImageLoading(false)
       }
@@ -79,7 +109,13 @@ export function MockShell({
         window.removeEventListener('profileImage:changed', onChanged)
       }
     }
-  }, [session?.accessToken])
+  }, [session?.accessToken, status])
+
+  useEffect(() => {
+    if (status !== 'authenticated' || pjGate !== 'unassigned') return
+    if (pathAllowedWithoutPjAssignment(pathname, profileRoles)) return
+    router.replace('/pj-switch')
+  }, [status, pjGate, pathname, profileRoles, router])
 
   return (
     <div
@@ -170,18 +206,20 @@ export function MockShell({
             hideScrollbars ? 'min-h-0 overflow-hidden' : 'min-h-[calc(100dvh-3.5rem)]'
           }`}
         >
-          <div
-            className={`flex min-h-0 shrink-0 flex-col border-r border-gray-200 bg-white ${leftColWidth} ${
-              hideScrollbars ? 'overflow-y-auto scrollbar-none' : ''
-            }`}
-          >
-            <MockNav />
-            {leftPanelBelowNav != null ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                {leftPanelBelowNav}
-              </div>
-            ) : null}
-          </div>
+          {hideLeftNavForNoPjAssignment ? null : (
+            <div
+              className={`flex min-h-0 shrink-0 flex-col border-r border-gray-200 bg-white ${leftColWidth} ${
+                hideScrollbars ? 'overflow-y-auto scrollbar-none' : ''
+              }`}
+            >
+              <MockNav />
+              {leftPanelBelowNav != null ? (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  {leftPanelBelowNav}
+                </div>
+              ) : null}
+            </div>
+          )}
           <main
             className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-zinc-50/90 p-4 md:p-6 lg:p-8 ${
               hideScrollbars ? 'scrollbar-none' : ''

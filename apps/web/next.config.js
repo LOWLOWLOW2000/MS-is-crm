@@ -1,5 +1,7 @@
 const nextConfig = {
   reactStrictMode: true,
+  /** workspace パッケージ `@is-crm/domain` を Next がトランスパイルする */
+  transpilePackages: ['@is-crm/domain'],
   /**
    * dev と build の `.next` 衝突で `/_next/static/*` が 404 になる問題を抑止する。
    * `npm run dev` / `npm run build` 側で `NEXT_DIST_DIR` を切り替える。
@@ -21,8 +23,8 @@ const nextConfig = {
       { source: '/dashboard/sales-room/refinement', destination: '/sales-room/refinement', permanent: true },
       { source: '/dashboard/sales-room', destination: '/sales-room', permanent: true },
       { source: '/dashboard/inside-sales/refinement', destination: '/sales-room/refinement', permanent: true },
-      { source: '/dashboard/inside-sales', destination: '/sales-room', permanent: true },
-      { source: '/calling', destination: '/sales-room', permanent: true },
+      { source: '/dashboard/inside-sales', destination: '/sales-room/v2', permanent: true },
+      { source: '/calling', destination: '/sales-room/v2', permanent: true },
       // (dashboard) グループは URL に出ないため、仕様どおり /dashboard/* で開けるよう実ルートへ転送
       { source: '/dashboard/kpi', destination: '/kpi', permanent: false },
       { source: '/dashboard/ai-daily', destination: '/ai-daily', permanent: false },

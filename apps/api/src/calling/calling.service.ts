@@ -9,10 +9,20 @@ import { ValidateDialDto } from './dto/validate-dial.dto';
 import { ListReviewCompletion } from './entities/list-review-completion.entity'
 import { CallingHelpRequest } from './entities/calling-help-request.entity';
 import { CallingSummaryDto } from './dto/calling-summary.dto';
+import { normalizeCallingResult, type CallingResultType } from './calling-result-canonical';
+import { isConnectedResult } from './calling-result-helpers';
 import { CallingRecord } from './entities/calling-record.entity';
 import { PrismaService } from '../prisma/prisma.service';
 
 const HELP_STATUS_ORDER = { waiting: 0, joined: 1, closed: 2 } as const;
+
+/** リスト明細の進捗を「除外」に寄せる架電結果（★架電ルーム正規名） */
+const LIST_ITEM_EXCLUDED_RESULTS: ReadonlySet<CallingResultType> = new Set([
+  '担当NG',
+  '受付NG',
+  'クレーム',
+  '番号違い',
+])
 
 @Injectable()
 export class CallingService {
@@ -120,7 +130,7 @@ export class CallingService {
     approved: row.approved,
     approvedAt: row.approvedAt,
     approvedBy: row.approvedBy,
-    result: row.result as CallingRecord['result'],
+    result: normalizeCallingResult(row.result),
     memo: row.memo,
     nextCallAt: row.nextCallAt,
     createdAt: row.createdAt,
@@ -273,6 +283,21 @@ export class CallingService {
         updatedAt: now,
       },
     });
+
+    const listItemId = dto.listItemId?.trim()
+    if (listItemId) {
+      const excluded = LIST_ITEM_EXCLUDED_RESULTS.has(dto.result)
+      await this.prisma.listItem.updateMany({
+        where: { id: listItemId, tenantId: user.tenantId },
+        data: {
+          callingResult: dto.result,
+          status: excluded ? 'excluded' : 'done',
+          statusUpdatedAt: now,
+          completedAt: excluded ? null : now,
+        },
+      })
+    }
+
     return this.toRecord(row);
   };
 
@@ -285,9 +310,7 @@ export class CallingService {
       where: { tenantId: user.tenantId, createdAt: { gte: todayStart } },
     });
 
-    const connectedCount = todayRecords.filter(
-      (r) => r.result === '担当者あり興味' || r.result === '担当者あり不要',
-    ).length;
+    const connectedCount = todayRecords.filter((r) => isConnectedResult(r.result)).length;
 
     const now = new Date().toISOString();
     const recallScheduledCount = await this.prisma.callingRecord.count({

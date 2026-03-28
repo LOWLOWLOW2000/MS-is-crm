@@ -41,7 +41,7 @@ export default function CalendarPage() {
         <Link href="/dashboard?view=corporate" className="text-blue-600 hover:underline">個人アカウント</Link>
         <Link href="/dashboard?view=kpi" className="text-blue-600 hover:underline">KPIページ（AI）</Link>
         <Link href="/dashboard?view=ai-daily" className="text-blue-600 hover:underline">日報（AI）</Link>
-        <Link href="/sales-room" className="text-blue-600 hover:underline">架電ルーム</Link>
+        <Link href="/sales-room/v2" className="text-blue-600 hover:underline">架電ルーム ver2</Link>
       </nav>
 
       {/* 中央: Googleカレンダー埋め込み */}

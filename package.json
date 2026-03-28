@@ -2,6 +2,7 @@
   "name": "is-crm",
   "private": true,
   "scripts": {
+    "build:domain": "npm run build --prefix packages/is-domain",
     "preflight": "bash scripts/check-ports.sh",
     "monitor:agents": "node scripts/monitor-agent-transcripts.js --count 3",
     "dev:api": "cd apps/api && npm run start:dev",

@@ -28,6 +28,8 @@
 ### ドキュメントの正
 - ルートの共通ルール: `my-dev-room/.cursor/rules/*`
 - Phase 1 の状況: `OLD/docs/phase1-status.md`（過去履歴として）
+- **用語・命名の正**: `docs/GLOSSARY.md`（DB / API / UI の概念名。PR では辞書と違う名前を増やさない）
+- **リポジトリ入口**: `README.md`（workspaces の `npm install` 手順、`ListItem.callingResult` の更新経路）
 
 ### 工事中エリアの見せ方（人間向け）
 - **`UnderConstructionOverlay`**（`apps/web/components/UnderConstructionOverlay.tsx`）でラップする

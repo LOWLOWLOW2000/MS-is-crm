@@ -1,23 +1,12 @@
 import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString } from 'class-validator';
+import { CALLING_RESULT_VALUES } from '../../calling/calling-result-canonical';
 
 /** 配布対象の進捗（ListItem.status ベース） */
 export const DISTRIBUTE_CALL_PROGRESS = ['unstarted', 'contacted', 'any'] as const;
 export type DistributeCallProgress = (typeof DISTRIBUTE_CALL_PROGRESS)[number];
 
-/** 条件付き配布で使うステータス（ListItem.status） */
-export const DISTRIBUTE_LIST_ITEM_STATUSES = [
-  '担当者あり興味',
-  '担当者あり不要',
-  '不在',
-  '番号違い',
-  '断り',
-  '折り返し依頼',
-  '留守電',
-  '資料送付',
-  'アポ',
-  'リスト除外',
-  '不通',
-] as const;
+/** 条件付き配布で使う架電結果（★架電ルームの正規名）。DB は ListItem.callingResult */
+export const DISTRIBUTE_LIST_ITEM_STATUSES = [...CALLING_RESULT_VALUES] as const;
 export type DistributeListItemStatus = (typeof DISTRIBUTE_LIST_ITEM_STATUSES)[number];
 
 /** POST 配布・プレビュー共通のフィルタ（assignee 以外） */

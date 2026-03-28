@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { effectiveConnectionCountForRecords } from '../calling/calling-result-rules';
+import { isConnectedResult, isInterestedResult } from '../calling/calling-result-helpers';
 import { CallingService } from '../calling/calling.service';
 import { CallingRecord } from '../calling/entities/calling-record.entity';
 import type { AiCategoryScore } from '../calling/entities/calling-ai-evaluation.entity';
@@ -207,10 +208,10 @@ export class ReportsService {
         recallScheduled: 0,
       };
       cur.total += 1;
-      if (record.result === '担当者あり興味') {
+      if (isInterestedResult(record.result)) {
         cur.connected += 1;
         cur.interested += 1;
-      } else if (record.result === '担当者あり不要') {
+      } else if (isConnectedResult(record.result) && !isInterestedResult(record.result)) {
         cur.connected += 1;
       }
 
@@ -292,7 +293,7 @@ export class ReportsService {
       }
 
       cur.totalCalls += 1
-      if (record.result === '担当者あり興味' || record.result === '担当者あり不要') {
+      if (isConnectedResult(record.result)) {
         cur.connectedCount += 1
       }
       if (record.result === 'アポ') cur.appointmentCount += 1

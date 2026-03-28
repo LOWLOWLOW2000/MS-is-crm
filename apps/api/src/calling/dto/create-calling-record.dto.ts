@@ -1,20 +1,8 @@
 import { IsBoolean, IsDateString, IsIn, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
-import { CallingResultType } from '../entities/calling-record.entity';
+import { CALLING_RESULT_VALUES, type CallingResultType } from '../calling-result-canonical';
 
-/** 汎用結果タイプのみ受け付ける（DIPの11種は保存しない。入力UIで汎用に変換して送る） */
-const GENERIC_RESULT_VALUES: CallingResultType[] = [
-  '担当者あり興味',
-  '担当者あり不要',
-  '不在',
-  '番号違い',
-  '断り',
-  '折り返し依頼',
-  '留守電',
-  '資料送付',
-  'アポ',
-  'リスト除外',
-  '不通',
-];
+/** POST 時は正規名 11 種のみ受け付ける */
+const RESULTS: CallingResultType[] = [...CALLING_RESULT_VALUES];
 
 export class CreateCallingRecordDto {
   @IsString()
@@ -39,8 +27,14 @@ export class CreateCallingRecordDto {
   @IsDateString()
   approvedAt?: string;
 
-  @IsIn(GENERIC_RESULT_VALUES)
+  @IsIn(RESULTS)
   result!: CallingResultType;
+
+  /** 指定時は同一テナントの ListItem を架電結果で更新（★架電ルームと配布フィルタの整合） */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  listItemId?: string;
 
   @IsOptional()
   @IsString()
@@ -51,4 +45,3 @@ export class CreateCallingRecordDto {
   @IsDateString()
   nextCallAt?: string;
 }
-

@@ -57,8 +57,11 @@ app/
 │   └── ...
 │
 └── sales-room/
-    ├── layout.tsx                ← MockShell + leftPanelBelowNav + article
-    ├── page.tsx                  → /sales-room    ⚠ Suspense 必須（useSearchParams）→ SalesRoomContent
+    ├── layout.tsx                ← Providers ＋スクロールロック（シェルは各 segment）
+    ├── page.tsx                  → /sales-room（従来・MockShell）
+    ├── v2/
+    │   ├── layout.tsx            ← SalesRoomShell
+    │   └── page.tsx              → /sales-room/v2（API コックピット）
     └── refinement/
         └── page.tsx              → /sales-room/refinement
 ```

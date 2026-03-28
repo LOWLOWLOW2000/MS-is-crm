@@ -46,8 +46,13 @@ export function DashboardMenuLinks() {
               </Link>
             </li>
             <li>
+              <Link href="/sales-room/v2" className={linkClass}>
+                架電ルーム ver1（コックピット）
+              </Link>
+            </li>
+            <li>
               <Link href="/sales-room" className={linkClass}>
-                架電ルーム
+                架電ルーム ver2（従来）
               </Link>
             </li>
             <li>
@@ -110,6 +115,11 @@ export function DashboardMenuLinks() {
               <li>
                 <Link href="/director/kpi-goals" className={linkClass}>
                   KPI目標設定
+                </Link>
+              </li>
+              <li>
+                <Link href="/director/talk-scripts" className={linkClass}>
+                  トークスクリプト編集
                 </Link>
               </li>
               <li>

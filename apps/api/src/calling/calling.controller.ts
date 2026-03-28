@@ -101,7 +101,7 @@ export class CallingController {
     }
   }
 
-  /** KPI/画面用: 結果フラグ集合と留守電+不通ルール閾値 */
+  /** KPI/画面用: 結果フラグ集合と未着電ルール閾値 */
   @Get('result-rules')
   getResultRules(): {
     allResults: readonly string[];

@@ -3,6 +3,7 @@ import { config } from 'dotenv'
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 import { UserRole as UR } from '../src/common/enums/user-role.enum';
+import { CALLING_RESULT_VALUES } from '@is-crm/domain';
 import { upsertProjectMembershipInTx } from '../src/users/project-membership.helper';
 import * as bcrypt from 'bcrypt';
 
@@ -64,7 +65,17 @@ type ItemSeed = {
   assignedByUserId: string | null;
   statusUpdatedAt: string | null;
   completedAt: string | null;
+  /** 架電ルームの架電結果（正規名）。未記録は undefined/null */
+  callingResult?: string | null;
   legalEntityId?: string | null;
+};
+
+/** シード行の進捗に応じた既定の架電結果（★架電ルームと配布フィルタの整合） */
+const callingResultForListItemStatus = (status: string, index: number): string | null => {
+  if (status === 'unstarted' || status === 'calling') return null;
+  if (status === 'done') return CALLING_RESULT_VALUES[index % CALLING_RESULT_VALUES.length]!;
+  if (status === 'excluded') return '受付NG';
+  return null;
 };
 
 const demoUsers = [
@@ -393,6 +404,7 @@ async function seedThreeMonthsProjectDemo(hashedPassword: string, now: string): 
         statusUpdatedAt: status === 'unstarted' ? null : listAssignedAt,
         completedAt: status === 'done' ? listAssignedAt : null,
         legalEntityId: null,
+        callingResult: callingResultForListItemStatus(status, idx),
         createdAt: now,
       }
     })
@@ -445,7 +457,7 @@ async function seedThreeMonthsProjectDemo(hashedPassword: string, now: string): 
   })
 
   const totalDays = 90
-  const resultsNonConnected = ['不在', '不通', '番号違い', '留守電', '断り'] as const
+  const resultsNonConnected = ['不在', '未着電', '番号違い', '受付NG'] as const
   const recallFuture = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
 
   const monthlyTotalCalls = 30 * 20 * 15
@@ -482,8 +494,8 @@ async function seedThreeMonthsProjectDemo(hashedPassword: string, now: string): 
         } else {
           const r = Math.random()
           if (r < 0.15) {
-            result = Math.random() < 0.58 ? '担当者あり興味' : '担当者あり不要'
-            if (result === '担当者あり興味' && Math.random() < 0.18) {
+            result = Math.random() < 0.58 ? '再架電' : '担当NG'
+            if (result === '再架電' && Math.random() < 0.18) {
               nextCallAt = recallFuture
             }
           } else if (r < 0.19) {
@@ -843,7 +855,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
       recordId: 'seed-aa-ai-record-01',
       evalId: 'seed-aa-ai-eval-01',
       companyName: '株式会社AA 検証A（通常）',
-      result: '担当者あり興味',
+      result: '再架電',
       callDate: baseCallAt,
       evaluatedAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
       summary: '導入トークは良好。次回アクションの合意をもう一段強化したい。',
@@ -894,7 +906,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
       recordId: 'seed-aa-ai-record-04',
       evalId: 'seed-aa-ai-eval-04',
       companyName: '株式会社AA 検証D（不正カテゴリ補正）',
-      result: '担当者あり不要',
+      result: '担当NG',
       callDate: new Date(Date.now() - 48 * 24 * 60 * 60 * 1000).toISOString(),
       evaluatedAt: tieEvaluatedAt,
       summary: null,
@@ -1044,9 +1056,9 @@ async function seedKabushikiAaKpiDemo(now: string): Promise<void> {
 
     const blocks: { result: string; count: number }[] = [
       { result: '不在', count: absentCount },
-      { result: '不通', count: unreachableCount },
-      { result: '担当者あり興味', count: interestCount },
-      { result: '担当者あり不要', count: noInterestCount },
+      { result: '未着電', count: unreachableCount },
+      { result: '再架電', count: interestCount },
+      { result: '担当NG', count: noInterestCount },
       { result: 'アポ', count: appointmentCount },
       { result: '資料送付', count: materialSendCount },
     ]
@@ -1056,7 +1068,7 @@ async function seedKabushikiAaKpiDemo(now: string): Promise<void> {
     let recallSlotsUsed = 0
     return resultPool.map((result, i) => {
       let nextCallAt: string | null = null
-      if (result === '担当者あり興味' && recallSlotsUsed < recallCount) {
+      if (result === '再架電' && recallSlotsUsed < recallCount) {
         nextCallAt = recallFuture
         recallSlotsUsed += 1
       }
@@ -1491,6 +1503,7 @@ async function seedCallingListDemo(now: string): Promise<void> {
       assignedByUserId: director.id,
       statusUpdatedAt: now,
       completedAt: null,
+      callingResult: null,
     },
     {
       companyName: 'シード済み 完了物流',
@@ -1505,6 +1518,7 @@ async function seedCallingListDemo(now: string): Promise<void> {
       assignedByUserId: director.id,
       statusUpdatedAt: now,
       completedAt: now,
+      callingResult: '資料送付',
     },
     {
       companyName: 'シード除外 テレアポNG',
@@ -1519,6 +1533,7 @@ async function seedCallingListDemo(now: string): Promise<void> {
       assignedByUserId: director.id,
       statusUpdatedAt: now,
       completedAt: null,
+      callingResult: '受付NG',
     },
   ];
 
@@ -1536,7 +1551,7 @@ async function seedCallingListDemo(now: string): Promise<void> {
       assignedBy: 'director@example.com',
       assignedAt: now,
       items: {
-        create: items.map((row) => ({
+        create: items.map((row, idx) => ({
           tenantId: DEMO_TENANT,
           companyName: row.companyName,
           phone: row.phone,
@@ -1551,6 +1566,7 @@ async function seedCallingListDemo(now: string): Promise<void> {
           statusUpdatedAt: row.statusUpdatedAt,
           completedAt: row.completedAt,
           legalEntityId: row.legalEntityId ?? null,
+          callingResult: row.callingResult ?? callingResultForListItemStatus(row.status, idx),
           createdAt: now,
         })),
       },
@@ -1717,7 +1733,7 @@ async function seedCallingListKanbanSample(now: string): Promise<void> {
       assignedBy: 'director@example.com',
       assignedAt: listAssignedAt,
       items: {
-        create: kanbanItems.map((row) => ({
+        create: kanbanItems.map((row, idx) => ({
           tenantId: DEMO_TENANT,
           companyName: row.companyName,
           phone: row.phone,
@@ -1732,6 +1748,7 @@ async function seedCallingListKanbanSample(now: string): Promise<void> {
           statusUpdatedAt: row.statusUpdatedAt,
           completedAt: row.completedAt,
           legalEntityId: row.legalEntityId ?? null,
+          callingResult: row.callingResult ?? callingResultForListItemStatus(row.status, idx),
           createdAt: now,
         })),
       },
@@ -1796,6 +1813,7 @@ async function seedCallingListThirtyDummyItems(now: string): Promise<void> {
       assignedByUserId: director.id,
       statusUpdatedAt: status === 'unstarted' ? null : listAssignedAt,
       completedAt: status === 'done' ? listAssignedAt : null,
+      callingResult: callingResultForListItemStatus(status, idx),
     };
     return base;
   });
@@ -1813,7 +1831,7 @@ async function seedCallingListThirtyDummyItems(now: string): Promise<void> {
       assignedBy: 'director@example.com',
       assignedAt: listAssignedAt,
       items: {
-        create: items.map((row) => ({
+        create: items.map((row, idx) => ({
           tenantId: DEMO_TENANT,
           companyName: row.companyName,
           phone: row.phone,
@@ -1828,6 +1846,7 @@ async function seedCallingListThirtyDummyItems(now: string): Promise<void> {
           statusUpdatedAt: row.statusUpdatedAt,
           completedAt: row.completedAt,
           legalEntityId: row.legalEntityId ?? null,
+          callingResult: row.callingResult ?? callingResultForListItemStatus(row.status, idx),
           createdAt: now,
         })),
       },
@@ -1913,6 +1932,7 @@ async function seedCallingListBulkSample(now: string): Promise<void> {
       assignedByUserId: assignedMember ? director.id : null,
       statusUpdatedAt: status === 'unstarted' ? null : listAssignedAt,
       completedAt: status === 'done' ? listAssignedAt : null,
+      callingResult: callingResultForListItemStatus(status, idx),
     };
   });
 
@@ -1929,7 +1949,7 @@ async function seedCallingListBulkSample(now: string): Promise<void> {
       assignedBy: 'director@example.com',
       assignedAt: listAssignedAt,
       items: {
-        create: items.map((row) => ({
+        create: items.map((row, idx) => ({
           tenantId: DEMO_TENANT,
           companyName: row.companyName,
           phone: row.phone,
@@ -1944,6 +1964,7 @@ async function seedCallingListBulkSample(now: string): Promise<void> {
           statusUpdatedAt: row.statusUpdatedAt,
           completedAt: row.completedAt,
           legalEntityId: row.legalEntityId ?? null,
+          callingResult: row.callingResult ?? callingResultForListItemStatus(row.status, idx),
           createdAt: now,
         })),
       },

@@ -18,6 +18,9 @@ import { UsersModule } from './users/users.module';
 import { ZoomModule } from './zoom/zoom.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { KpiGoalsModule } from './kpi-goals/kpi-goals.module';
+import { TalkScriptsModule } from './talk-scripts/talk-scripts.module';
+import { CallWebhooksModule } from './call-webhooks/call-webhooks.module';
+import { TenantsModule } from './tenants/tenants.module';
 
 @Module({
   imports: [
@@ -38,9 +41,12 @@ import { KpiGoalsModule } from './kpi-goals/kpi-goals.module';
     UsersModule,
     ReportsModule,
     KpiGoalsModule,
+    TalkScriptsModule,
     ScriptsModule,
     SettingsModule,
     ZoomModule,
+    CallWebhooksModule,
+    TenantsModule,
   ],
   controllers: [AppController],
 })

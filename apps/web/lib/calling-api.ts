@@ -2,6 +2,11 @@ import {
   AiScorecardEntry,
   CallingList,
   CallingSettings,
+  TalkScriptDraftDetail,
+  TalkScriptDraftSummary,
+  TalkScriptPublishedDetail,
+  TalkScriptPublishedSummary,
+  TalkScriptType,
   ListReviewCompletion,
   CallingHelpRequest,
   CallingRecord,
@@ -29,6 +34,8 @@ import {
   KpiGoalMatrix,
   KpiGoalScope,
   KpiGoalValues,
+  TenantProfile,
+  UpdateTenantBody,
 } from './types';
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.API_BASE_URL ?? 'http://localhost:3001';
@@ -456,6 +463,37 @@ export const fetchUsers = async (accessToken: string): Promise<UserListItem[]> =
 
   return (await response.json()) as UserListItem[];
 };
+
+/** テナント（企業アカウント）プロフィール */
+export const fetchTenantProfile = async (accessToken: string): Promise<TenantProfile> => {
+  const response = await fetch(`${apiBaseUrl}/tenants/me`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new Error('企業アカウント情報の取得に失敗しました')
+  }
+  return (await response.json()) as TenantProfile
+}
+
+/** 企業管理者: テナントプロフィール・AM 割当の更新 */
+export const updateTenantProfile = async (
+  accessToken: string,
+  body: UpdateTenantBody,
+): Promise<TenantProfile> => {
+  const response = await fetch(`${apiBaseUrl}/tenants/me`, {
+    method: 'PATCH',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    const msg = await readApiErrorMessage(response, '企業アカウント情報の保存に失敗しました')
+    throw new Error(msg)
+  }
+  return (await response.json()) as TenantProfile
+}
 
 /** 自分自身のプロフィール取得（プロフ写真など） */
 export const fetchMyProfile = async (accessToken: string): Promise<MyProfile> => {
@@ -1143,6 +1181,25 @@ export const fetchCallingSettings = async (accessToken: string): Promise<Calling
   return (await response.json()) as CallingSettings;
 };
 
+/**
+ * 架電ルームの「内容確認・承認」を企業アカウント（テナント）単位で1回記録する（冪等）。
+ */
+export const acknowledgeSalesRoomContent = async (
+  accessToken: string,
+): Promise<CallingSettings> => {
+  const response = await fetch(`${apiBaseUrl}/settings/calling/sales-room-content-ack`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('承認の記録に失敗しました');
+  }
+
+  return (await response.json()) as CallingSettings;
+};
+
 export const fetchKpiGoalMatrix = async (accessToken: string): Promise<KpiGoalMatrix> => {
   const response = await fetch(`${apiBaseUrl}/kpi-goals/matrix`, {
     method: 'GET',
@@ -1174,7 +1231,11 @@ export const upsertKpiGoal = async (
 
 export const updateCallingSettings = async (
   accessToken: string,
-  input: { humanApprovalEnabled: boolean },
+  input: {
+    humanApprovalEnabled?: boolean;
+    callProviderKind?: CallingSettings['callProviderKind'];
+    callProviderConfig?: Record<string, unknown> | null;
+  },
 ): Promise<CallingSettings> => {
   const response = await fetch(`${apiBaseUrl}/settings/calling`, {
     method: 'PATCH',
@@ -1188,6 +1249,126 @@ export const updateCallingSettings = async (
   }
 
   return (await response.json()) as CallingSettings;
+};
+
+export const fetchPublishedTalkScripts = async (
+  accessToken: string,
+  type: TalkScriptType,
+): Promise<TalkScriptPublishedSummary[]> => {
+  const q = new URLSearchParams({ type }).toString();
+  const response = await fetch(`${apiBaseUrl}/talk-scripts/published?${q}`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error('公開トークスクリプト一覧の取得に失敗しました');
+  }
+  return (await response.json()) as TalkScriptPublishedSummary[];
+};
+
+export const fetchPublishedTalkScriptVersion = async (
+  accessToken: string,
+  versionId: string,
+): Promise<TalkScriptPublishedDetail> => {
+  const response = await fetch(
+    `${apiBaseUrl}/talk-scripts/published/${encodeURIComponent(versionId)}`,
+    {
+      method: 'GET',
+      headers: createAuthHeaders(accessToken),
+      cache: 'no-store',
+    },
+  );
+  if (!response.ok) {
+    throw new Error('トークスクリプトの取得に失敗しました');
+  }
+  return (await response.json()) as TalkScriptPublishedDetail;
+};
+
+export const fetchTalkScriptDrafts = async (
+  accessToken: string,
+  type: TalkScriptType,
+): Promise<TalkScriptDraftSummary[]> => {
+  const q = new URLSearchParams({ type }).toString();
+  const response = await fetch(`${apiBaseUrl}/talk-scripts/drafts?${q}`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error('下書き一覧の取得に失敗しました');
+  }
+  return (await response.json()) as TalkScriptDraftSummary[];
+};
+
+export const fetchTalkScriptDraftVersion = async (
+  accessToken: string,
+  versionId: string,
+): Promise<TalkScriptDraftDetail> => {
+  const response = await fetch(
+    `${apiBaseUrl}/talk-scripts/drafts/${encodeURIComponent(versionId)}`,
+    {
+      method: 'GET',
+      headers: createAuthHeaders(accessToken),
+      cache: 'no-store',
+    },
+  );
+  if (!response.ok) {
+    throw new Error('下書きの取得に失敗しました');
+  }
+  return (await response.json()) as TalkScriptDraftDetail;
+};
+
+export const createTalkScriptVersion = async (
+  accessToken: string,
+  input: { type: TalkScriptType; label: string; content: Record<string, unknown> },
+): Promise<{ id: string }> => {
+  const response = await fetch(`${apiBaseUrl}/talk-scripts/versions`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error('トークスクリプト下書きの作成に失敗しました');
+  }
+  return (await response.json()) as { id: string };
+};
+
+export const updateTalkScriptVersion = async (
+  accessToken: string,
+  versionId: string,
+  input: { label?: string; content?: Record<string, unknown> },
+): Promise<void> => {
+  const response = await fetch(
+    `${apiBaseUrl}/talk-scripts/versions/${encodeURIComponent(versionId)}`,
+    {
+      method: 'PATCH',
+      headers: createAuthHeaders(accessToken),
+      body: JSON.stringify(input),
+      cache: 'no-store',
+    },
+  );
+  if (!response.ok) {
+    throw new Error('トークスクリプトの更新に失敗しました');
+  }
+};
+
+export const publishTalkScriptVersion = async (
+  accessToken: string,
+  versionId: string,
+): Promise<void> => {
+  const response = await fetch(
+    `${apiBaseUrl}/talk-scripts/versions/${encodeURIComponent(versionId)}/publish`,
+    {
+      method: 'POST',
+      headers: createAuthHeaders(accessToken),
+      cache: 'no-store',
+    },
+  );
+  if (!response.ok) {
+    throw new Error('トークスクリプトの公開に失敗しました');
+  }
 };
 
 export const fetchScriptTemplates = async (accessToken: string): Promise<ScriptTemplate[]> => {

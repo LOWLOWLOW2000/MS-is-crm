@@ -5,6 +5,7 @@ import {
   Get,
   InternalServerErrorException,
   Patch,
+  Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -49,6 +50,15 @@ export class SettingsController {
         throw error;
       }
       throw new InternalServerErrorException('設定更新に失敗しました');
+    }
+  }
+
+  @Post('calling/sales-room-content-ack')
+  async acknowledgeSalesRoomContent(@Req() req: JwtRequest): Promise<CallingSettings> {
+    try {
+      return await this.settingsService.acknowledgeSalesRoomContent(req.user);
+    } catch {
+      throw new InternalServerErrorException('承認の記録に失敗しました');
     }
   }
 }

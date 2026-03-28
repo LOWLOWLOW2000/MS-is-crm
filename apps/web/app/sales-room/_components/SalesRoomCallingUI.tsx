@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
 import {
   CheckmarkFilled,
@@ -11,19 +12,11 @@ import {
   Close,
 } from '@carbon/icons-react'
 import type { CallingResultType } from '@/lib/types'
+import { acknowledgeSalesRoomContent, fetchCallingSettings } from '@/lib/calling-api'
+import { SALES_ROOM_RESULT_OPTIONS } from '@/lib/sales-room-result-options'
 import { useCallingSessionStore } from '@/lib/stores/calling-session-store'
 
 const RIGHT_PANE_STORAGE_ID = 'sales-room-calling-right-pane'
-
-const RESULT_OPTIONS: { value: CallingResultType; label: string }[] = [
-  { value: '担当者あり興味', label: '担当者あり興味' },
-  { value: '担当者あり不要', label: '担当者あり不要' },
-  { value: '不在', label: '不在' },
-  { value: '番号違い', label: '番号違い' },
-  { value: '断り', label: '断り' },
-  { value: '折り返し依頼', label: '折り返し依頼' },
-  { value: '留守電', label: '留守電' },
-]
 
 const SCRIPT_TABS = ['受付突破', '導入トーク', '反論対応', 'ヒアリング', 'クロージング', '商品説明']
 
@@ -38,7 +31,7 @@ export interface SalesRoomCallingUIProps {
 
 /**
  * 営業ルーム内の架電専用UI。
- * 左: 会社情報・承認・ZOOM発信・結果・メモ・次回架電・ディレクター呼出・保存・次へ。
+ * 左: 会社情報・承認・ZOOM発信・（任意）架電を閉じる・結果・メモ・次回架電・ディレクター呼出・保存・次へ。
  * 右: 企業HP（iframe）・スクリプトタブ・BGM（react-resizable-panels で縦分割）。
  */
 export function SalesRoomCallingUI({
@@ -49,9 +42,62 @@ export function SalesRoomCallingUI({
   onClose,
   onNext,
 }: SalesRoomCallingUIProps) {
-  const [approved, setApproved] = useState(false)
+  const { data: session, status: sessionStatus } = useSession()
+  const accessToken = session?.accessToken
+  const isAuthed = sessionStatus === 'authenticated' && Boolean(accessToken)
+
+  const [localApproved, setLocalApproved] = useState(false)
+  const [tenantAcked, setTenantAcked] = useState(false)
+  const [settingsLoading, setSettingsLoading] = useState(false)
+  const [ackSubmitting, setAckSubmitting] = useState(false)
+  const [ackError, setAckError] = useState<string | null>(null)
   const [scriptTab, setScriptTab] = useState(SCRIPT_TABS[0])
   const [bgmVolume, setBgmVolume] = useState(30)
+
+  useEffect(() => {
+    if (!isAuthed || !accessToken) return
+    let cancelled = false
+    setSettingsLoading(true)
+    void fetchCallingSettings(accessToken)
+      .then((s) => {
+        if (cancelled) return
+        const at = s.salesRoomContentAckAt
+        setTenantAcked(typeof at === 'string' && at.length > 0)
+      })
+      .catch(() => {
+        if (!cancelled) setTenantAcked(false)
+      })
+      .finally(() => {
+        if (!cancelled) setSettingsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken, isAuthed])
+
+  const effectiveApproved = useMemo(
+    () => (isAuthed ? tenantAcked : localApproved),
+    [isAuthed, localApproved, tenantAcked],
+  )
+
+  const handleApprovalAction = useCallback(async () => {
+    if (!isAuthed) {
+      setLocalApproved((a) => !a)
+      return
+    }
+    if (!accessToken || tenantAcked || ackSubmitting) return
+    setAckSubmitting(true)
+    setAckError(null)
+    try {
+      const next = await acknowledgeSalesRoomContent(accessToken)
+      const at = next.salesRoomContentAckAt
+      setTenantAcked(typeof at === 'string' && at.length > 0)
+    } catch {
+      setAckError('承認の保存に失敗しました。再度お試しください。')
+    } finally {
+      setAckSubmitting(false)
+    }
+  }, [accessToken, ackSubmitting, isAuthed, tenantAcked])
 
   const {
     selectedResult,
@@ -72,16 +118,6 @@ export function SalesRoomCallingUI({
     <div className="flex h-full min-h-0 flex-1 gap-0">
       <div className="flex w-[40%] min-w-0 flex-col border-r border-gray-200 bg-white">
         <div className="flex flex-1 flex-col gap-3 overflow-auto p-3">
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex items-center gap-1 self-end rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-            >
-              <Close size={14} />
-              架電を閉じる
-            </button>
-          )}
           <div className="rounded border border-gray-200 bg-gray-50 p-2 text-sm">
             <p className="font-medium text-gray-800">{companyName}</p>
             <p className="mt-1 text-xs text-gray-600">{companyPhone}</p>
@@ -89,26 +125,57 @@ export function SalesRoomCallingUI({
           </div>
 
           <div className="flex flex-col gap-2">
+            {isAuthed && settingsLoading ? (
+              <p className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                承認状態を確認しています…
+              </p>
+            ) : null}
+            {isAuthed && tenantAcked ? (
+              <div className="flex items-center gap-2 rounded border border-green-600 bg-green-50 px-3 py-2 text-sm font-medium text-green-800">
+                <CheckmarkFilled size={18} />
+                <span>企業アカウントで内容確認済み（全員で承認ボタンは表示されません）</span>
+              </div>
+            ) : null}
+            {(!isAuthed || (!tenantAcked && !settingsLoading)) && (
+              <button
+                type="button"
+                onClick={() => void handleApprovalAction()}
+                disabled={isAuthed && ackSubmitting}
+                className={`flex items-center justify-center gap-2 rounded border px-3 py-2 text-sm font-medium ${
+                  isAuthed
+                    ? 'border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60'
+                    : effectiveApproved
+                      ? 'border-green-600 bg-green-50 text-green-800'
+                      : 'border-amber-500 bg-amber-50 text-amber-800'
+                }`}
+              >
+                <CheckmarkFilled size={18} />
+                {isAuthed
+                  ? ackSubmitting
+                    ? '保存中…'
+                    : '内容確認・承認（テナント共通・1回で全員に反映）'
+                  : `内容確認・承認 ${effectiveApproved ? '済' : '（押すと発信可）'}`}
+              </button>
+            )}
+            {ackError ? <p className="text-xs text-red-600">{ackError}</p> : null}
             <button
               type="button"
-              onClick={() => setApproved((a) => !a)}
-              className={`flex items-center justify-center gap-2 rounded border px-3 py-2 text-sm font-medium ${
-                approved
-                  ? 'border-green-600 bg-green-50 text-green-800'
-                  : 'border-amber-500 bg-amber-50 text-amber-800'
-              }`}
-            >
-              <CheckmarkFilled size={18} />
-              内容確認・承認 {approved ? '済' : '（押すと発信可）'}
-            </button>
-            <button
-              type="button"
-              disabled={!approved}
+              disabled={!effectiveApproved}
               className="flex items-center justify-center gap-2 rounded border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PhoneFilled size={18} />
               ZOOM発信
             </button>
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex items-center gap-1 self-end rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+              >
+                <Close size={14} />
+                架電を閉じる
+              </button>
+            ) : null}
           </div>
 
           <div>
@@ -118,7 +185,7 @@ export function SalesRoomCallingUI({
               onChange={(e) => setSelectedResult(e.target.value as CallingResultType)}
               className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
             >
-              {RESULT_OPTIONS.map((o) => (
+              {SALES_ROOM_RESULT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>

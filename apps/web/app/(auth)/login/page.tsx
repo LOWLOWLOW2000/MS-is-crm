@@ -22,6 +22,14 @@ const safeCallbackPath = (raw: string | null): string | null => {
   }
 }
 
+const showMicrosoftOAuth = process.env.NEXT_PUBLIC_ENABLE_MICROSOFT_OAUTH === 'true'
+
+const oauthCallbackUrlFromWindow = (): string => {
+  if (typeof window === 'undefined') return '/pj-switch'
+  const q = new URLSearchParams(window.location.search)
+  return safeCallbackPath(q.get('callbackUrl')) ?? '/pj-switch'
+}
+
 export default function LoginPage() {
   const [dataUsageAgreed, setDataUsageAgreed] = useState(false)
   const [email, setEmail] = useState('')
@@ -70,7 +78,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <h1 className="mb-2 text-xl font-bold text-gray-900">ログイン</h1>
         <p className="mb-6 text-sm text-gray-500">
-          OAuth（Google）・メール認証。開発中はテキストで開発・IS・ディレクター・メアド・パスを記載。
+          PMV は Google OAuth を主軸にします。メール・パスワードは開発・検証用です。
         </p>
 
         {/* ログインフォーム：メール・パスワード・ログイン状態を保持・パスワードを忘れた・送信 */}
@@ -171,7 +179,7 @@ export default function LoginPage() {
           <div className="flex flex-col gap-2">
             <button
               type="button"
-              onClick={() => signIn('google', { callbackUrl: '/pj-switch' })}
+              onClick={() => signIn('google', { callbackUrl: oauthCallbackUrlFromWindow() })}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
@@ -182,19 +190,21 @@ export default function LoginPage() {
               </svg>
               Google でログイン
             </button>
-            <button
-              type="button"
-              onClick={() => signIn('azure-ad', { callbackUrl: '/pj-switch' })}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
-                <path fill="#F25022" d="M1 1h10v10H1z" />
-                <path fill="#00A4EF" d="M1 13h10v10H1z" />
-                <path fill="#7FBA00" d="M13 1h10v10H13z" />
-                <path fill="#FFB900" d="M13 13h10v10H13z" />
-              </svg>
-              Microsoft でログイン
-            </button>
+            {showMicrosoftOAuth ? (
+              <button
+                type="button"
+                onClick={() => signIn('azure-ad', { callbackUrl: oauthCallbackUrlFromWindow() })}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
+                  <path fill="#F25022" d="M1 1h10v10H1z" />
+                  <path fill="#00A4EF" d="M1 13h10v10H1z" />
+                  <path fill="#7FBA00" d="M13 1h10v10H13z" />
+                  <path fill="#FFB900" d="M13 13h10v10H13z" />
+                </svg>
+                Microsoft でログイン
+              </button>
+            ) : null}
           </div>
         </div>
 
