@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
+import { formatHeaderRolesJa } from '@/lib/role-labels'
 import { fetchDirectorRequestsSummary, fetchMyProfile } from '@/lib/calling-api'
 import type { UserRole } from '@/lib/types'
 
@@ -18,6 +19,7 @@ export type MockNavItem = {
 
 /** App Router の実パス（(dashboard) は URL に含まれない。/dashboard はトップのみ） */
 export const MOCK_NAV_ITEMS: MockNavItem[] = [
+  { label: '★Overview', href: '/dashboard', layer: 'common' },
   { label: '★架電ルーム', href: '/sales-room', layer: 'is' },
   { label: 'KPIページ（AI）', href: '/kpi', layer: 'common' },
   { label: 'AIスコアカード', href: '/ai-score', layer: 'common' },
@@ -27,6 +29,7 @@ export const MOCK_NAV_ITEMS: MockNavItem[] = [
   { label: '★プロフィール設定', href: '/profile', layer: 'common' },
   // 「ディレクター（/director）」は要件により抹消（中身も削除する）
   { label: 'プロジェクトKPI', href: '/director/kpi', layer: 'director' },
+  { label: 'KPI目標設定', href: '/director/kpi-goals', layer: 'director' },
   { label: 'AIレポート', href: '/director/ai-report', layer: 'director' },
   { label: '日報BOX', href: '/director/daily-box', layer: 'director' },
   { label: '★アポ・資料請求管理', href: '/director/requests', layer: 'director' },
@@ -36,6 +39,17 @@ export const MOCK_NAV_ITEMS: MockNavItem[] = [
   // Teams表は全削除
   { label: '出勤管理表＆報酬計算', href: '/attendance-payroll', layer: 'director' },
 ]
+
+/** 左メニューで「工事中」表示し、対応ページは UnderConstructionOverlay 済みの href */
+const MOCK_NAV_UNDER_CONSTRUCTION_HREFS = new Set<string>([
+  '/dashboard',
+  '/ai-score',
+  '/ai-daily',
+  '/timecard-invoice?tab=timecard',
+  '/director/kpi',
+  '/director/ai-report',
+  '/director/daily-box',
+])
 
 /** 現在のユーザーのレイヤー権限。Tier2でセッション・ロールに連動させる想定。 */
 type ViewerLayer = NavLayer | 'all'
@@ -135,7 +149,44 @@ export function MockNav() {
 
   return (
     <nav className="w-full shrink-0 bg-white p-3" aria-label="メインメニュー">
-      <div className="mb-3">
+      <div className="mb-3 space-y-2">
+        {status === 'loading' ? (
+          <div className="h-[5.25rem] w-full animate-pulse rounded-lg bg-gray-100" aria-hidden />
+        ) : session?.user ? (
+          <Link
+            href="/dashboard"
+            className="flex min-w-0 flex-col justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-left leading-tight hover:bg-gray-50"
+            title="ダッシュボードへ"
+            role="button"
+          >
+            <span className="truncate text-[11px] text-gray-500">
+              所属企業
+              <span className="mx-1 text-gray-300">/</span>
+              <span className="text-sm font-semibold text-gray-900">
+                {session.user.tenantCompanyName || '未設定'}
+              </span>
+            </span>
+            <span className="truncate text-[11px] text-gray-500">
+              PJ名
+              <span className="mx-1 text-gray-300">/</span>
+              <span className="text-sm font-semibold text-gray-900">
+                {session.user.tenantProjectName || '未設定'}
+              </span>
+            </span>
+            <span className="truncate text-[11px] text-gray-500">
+              自分名
+              <span className="mx-1 text-gray-300">/</span>
+              <span className="text-sm font-semibold text-gray-900">{session.user.name}</span>
+            </span>
+            <span className="truncate text-[11px] text-gray-500">
+              役職
+              <span className="mx-1 text-gray-300">/</span>
+              <span className="text-sm font-semibold text-gray-900">
+                {formatHeaderRolesJa((session.user.roles ?? [session.user.role]) as UserRole[])}
+              </span>
+            </span>
+          </Link>
+        ) : null}
         <Link
           href="/pj-switch"
           className={`block w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-center text-sm font-medium text-gray-800 hover:bg-gray-200 ${
@@ -167,7 +218,17 @@ export function MockNav() {
                 role="button"
               >
                 <span className="flex items-center justify-between gap-2">
-                  <span className="truncate">{label}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate">{label}</span>
+                    {MOCK_NAV_UNDER_CONSTRUCTION_HREFS.has(href) ? (
+                      <span
+                        className="shrink-0 rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[9px] font-semibold text-amber-900"
+                        title="画面は準備中です"
+                      >
+                        工事中
+                      </span>
+                    ) : null}
+                  </span>
                   {href.split('?')[0] === '/director/requests' && directorRequestBadgeCount > 0 ? (
                     <span
                       className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[11px] font-bold text-white"

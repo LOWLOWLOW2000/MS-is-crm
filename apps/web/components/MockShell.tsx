@@ -6,9 +6,7 @@ import { useSession } from 'next-auth/react'
 import { MockNav } from './MockNav'
 import { FooterChatRollup } from './FooterChatRollup'
 import { DailyKpiSection } from './DailyKpiSection'
-import { formatHeaderRolesJa } from '@/lib/role-labels'
 import { fetchMyProfile } from '@/lib/calling-api'
-import type { UserRole } from '@/lib/types'
 
 export interface MockShellProps {
   children: React.ReactNode
@@ -91,47 +89,6 @@ export function MockShell({
     >
       {/* 上部ヘッダー一列固定：所属企業・PJ名・自分名・役職 | 当日KPI | プロフ */}
       <header className="sticky top-0 z-30 flex min-h-14 shrink-0 items-center gap-4 border-b border-gray-200 bg-white px-4 py-1.5">
-        <div className="min-w-0 max-w-[min(100%,18rem)] shrink-0 sm:max-w-md">
-          {status === 'loading' ? (
-            <div className="h-14 w-44 animate-pulse rounded-md bg-gray-100" aria-hidden />
-          ) : session?.user ? (
-            <Link
-              href="/dashboard"
-              className="flex min-w-0 flex-col justify-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-left leading-snug hover:bg-gray-100"
-              title="ダッシュボードへ"
-            >
-              <span className="truncate text-sm text-gray-800">
-                <span className="font-medium text-gray-600">所属企業</span>
-                <span className="mx-0.5 text-gray-400">：</span>
-                <span>{session.user.tenantCompanyName || '未設定'}</span>
-              </span>
-              <span className="truncate text-sm text-gray-800">
-                <span className="font-medium text-gray-600">PJ名</span>
-                <span className="mx-0.5 text-gray-400">：</span>
-                <span>{session.user.tenantProjectName || '未設定'}</span>
-              </span>
-              <span className="truncate text-sm text-gray-800">
-                <span className="font-medium text-gray-600">自分名</span>
-                <span className="mx-0.5 text-gray-400">：</span>
-                <span className="font-semibold text-gray-900">{session.user.name}</span>
-              </span>
-              <span className="truncate text-sm text-gray-800">
-                <span className="font-medium text-gray-600">役職</span>
-                <span className="mx-0.5 text-gray-400">：</span>
-                <span>
-                  {formatHeaderRolesJa((session.user.roles ?? [session.user.role]) as UserRole[])}
-                </span>
-              </span>
-            </Link>
-          ) : (
-            <Link
-              href="/login"
-              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
-            >
-              ログイン
-            </Link>
-          )}
-        </div>
         <div className="relative flex min-w-0 flex-1 items-center">
           <DailyKpiSection inline />
           {isFreeTier && !kpiAdDismissed && (
@@ -226,7 +183,7 @@ export function MockShell({
             ) : null}
           </div>
           <main
-            className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-gray-50 p-6 ${
+            className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-zinc-50/90 p-4 md:p-6 lg:p-8 ${
               hideScrollbars ? 'scrollbar-none' : ''
             }`}
           >

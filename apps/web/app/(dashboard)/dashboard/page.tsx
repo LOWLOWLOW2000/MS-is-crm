@@ -1,55 +1,24 @@
-import Link from 'next/link'
+import { UnderConstructionOverlay } from '@/components/UnderConstructionOverlay'
+import { DashboardMenuLinks } from './_components/DashboardMenuLinks'
 
 /**
- * ダッシュボード（モック dashboard.html 準拠）。ロールに応じたリンクを2セクションで表示。
+ * ダッシュボード Overview。左ナビと同じエントリをカードで一覧し、遷移の起点にする。
  */
 export default function DashboardPage() {
   return (
-    <div>
-      <h1 className="text-xl font-bold text-gray-900">ダッシュボード</h1>
-      <p className="mt-2 text-sm text-gray-500">ロールに応じたページへ移動してください。（ページ移管モック）</p>
-      <div className="mt-6 grid gap-4 grid-cols-1 md:grid-cols-2 min-[900px]:grid-cols-[repeat(2,minmax(280px,1fr))]">
-        <section>
-          <h2 className="mb-2 text-sm font-semibold text-gray-500">共通・IS</h2>
-          <ul className="list-none space-y-1">
-            <li>
-              <Link href="/kpi" className="text-blue-600 no-underline hover:underline">KPIページ（AI）</Link>
-            </li>
-            <li>
-              <Link href="/ai-daily" className="text-blue-600 no-underline hover:underline">日報（AI）</Link>
-            </li>
-            <li>
-              <Link href="/sales-room" className="text-blue-600 no-underline hover:underline">架電ルーム</Link>
-            </li>
-            <li>
-              <Link href="/sales-room/refinement" className="text-blue-600 no-underline hover:underline">未調査リスト精査</Link>
-            </li>
-            <li>
-              <Link href="/corporate" className="text-blue-600 no-underline hover:underline">企業管理者</Link>
-            </li>
-          </ul>
-        </section>
-        <section>
-          <h2 className="mb-2 text-sm font-semibold text-gray-500">ディレクター・企業アカウント専用</h2>
-          <ul className="list-none space-y-1">
-            <li>
-              <Link href="/director" className="text-blue-600 no-underline hover:underline">ディレクター</Link>
-            </li>
-            <li>
-              <Link href="/director/kpi" className="text-blue-600 no-underline hover:underline">プロジェクトKPI</Link>
-            </li>
-            <li>
-              <Link href="/director/ai-report" className="text-blue-600 no-underline hover:underline">AIレポート</Link>
-            </li>
-            <li>
-              <Link href="/director/daily-box" className="text-blue-600 no-underline hover:underline">日報BOX</Link>
-            </li>
-            <li>
-              <Link href="/director/requests" className="text-blue-600 no-underline hover:underline">アポ・資料請求 管理</Link>
-            </li>
-          </ul>
-        </section>
+    <UnderConstructionOverlay ariaLabel="Overviewは準備中です" markSize="compact">
+      <div className="mx-auto w-full max-w-7xl space-y-6">
+        <header className="space-y-1">
+          <nav className="text-xs text-zinc-500" aria-label="パンくず">
+            <span className="font-medium text-zinc-700">ダッシュボード</span>
+          </nav>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Overview</h1>
+          <p className="text-sm text-zinc-500">
+            左メニューと同じページへ移動できます。ロールに応じて利用できる項目が異なります。
+          </p>
+        </header>
+        <DashboardMenuLinks />
       </div>
-    </div>
+    </UnderConstructionOverlay>
   )
 }

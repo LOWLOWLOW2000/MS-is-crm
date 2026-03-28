@@ -406,11 +406,56 @@ export interface ReportByMember {
   members: ReportByMemberItem[];
 }
 
+export type KpiTimeseriesScope = 'personal' | 'team'
+
+export interface KpiTimeseriesPoint {
+  date: string
+  totalCalls: number
+  connectedCount: number
+  appointmentCount: number
+  materialSendCount: number
+  recallScheduledCount: number
+}
+
+export interface KpiTimeseries {
+  startAt: string
+  endAt: string
+  scope: KpiTimeseriesScope
+  points: KpiTimeseriesPoint[]
+}
+
 export interface CallingSettings {
   tenantId: string;
   humanApprovalEnabled: boolean;
   updatedBy: string;
   updatedAt: string;
+}
+
+export type KpiGoalScope = 'project' | 'is_all' | 'is_user'
+
+export interface KpiGoalValues {
+  callPerHour: number
+  appointmentRate: number
+  materialSendRate: number
+  redialAcquisitionRate: number
+  cutContactRate: number
+  keyPersonContactRate: number
+}
+
+export interface KpiGoal extends KpiGoalValues {
+  id: string
+  tenantId: string
+  projectId: string
+  scope: KpiGoalScope
+  targetUserId: string | null
+  updatedBy: string
+  updatedAt: string
+}
+
+export interface KpiGoalMatrix {
+  projectGoal: KpiGoal | null
+  isAllGoal: KpiGoal | null
+  isUserGoals: KpiGoal[]
 }
 
 export interface ScriptTab {

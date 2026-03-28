@@ -12,6 +12,7 @@ import {
   ReportResultBreakdownItem,
   ReportSummaryDto,
 } from './dto/report-summary.dto';
+import type { KpiTimeseriesDto, KpiTimeseriesPointDto, KpiTimeseriesScope } from './reports.controller'
 
 @Injectable()
 export class ReportsService {
@@ -29,7 +30,18 @@ export class ReportsService {
 
   private resolveRange = (
     period: ReportPeriod,
+    rawFrom?: string,
+    rawTo?: string,
   ): { startAt: Date; endAt: Date } => {
+    const from = typeof rawFrom === 'string' ? rawFrom.trim() : ''
+    const to = typeof rawTo === 'string' ? rawTo.trim() : ''
+    if (from && to) {
+      const fromDate = new Date(`${from}T00:00:00`)
+      const toDate = new Date(`${to}T23:59:59.999`)
+      if (!Number.isNaN(fromDate.getTime()) && !Number.isNaN(toDate.getTime()) && fromDate.getTime() <= toDate.getTime()) {
+        return { startAt: fromDate, endAt: toDate }
+      }
+    }
     const now = new Date();
     const endAt = new Date(now);
     endAt.setHours(23, 59, 59, 999);
@@ -46,6 +58,13 @@ export class ReportsService {
 
     return { startAt, endAt };
   };
+
+  private toDateKeyUtc = (date: Date): string => {
+    const y = date.getUTCFullYear()
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const d = String(date.getUTCDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
 
   private sanitizeCategoryScores = (raw: unknown): AiCategoryScore[] => {
     if (!Array.isArray(raw)) return []
@@ -149,9 +168,14 @@ export class ReportsService {
   };
 
   /** ISメンバー別の架電実績（件数・接続率）。期間は summary と同じ。 */
-  getByMember = async (user: JwtPayload, rawPeriod: string | undefined): Promise<ReportByMemberDto> => {
+  getByMember = async (
+    user: JwtPayload,
+    rawPeriod: string | undefined,
+    rawFrom?: string,
+    rawTo?: string,
+  ): Promise<ReportByMemberDto> => {
     const period = this.resolvePeriod(rawPeriod);
-    const { startAt, endAt } = this.resolveRange(period);
+    const { startAt, endAt } = this.resolveRange(period, rawFrom, rawTo);
     const startMs = startAt.getTime();
     const endMs = endAt.getTime();
     const nowMs = Date.now();
@@ -235,6 +259,62 @@ export class ReportsService {
       members,
     };
   };
+
+  getKpiTimeseries = async (
+    user: JwtPayload,
+    rawFrom?: string,
+    rawTo?: string,
+    rawScope?: string,
+  ): Promise<KpiTimeseriesDto> => {
+    const scope: KpiTimeseriesScope = rawScope === 'team' ? 'team' : 'personal'
+    const { startAt, endAt } = this.resolveRange('monthly', rawFrom, rawTo)
+    const startMs = startAt.getTime()
+    const endMs = endAt.getTime()
+    const nowMs = Date.now()
+
+    const tenantRecords = await this.callingService.getTenantRecords(user.tenantId)
+    const filtered = tenantRecords.filter((record) => {
+      if (scope === 'personal' && record.createdBy !== user.sub) return false
+      const createdMs = new Date(record.createdAt).getTime()
+      return createdMs >= startMs && createdMs <= endMs
+    })
+
+    const byDate = new Map<string, Omit<KpiTimeseriesPointDto, 'date'>>()
+    for (const record of filtered) {
+      const createdAt = new Date(record.createdAt)
+      const key = this.toDateKeyUtc(createdAt)
+      const cur = byDate.get(key) ?? {
+        totalCalls: 0,
+        connectedCount: 0,
+        appointmentCount: 0,
+        materialSendCount: 0,
+        recallScheduledCount: 0,
+      }
+
+      cur.totalCalls += 1
+      if (record.result === '担当者あり興味' || record.result === '担当者あり不要') {
+        cur.connectedCount += 1
+      }
+      if (record.result === 'アポ') cur.appointmentCount += 1
+      if (record.result === '資料送付') cur.materialSendCount += 1
+      if (record.nextCallAt) {
+        const nextMs = new Date(record.nextCallAt).getTime()
+        if (!Number.isNaN(nextMs) && nextMs > nowMs) cur.recallScheduledCount += 1
+      }
+      byDate.set(key, cur)
+    }
+
+    const points = Array.from(byDate.entries())
+      .map(([date, row]) => ({ date, ...row }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+
+    return {
+      startAt: startAt.toISOString(),
+      endAt: endAt.toISOString(),
+      scope,
+      points,
+    }
+  }
 
   /**
    * Phase3: AIスコアカード一覧。CallingAiEvaluation が存在する架電記録を一覧化し、IS別に返す。

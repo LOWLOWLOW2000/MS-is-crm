@@ -3,11 +3,23 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
-import { fetchKpiGoalMatrix, fetchReportByMember } from '@/lib/calling-api'
-import type { KpiGoalValues, ReportByMember, ReportByMemberItem, ReportPeriod } from '@/lib/types'
+import {
+  Bar,
+  ComposedChart,
+  CartesianGrid,
+  Line,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import { fetchKpiGoalMatrix, fetchKpiTimeseries, fetchReportByMember } from '@/lib/calling-api'
+import type { KpiGoalValues, KpiTimeseries, ReportByMember, ReportByMemberItem, ReportPeriod } from '@/lib/types'
 
 type ViewMode = 'personal' | 'team'
 type LoadState = 'idle' | 'loading' | 'success' | 'error'
+type KpiChartMetric = 'call' | 'appointment' | 'keyPerson' | 'material' | 'redial'
 
 interface KpiGoals {
   callPerHour: number
@@ -27,12 +39,6 @@ const DEFAULT_GOALS: KpiGoals = {
   cutContactRate: 0,
 }
 
-const PERIOD_OPTIONS: { value: ReportPeriod; label: string }[] = [
-  { value: 'daily', label: '日次' },
-  { value: 'weekly', label: '週次' },
-  { value: 'monthly', label: '月次' },
-]
-
 const normalizeGoalValues = (raw: KpiGoalValues | null | undefined): KpiGoals => ({
   callPerHour: raw?.callPerHour ?? 0,
   appointmentRate: raw?.appointmentRate ?? 0,
@@ -51,6 +57,45 @@ const safeAchievementRate = (actual: number, goal: number): number | null =>
 const formatPercent = (v: number): string => `${Math.round(v * 10) / 10}%`
 const roundOneDecimal = (v: number): number => Math.round(v * 10) / 10
 const roundCount = (v: number): number => Math.max(0, Math.round(v))
+
+const toDateInputValue = (iso: string | undefined | null): string => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const daysBetweenDateInputs = (from: string, to: string): number | null => {
+  if (!from || !to) return null
+  const fromMs = new Date(`${from}T00:00:00`).getTime()
+  const toMs = new Date(`${to}T00:00:00`).getTime()
+  if (Number.isNaN(fromMs) || Number.isNaN(toMs)) return null
+  const diff = Math.floor((toMs - fromMs) / (24 * 60 * 60 * 1000))
+  return diff
+}
+
+const toDateInput = (date: Date): string => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const formatDateJa = (date: Date): string => {
+  const y = date.getFullYear()
+  const m = date.getMonth() + 1
+  const d = date.getDate()
+  return `${y}年${m}月${d}日`
+}
+
+const toDateFromDateInput = (value: string): Date | null => {
+  if (!value) return null
+  const d = new Date(`${value}T00:00:00`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
 
 const elapsedHoursFromStartAt = (startAtIso: string | undefined): number => {
   if (!startAtIso) return 1
@@ -100,12 +145,25 @@ export default function KpiPage() {
   const userId = session?.user?.id ?? ''
   const [viewMode, setViewMode] = useState<ViewMode>('personal')
   const [period, setPeriod] = useState<ReportPeriod>('daily')
+  const [kpiChartMetric, setKpiChartMetric] = useState<KpiChartMetric>('call')
   const [reloadSeq, setReloadSeq] = useState(0)
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isAllGoals, setIsAllGoals] = useState<KpiGoals>(DEFAULT_GOALS)
   const [personalGoals, setPersonalGoals] = useState<KpiGoals>(DEFAULT_GOALS)
   const [reportByMember, setReportByMember] = useState<ReportByMember | null>(null)
+  const [kpiTimeseries, setKpiTimeseries] = useState<KpiTimeseries | null>(null)
+  const [periodFrom, setPeriodFrom] = useState<string>('')
+  const [periodTo, setPeriodTo] = useState<string>('')
+  const [appliedRange, setAppliedRange] = useState<{ from: string; to: string } | null>(null)
+
+  const applyRange = (range: { from: string; to: string }) => {
+    setAppliedRange(range)
+    const diff = daysBetweenDateInputs(range.from, range.to)
+    const nextPeriod: ReportPeriod = diff === null || diff <= 1 ? 'daily' : diff <= 7 ? 'weekly' : 'monthly'
+    setPeriod(nextPeriod)
+    setReloadSeq((v) => v + 1)
+  }
 
   useEffect(() => {
     if (!accessToken) return
@@ -157,9 +215,15 @@ export default function KpiPage() {
       setLoadState('loading')
       setErrorMessage(null)
       try {
-        const data = await fetchReportByMember(accessToken, period)
+        const [data, series] = await Promise.all([
+          fetchReportByMember(accessToken, period, appliedRange ?? undefined),
+          fetchKpiTimeseries(accessToken, viewMode === 'personal' ? 'personal' : 'team', appliedRange ?? undefined),
+        ])
         if (cancelled) return
         setReportByMember(data)
+        setKpiTimeseries(series)
+        setPeriodFrom((prev) => prev || toDateInputValue(data.startAt))
+        setPeriodTo((prev) => prev || toDateInputValue(data.endAt))
         setLoadState('success')
       } catch (error) {
         if (cancelled) return
@@ -171,7 +235,15 @@ export default function KpiPage() {
     return () => {
       cancelled = true
     }
-  }, [accessToken, period, reloadSeq])
+  }, [accessToken, period, reloadSeq, appliedRange, viewMode])
+
+  useEffect(() => {
+    if (appliedRange) return
+    const today = toDateInput(new Date())
+    setPeriodFrom(today)
+    setPeriodTo(today)
+    applyRange({ from: today, to: today })
+  }, [appliedRange])
 
   const members = reportByMember?.members ?? []
   const elapsedHours = useMemo(() => elapsedHoursFromStartAt(reportByMember?.startAt), [reportByMember?.startAt])
@@ -233,6 +305,85 @@ export default function KpiPage() {
         interestedCount: teamStats.interestedCount,
       }
   const callGoalCount = effectiveGoals.callPerHour > 0 ? roundCount(effectiveGoals.callPerHour * elapsedHours) : 0
+  const periodLabel =
+    periodFrom && periodTo ? `${periodFrom} 〜 ${periodTo}` : reportByMember ? `${reportByMember.startAt} 〜 ${reportByMember.endAt}` : '—'
+  const periodRangeLabelJa = useMemo(() => {
+    const fromDate = toDateFromDateInput(periodFrom)
+    const toDate = toDateFromDateInput(periodTo)
+    if (!fromDate || !toDate) return '—'
+    return `${formatDateJa(fromDate)} 〜 ${formatDateJa(toDate)}`
+  }, [periodFrom, periodTo])
+
+  const chartSourceMembers = useMemo(
+    () => (isPersonal ? (personalMember ? [personalMember] : []) : members),
+    [isPersonal, personalMember, members],
+  )
+
+  const chartMetricOptions: { value: KpiChartMetric; label: string }[] = [
+    { value: 'call', label: '架電数' },
+    { value: 'appointment', label: 'アポ数' },
+    { value: 'keyPerson', label: 'キーマン接触数' },
+    { value: 'material', label: '資料送付数' },
+    { value: 'redial', label: '再架電取得数' },
+  ]
+
+  const selectedMetricLabel = chartMetricOptions.find((opt) => opt.value === kpiChartMetric)?.label ?? '架電数'
+
+  const timeseriesChartData = useMemo(() => {
+    const points = kpiTimeseries?.points ?? []
+    const toValue = (p: KpiTimeseries['points'][number]): number => {
+      if (kpiChartMetric === 'call') return p.totalCalls
+      if (kpiChartMetric === 'appointment') return p.appointmentCount
+      if (kpiChartMetric === 'keyPerson') return p.connectedCount
+      if (kpiChartMetric === 'material') return p.materialSendCount
+      return p.recallScheduledCount
+    }
+    return points.map((p) => ({
+      date: p.date,
+      actual: toValue(p),
+    }))
+  }, [kpiTimeseries?.points, kpiChartMetric])
+
+  const kpiChartData = useMemo(() => {
+    const calcGoalCount = (member: ReportByMemberItem): number | null => {
+      if (kpiChartMetric === 'call') {
+        return effectiveGoals.callPerHour > 0 ? roundCount(effectiveGoals.callPerHour * elapsedHours) : null
+      }
+      if (kpiChartMetric === 'appointment') {
+        return effectiveGoals.appointmentRate > 0
+          ? roundCount((member.connectedCount * effectiveGoals.appointmentRate) / 100)
+          : null
+      }
+      if (kpiChartMetric === 'keyPerson') {
+        return effectiveGoals.keyPersonContactRate > 0
+          ? roundCount((member.totalCalls * effectiveGoals.keyPersonContactRate) / 100)
+          : null
+      }
+      if (kpiChartMetric === 'material') {
+        return effectiveGoals.materialSendRate > 0
+          ? roundCount((member.connectedCount * effectiveGoals.materialSendRate) / 100)
+          : null
+      }
+      return effectiveGoals.redialAcquisitionRate > 0
+        ? roundCount((member.connectedCount * effectiveGoals.redialAcquisitionRate) / 100)
+        : null
+    }
+
+    const calcActualCount = (member: ReportByMemberItem): number => {
+      if (kpiChartMetric === 'call') return member.totalCalls
+      if (kpiChartMetric === 'appointment') return member.appointmentCount
+      if (kpiChartMetric === 'keyPerson') return member.connectedCount
+      if (kpiChartMetric === 'material') return member.materialSendCount
+      return member.recallScheduledCount
+    }
+
+    return chartSourceMembers.map((member) => ({
+      name: member.name || member.email || member.userId,
+      actual: calcActualCount(member),
+      goal: calcGoalCount(member) ?? 0,
+      goalEnabled: calcGoalCount(member) !== null,
+    }))
+  }, [chartSourceMembers, effectiveGoals, elapsedHours, kpiChartMetric])
   const topFiveAchievementPanels = [
     {
       id: 'materialSendRate',
@@ -439,7 +590,7 @@ export default function KpiPage() {
           }
         }
       `}</style>
-      <header className="space-y-4">
+      <header className="space-y-3">
         <nav className="text-xs text-zinc-500" aria-label="パンくず">
           <Link href="/dashboard" className="hover:text-zinc-700">
             ダッシュボード
@@ -448,7 +599,7 @@ export default function KpiPage() {
           <span className="font-medium text-zinc-700">KPI</span>
         </nav>
 
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">KPI Dashboard</h1>
             <p className="mt-2 text-sm text-zinc-500">
@@ -477,40 +628,114 @@ export default function KpiPage() {
             </button>
           </div>
         </div>
+
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-xs font-medium text-zinc-700">
+                <span className="block text-[11px] text-zinc-500">開始日</span>
+                <input
+                  type="date"
+                  value={periodFrom}
+                  onChange={(e) => setPeriodFrom(e.target.value)}
+                  className="mt-1 h-8 w-[10.5rem] rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] text-zinc-900 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                />
+              </label>
+              <label className="text-xs font-medium text-zinc-700">
+                <span className="block text-[11px] text-zinc-500">終了日</span>
+                <input
+                  type="date"
+                  value={periodTo}
+                  onChange={(e) => setPeriodTo(e.target.value)}
+                  className="mt-1 h-8 w-[10.5rem] rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] text-zinc-900 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!periodFrom || !periodTo) return
+                  const diff = daysBetweenDateInputs(periodFrom, periodTo)
+                  if (diff === null || diff < 0) return
+                  applyRange({ from: periodFrom, to: periodTo })
+                }}
+                className="h-8 rounded-lg border border-zinc-900 bg-zinc-900 px-3 text-[11px] font-semibold text-white hover:bg-zinc-800"
+              >
+                適用
+              </button>
+            </div>
+            <p className="text-[11px] font-medium text-zinc-600">期間: {periodRangeLabelJa}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const today = toDateInput(new Date())
+              setPeriodFrom(today)
+              setPeriodTo(today)
+              applyRange({ from: today, to: today })
+            }}
+            className="h-8 w-fit rounded-lg border border-zinc-200 bg-white px-3 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-50"
+          >
+            今日
+          </button>
+        </div>
       </header>
 
       <section className={cardClass}>
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-900">表示期間</h2>
-            <p className="mt-1 text-xs text-zinc-500">
-              期間: {period === 'daily' ? '日次' : period === 'weekly' ? '週次' : '月次'} / 経過時間:{' '}
-              {roundOneDecimal(elapsedHours)}h
-            </p>
+            <h2 className="text-sm font-semibold text-zinc-900">KPIグラフ</h2>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {PERIOD_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setPeriod(option.value)}
-                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                  period === option.value
-                    ? 'border-zinc-900 bg-zinc-900 text-white'
-                    : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
+          <div className="hidden md:block" />
+        </div>
+
+        <div className="mt-4 space-y-4">
+          <div className="rounded-xl border border-zinc-200 bg-white p-1 shadow-sm">
+            <div className="grid grid-cols-2 justify-start gap-1 sm:grid-cols-5">
+              {chartMetricOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setKpiChartMetric(option.value)}
+                  className={`h-9 rounded-lg px-3 text-xs font-semibold transition ${
+                    kpiChartMetric === option.value ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50/60 p-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold text-zinc-700">KPI（件数）チャート</p>
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  KPIサマリー5種を切替表示（実数=棒、目標=線）
+                </p>
+              </div>
+              <p className="text-[11px] text-zinc-500">
+                表示指標: {selectedMetricLabel} / 表示対象: {isPersonal ? '個人' : 'チーム'}
+              </p>
+            </div>
+            <div className="mt-3 h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={timeseriesChartData} margin={{ top: 6, right: 12, left: 0, bottom: 6 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="actual" name="実数" fill="#0f172a" radius={4} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </section>
 
       <section className={cardClass}>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-zinc-900">KPIサマリー</h3>
-        </div>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
             <p className="text-xs font-medium text-zinc-600">今月のコール数</p>

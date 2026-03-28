@@ -17,6 +17,7 @@ import { SettingsModule } from './settings/settings.module';
 import { UsersModule } from './users/users.module';
 import { ZoomModule } from './zoom/zoom.module';
 import { InvitationsModule } from './invitations/invitations.module';
+import { KpiGoalsModule } from './kpi-goals/kpi-goals.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { InvitationsModule } from './invitations/invitations.module';
     CompaniesModule,
     UsersModule,
     ReportsModule,
+    KpiGoalsModule,
     ScriptsModule,
     SettingsModule,
     ZoomModule,

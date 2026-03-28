@@ -29,6 +29,14 @@
 - ルートの共通ルール: `my-dev-room/.cursor/rules/*`
 - Phase 1 の状況: `OLD/docs/phase1-status.md`（過去履歴として）
 
+### 工事中エリアの見せ方（人間向け）
+- **`UnderConstructionOverlay`**（`apps/web/components/UnderConstructionOverlay.tsx`）でラップする
+- 中身はそのまま表示しつつ、上に **白 50%**（`bg-white/50`）＋中央に **`/images/koujichu-mark.png`** の工事中マークを重ねる
+- **`markSize="compact"`** … 左メニュー対象の一覧ページ向けにマークを小さめ表示
+- 左メニューの「工事中」バッジと対応付けは **`MockNav.tsx`** の `MOCK_NAV_UNDER_CONSTRUCTION_HREFS`
+- 例: `/director/kpi-goals` の「IS個別 KPI目標」ブロックのみ（`markSize` 省略可）
+- 別ブロックを工事表示にしたいときも同じコンポーネントを使う（セレクタ固定ではなくラッパーで表現する）
+
 ### IS_01 固有で扱う範囲（全体ルールには入れない）
 - 特定機能の実装仕様（例: `/director/requests` の仕様）
 - DBスキーマ・seed方針の個別判断

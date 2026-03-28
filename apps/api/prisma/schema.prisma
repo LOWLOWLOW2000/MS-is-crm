@@ -135,6 +135,29 @@ model CallingSettings {
   @@map("calling_settings")
 }
 
+model KpiGoal {
+  id                    String @id @default(cuid())
+  tenantId              String
+  projectId             String
+  goalKey               String
+  scope                 String
+  targetUserId          String?
+  callPerHour           Float  @default(0)
+  appointmentRate       Float  @default(0)
+  materialSendRate      Float  @default(0)
+  redialAcquisitionRate Float  @default(0)
+  cutContactRate        Float  @default(0)
+  keyPersonContactRate  Float  @default(0)
+  updatedBy             String
+  updatedAt             String
+
+  @@unique([tenantId, goalKey])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([tenantId, scope, targetUserId])
+  @@map("kpi_goals")
+}
+
 model CallingList {
   id             String   @id @default(cuid())
   tenantId       String

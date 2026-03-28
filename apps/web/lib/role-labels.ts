@@ -21,6 +21,7 @@ const HEADER_ROLE_ORDER: UserRole[] = [
 /** ヘッダー用。例: ディレクター・企業アカウント管理者 */
 export const formatHeaderRolesJa = (roles: UserRole[]): string => {
   const unique = [...new Set(roles)]
+  if (unique.includes('enterprise_admin')) return HEADER_ROLE_LABEL.enterprise_admin
   unique.sort((a, b) => HEADER_ROLE_ORDER.indexOf(a) - HEADER_ROLE_ORDER.indexOf(b))
   return unique.map((r) => HEADER_ROLE_LABEL[r] ?? r).join('・')
 }

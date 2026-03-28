@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
+import { UnderConstructionOverlay } from '@/components/UnderConstructionOverlay'
 import { fetchReportAiScorecard } from '@/lib/calling-api'
 import type { AiScorecardEntry } from '@/lib/types'
 
@@ -94,15 +95,16 @@ export default function AiScorePage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6">
-      <header className="shrink-0">
-        <h1 className="text-xl font-bold text-gray-900">AIスコアカード</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          通話のAI評価（カテゴリ別スコア・タグ・要約）を一覧で確認できます。
-        </p>
-      </header>
+    <UnderConstructionOverlay ariaLabel="AIスコアカードは準備中です" markSize="compact">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6">
+        <header className="shrink-0">
+          <h1 className="text-xl font-bold text-gray-900">AIスコアカード</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            通話のAI評価（カテゴリ別スコア・タグ・要約）を一覧で確認できます。
+          </p>
+        </header>
 
-      <section className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="AIスコアカード一覧">
+        <section className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="AIスコアカード一覧">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-gray-900">一覧</h2>
           <div className="text-xs text-gray-500">
@@ -260,8 +262,9 @@ export default function AiScorePage() {
             })}
           </ul>
         ) : null}
-      </section>
-    </div>
+        </section>
+      </div>
+    </UnderConstructionOverlay>
   )
 }
 

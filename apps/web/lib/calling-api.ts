@@ -10,6 +10,7 @@ import {
   ImportListResult,
   ListIndustryMasterRow,
   ListItem,
+  KpiTimeseries,
   ReportByMember,
   ReportPeriod,
   ReportSummary,
@@ -24,6 +25,10 @@ import {
   UpdateCompanyResult,
   DirectorRequestRow,
   DirectorRequestSummary,
+  KpiGoal,
+  KpiGoalMatrix,
+  KpiGoalScope,
+  KpiGoalValues,
 } from './types';
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.API_BASE_URL ?? 'http://localhost:3001';
@@ -1056,8 +1061,14 @@ export const fetchReportSummary = async (
 export const fetchReportByMember = async (
   accessToken: string,
   period: ReportPeriod,
+  range?: { from?: string; to?: string },
 ): Promise<ReportByMember> => {
-  const query = new URLSearchParams({ period }).toString();
+  const params = new URLSearchParams({ period })
+  const from = range?.from?.trim()
+  const to = range?.to?.trim()
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  const query = params.toString()
   const response = await fetch(`${apiBaseUrl}/reports/by-member?${query}`, {
     method: 'GET',
     headers: createAuthHeaders(accessToken),
@@ -1070,6 +1081,28 @@ export const fetchReportByMember = async (
 
   return (await response.json()) as ReportByMember;
 };
+
+export const fetchKpiTimeseries = async (
+  accessToken: string,
+  scope: 'personal' | 'team',
+  range?: { from?: string; to?: string },
+): Promise<KpiTimeseries> => {
+  const params = new URLSearchParams({ scope })
+  const from = range?.from?.trim()
+  const to = range?.to?.trim()
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  const query = params.toString()
+  const response = await fetch(`${apiBaseUrl}/reports/kpi-timeseries?${query}`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new Error('KPI時系列の取得に失敗しました')
+  }
+  return (await response.json()) as KpiTimeseries
+}
 
 /**
  * AIスコアカード一覧取得。
@@ -1109,6 +1142,35 @@ export const fetchCallingSettings = async (accessToken: string): Promise<Calling
 
   return (await response.json()) as CallingSettings;
 };
+
+export const fetchKpiGoalMatrix = async (accessToken: string): Promise<KpiGoalMatrix> => {
+  const response = await fetch(`${apiBaseUrl}/kpi-goals/matrix`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new Error('KPI目標一覧の取得に失敗しました')
+  }
+  return (await response.json()) as KpiGoalMatrix
+}
+
+export const upsertKpiGoal = async (
+  accessToken: string,
+  input: KpiGoalValues & { scope: KpiGoalScope; targetUserId?: string },
+): Promise<KpiGoal> => {
+  const response = await fetch(`${apiBaseUrl}/kpi-goals`, {
+    method: 'PUT',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, 'KPI目標の保存に失敗しました')
+    throw new Error(message)
+  }
+  return (await response.json()) as KpiGoal
+}
 
 export const updateCallingSettings = async (
   accessToken: string,

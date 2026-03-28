@@ -18,6 +18,24 @@ interface JwtRequest extends Request {
   user: JwtPayload;
 }
 
+export type KpiTimeseriesScope = 'personal' | 'team'
+
+export interface KpiTimeseriesPointDto {
+  date: string
+  totalCalls: number
+  connectedCount: number
+  appointmentCount: number
+  materialSendCount: number
+  recallScheduledCount: number
+}
+
+export interface KpiTimeseriesDto {
+  startAt: string
+  endAt: string
+  scope: KpiTimeseriesScope
+  points: KpiTimeseriesPointDto[]
+}
+
 @Controller('reports')
 @UseGuards(JwtAuthGuard)
 export class ReportsController {
@@ -40,11 +58,28 @@ export class ReportsController {
   async getByMember(
     @Req() req: JwtRequest,
     @Query('period') period: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
   ): Promise<ReportByMemberDto> {
     try {
-      return await this.reportsService.getByMember(req.user, period);
+      return await this.reportsService.getByMember(req.user, period, from, to);
     } catch {
       throw new InternalServerErrorException('IS別実績の取得に失敗しました');
+    }
+  }
+
+  /** KPI（時系列）。from/to を優先し、scope=personal|team */
+  @Get('kpi-timeseries')
+  async getKpiTimeseries(
+    @Req() req: JwtRequest,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Query('scope') scope: string | undefined,
+  ): Promise<KpiTimeseriesDto> {
+    try {
+      return await this.reportsService.getKpiTimeseries(req.user, from, to, scope)
+    } catch {
+      throw new InternalServerErrorException('KPI時系列の取得に失敗しました')
     }
   }
 

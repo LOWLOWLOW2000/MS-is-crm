@@ -1,3 +1,5 @@
+import { UnderConstructionOverlay } from '@/components/UnderConstructionOverlay'
+
 /**
  * タイムカード＆請求書・領収書。左ナビ対応。1カラム。
  *
@@ -31,18 +33,20 @@ export default function TimecardInvoicePage({
       <h1 className="text-xl font-bold text-gray-900">{heading}</h1>
       <p className="mt-2 text-sm text-gray-600">{description}</p>
       {tab !== 'invoice' ? (
-        <section
-          className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
-          aria-label="タイムカード・請求メイン"
-        >
-          <h2 className="text-base font-semibold text-gray-900">タイムカード</h2>
-          <p className="mt-2 text-sm text-gray-500">
-            出退勤打刻・勤怠一覧。（モック）
-          </p>
-          <div className="mt-4 min-h-[120px] rounded-lg border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
-            打刻・勤怠エリア
-          </div>
-        </section>
+        <UnderConstructionOverlay ariaLabel="タイムカードは準備中です" markSize="compact">
+          <section
+            className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
+            aria-label="タイムカード・請求メイン"
+          >
+            <h2 className="text-base font-semibold text-gray-900">タイムカード</h2>
+            <p className="mt-2 text-sm text-gray-500">
+              出退勤打刻・勤怠一覧。（モック）
+            </p>
+            <div className="mt-4 min-h-[120px] rounded-lg border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
+              打刻・勤怠エリア
+            </div>
+          </section>
+        </UnderConstructionOverlay>
       ) : null}
       {tab !== 'timecard' ? (
         <section className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="請求書・領収書">
