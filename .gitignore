@@ -29,3 +29,11 @@ pnpm-debug.log*
 
 .DS_Store
 
+# Cursor
+.cursor/cache/
+**/.cursor/cache/
+.cursor/*.log
+
+# Local temp
+*.tmp
+.temp/

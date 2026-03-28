@@ -7,7 +7,8 @@
     "dev:clean": "rm -rf .next-dev .next && NEXT_DIST_DIR=.next-dev next dev",
     "build": "NEXT_DIST_DIR=.next-build next build",
     "start": "NEXT_DIST_DIR=.next-build next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "lint:fix": "next lint --fix"
   },
   "dependencies": {
     "@is-crm/domain": "file:../../packages/is-domain",

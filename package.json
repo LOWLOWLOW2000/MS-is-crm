@@ -2,6 +2,9 @@
   "name": "is-crm",
   "private": true,
   "scripts": {
+    "dev:clean": "rm -rf apps/web/.next-dev apps/web/.next apps/web/.next-build apps/api/dist packages/is-domain/dist",
+    "lint": "npm run lint --prefix apps/web && npm run lint --prefix apps/api",
+    "lint:fix": "npm run lint:fix --prefix apps/web && npm run lint:fix --prefix apps/api",
     "build:domain": "npm run build --prefix packages/is-domain",
     "preflight": "bash scripts/check-ports.sh",
     "monitor:agents": "node scripts/monitor-agent-transcripts.js --count 3",

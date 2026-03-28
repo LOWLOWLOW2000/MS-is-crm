@@ -9,6 +9,7 @@
     "start:debug": "nest start --debug --watch",
     "build": "nest build",
     "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
+    "lint:fix": "eslint \"src/**/*.ts\" --fix --max-warnings=0",
     "postinstall": "prisma generate",
     "db:push": "prisma generate && prisma db push",
     "db:migrate": "prisma generate && prisma migrate dev",
