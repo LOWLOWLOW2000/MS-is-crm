@@ -1,18 +1,18 @@
 ---
-description: IS_01 — stack & folder map (source of truth for paths)
+description: IS_01 stack and folder map
 alwaysApply: true
 ---
 
 # Architecture (IS_01)
 
 | Layer | Path | Stack |
-|--------|------|--------|
+|-------|------|--------|
 | Web | `apps/web` | Next.js 14 App Router, React 18, Tailwind, Zustand |
 | API | `apps/api` | NestJS 10, Prisma, PostgreSQL |
-| Domain | `packages/is-domain` | Shared TS types/build output → `dist/` |
+| Domain | `packages/is-domain` | Shared TS → `dist/` |
 | AI (Phase 2) | `apps/ai` | FastAPI (stub / future) |
-| Twenty CRM | `twenty/` | Submodule / upstream app; own `.cursor` rules |
+| Twenty CRM | `twenty/` | Submodule; own `.cursor` rules |
 
-**Monorepo root**: `package.json` scripts orchestrate `preflight`, `dev:web`, `dev:api`, `start:dev`, DB scripts. **No root `src/`** — app code lives under `apps/*` and `packages/*`.
+**Monorepo root**: `package.json` scripts — `preflight`, `dev:web`, `dev:api`, `start:dev`, DB scripts. **No root `src/`** — code under `apps/*`, `packages/*`.
 
-**Docs**: `README.md`, `ARCHITECTURE.md`, `docs/GLOSSARY.md`, `AGENTS.md` (MVP priority).
+**Docs**: `README.md`, `ARCHITECTURE.md`, `docs/GLOSSARY.md`, `AGENTS.md` (MVP).

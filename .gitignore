@@ -32,8 +32,9 @@ pnpm-debug.log*
 # Cursor
 .cursor/cache/
 **/.cursor/cache/
-.cursor/*.log
 
-# Local temp
-*.tmp
-.temp/
+# Editor / temp
+*.swp
+*~
+.turbo/
+.cache/

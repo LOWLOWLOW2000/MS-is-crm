@@ -1,12 +1,12 @@
 ---
-description: Git workflow — Conventional Commits, hygiene
+description: Git workflow and hygiene
 alwaysApply: true
 ---
 
 # Git
 
-- **Commits**: Conventional Commits — `feat:` `fix:` `chore:` `docs:` `refactor:` `test:` `ci:` (optional scope: `chore(web): …`)
-- **Messages**: imperative mood, one logical change per commit; body only when context needed
-- **Branches**: `main` protected; feature `feat/short-topic`, fix `fix/issue-123-short`
+- **Commits**: Conventional Commits — `feat:` `fix:` `chore:` `docs:` `refactor:` `test:` `ci:` (optional scope `chore(web): …`)
+- **Messages**: imperative; one logical change; body only when needed
+- **Branches**: `main` protected; `feat/short-topic`, `fix/issue-123-short`
 - **Pre-commit**: no `node_modules`, build dirs, `.env*`, logs, `.cursor/cache/`
-- **PRs**: small diffs; link issue; note Web/API/DB impact when relevant
+- **PRs**: small diffs; link issue; note Web/API/DB impact
