@@ -76,7 +76,7 @@ export class DirectorController {
     {
       id: string
       type: 'appointment' | 'material'
-      createdAt: string
+      resultCapturedAt: string
       companyName: string
       targetUrl: string
       memo: string

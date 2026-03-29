@@ -61,6 +61,11 @@ export function DashboardMenuLinks() {
               </Link>
             </li>
             <li>
+              <Link href="/is/workspace" className={linkClass}>
+                ISワークスペース（トーク／フォローアップ／リスト）
+              </Link>
+            </li>
+            <li>
               <Link href="/dashboard/calendar" className={linkClass}>
                 カレンダー（稼働・予定）
               </Link>
@@ -135,6 +140,11 @@ export function DashboardMenuLinks() {
               <li>
                 <Link href="/director/requests" className={linkClass}>
                   アポ・資料請求 管理
+                </Link>
+              </li>
+              <li>
+                <Link href="/director/reporting-formats" className={linkClass}>
+                  ★報告フォーマット編集
                 </Link>
               </li>
               <li>

@@ -178,7 +178,7 @@ export default function DirectorRequestsPage() {
               <tr>
                 <th className="border-b border-gray-200 px-4 py-2">既読</th>
                 <th className="border-b border-gray-200 px-4 py-2">種別</th>
-                <th className="border-b border-gray-200 px-4 py-2">日時</th>
+                <th className="border-b border-gray-200 px-4 py-2">アポ取得日時</th>
                 <th className="border-b border-gray-200 px-4 py-2">会社名</th>
                 <th className="border-b border-gray-200 px-4 py-2">担当IS</th>
                 <th className="border-b border-gray-200 px-4 py-2">URL</th>
@@ -220,7 +220,7 @@ export default function DirectorRequestsPage() {
                         {formatTypeJa(r.type)}
                       </span>
                     </td>
-                    <td className="border-b border-gray-100 px-4 py-2 text-gray-700">{formatIso(r.createdAt)}</td>
+                    <td className="border-b border-gray-100 px-4 py-2 text-gray-700">{formatIso(r.resultCapturedAt)}</td>
                     <td className="border-b border-gray-100 px-4 py-2 font-medium text-gray-900">{r.companyName}</td>
                     <td className="border-b border-gray-100 px-4 py-2 text-gray-700">{r.createdByName ?? '—'}</td>
                     <td className="border-b border-gray-100 px-4 py-2">

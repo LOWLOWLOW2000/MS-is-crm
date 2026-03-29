@@ -1,0 +1,15 @@
+---
+description: Core coding — TS, React, Tailwind, quality bar
+alwaysApply: true
+---
+
+# Core
+
+- **TS**: semicolons off; `interface` > `type` for extensible shapes; no `any` (use `unknown` + guards); destructure objects
+- **Style**: functional bias (`map`/`filter`/`reduce`); side effects at edges
+- **UI**: Tailwind only (no inline `style` except animation exceptions); `cn`/`clsx` for long class strings
+- **Names**: English camelCase / PascalCase / UPPER_SNAKE; no Japanese identifiers
+- **Comments**: JSDoc on exported APIs only; skip noise on obvious code
+- **Debug**: no committed `console.log`; use `// DEBUG:` only locally
+- **Tests**: Vitest where practical; `*.test.ts` / `*.spec.ts` colocated
+- **Secrets**: env only; never commit `.env`

@@ -66,7 +66,8 @@ export type DirectorRequestType = 'appointment' | 'material'
 export type DirectorRequestRow = {
   id: string
   type: DirectorRequestType
-  createdAt: string
+  /** 架電結果の記録日時（面談アポ日時とは別） */
+  resultCapturedAt: string
   companyName: string
   targetUrl: string
   memo: string
@@ -82,6 +83,13 @@ export type DirectorRequestSummary = {
   unreadMaterial: number
 }
 
+/** IS 向け: 自分のアポ・資料送付件数（calling/my-appointment-material/summary） */
+export interface MyAppointmentMaterialSummary {
+  total: number
+  appointment: number
+  material: number
+}
+
 export interface SaveCallingRecordInput {
   companyName: string;
   companyPhone: string;
@@ -93,6 +101,8 @@ export interface SaveCallingRecordInput {
   /** 指定時は ListItem.callingResult を更新（架電ルームと配布の整合） */
   listItemId?: string;
   memo?: string;
+  /** アポ／資料などテナントフォーマットに沿ったキー値 */
+  structuredReport?: Record<string, unknown>;
   nextCallAt?: string;
 }
 
@@ -110,9 +120,17 @@ export interface CallingRecord {
   approvedBy: string | null;
   result: CallingResultType;
   memo: string;
+  structuredReport: Record<string, unknown> | null;
   nextCallAt: string | null;
-  createdAt: string;
+  /** 架電結果の記録日時（面談アポ日時とは別） */
+  resultCapturedAt: string;
   updatedAt: string;
+}
+
+/** GET /calling/reporting-formats の1行 */
+export interface ReportingFormatDefinitionRow {
+  kind: string
+  schemaJson: Record<string, unknown>
 }
 
 /** L1: 企業グループ（Ultimate Parent） */

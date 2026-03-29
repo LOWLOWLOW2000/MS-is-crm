@@ -104,6 +104,23 @@ export const authOptions: NextAuthOptions = {
     ...oauthProviders,
   ],
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith('/')) {
+        const pathOnly = (url.split('?')[0] ?? url) || '/'
+        if (pathOnly === '/' || pathOnly === '') return `${baseUrl}/pj-switch`
+        return `${baseUrl}${url}`
+      }
+      try {
+        const parsed = new URL(url)
+        if (parsed.origin === baseUrl) {
+          if (parsed.pathname === '/' || parsed.pathname === '') return `${baseUrl}/pj-switch`
+          return url
+        }
+      } catch {
+        // ignore invalid URL
+      }
+      return `${baseUrl}/pj-switch`
+    },
     async signIn({ account, profile, user }) {
       const oauthProviders = ['google', 'azure-ad'];
       if (!account?.provider || !oauthProviders.includes(account.provider)) {

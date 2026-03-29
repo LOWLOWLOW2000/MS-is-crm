@@ -136,7 +136,7 @@ export class ReportsService {
 
     const tenantRecords = await this.callingService.getTenantRecords(user.tenantId);
     const periodRecords = tenantRecords.filter((record: CallingRecord) => {
-      const createdMs = new Date(record.createdAt).getTime();
+      const createdMs = new Date(record.resultCapturedAt).getTime();
       return createdMs >= startMs && createdMs <= endMs;
     });
 
@@ -183,7 +183,7 @@ export class ReportsService {
 
     const tenantRecords = await this.callingService.getTenantRecords(user.tenantId);
     const periodRecords = tenantRecords.filter((record: CallingRecord) => {
-      const createdMs = new Date(record.createdAt).getTime();
+      const createdMs = new Date(record.resultCapturedAt).getTime();
       return createdMs >= startMs && createdMs <= endMs;
     });
 
@@ -276,14 +276,14 @@ export class ReportsService {
     const tenantRecords = await this.callingService.getTenantRecords(user.tenantId)
     const filtered = tenantRecords.filter((record) => {
       if (scope === 'personal' && record.createdBy !== user.sub) return false
-      const createdMs = new Date(record.createdAt).getTime()
+      const createdMs = new Date(record.resultCapturedAt).getTime()
       return createdMs >= startMs && createdMs <= endMs
     })
 
     const byDate = new Map<string, Omit<KpiTimeseriesPointDto, 'date'>>()
     for (const record of filtered) {
-      const createdAt = new Date(record.createdAt)
-      const key = this.toDateKeyUtc(createdAt)
+      const capturedAt = new Date(record.resultCapturedAt)
+      const key = this.toDateKeyUtc(capturedAt)
       const cur = byDate.get(key) ?? {
         totalCalls: 0,
         connectedCount: 0,
@@ -342,7 +342,7 @@ export class ReportsService {
         if (!record) return []
 
         const evaluatedAt = this.toIsoStringOrNull(e.evaluatedAt)
-        const callDate = this.toIsoStringOrNull(record.createdAt) ?? new Date(0).toISOString()
+        const callDate = this.toIsoStringOrNull(record.resultCapturedAt) ?? new Date(0).toISOString()
       const categoryScores = this.sanitizeCategoryScores(e.categoryScores)
       const avgScore =
         categoryScores.length > 0

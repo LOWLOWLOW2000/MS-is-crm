@@ -521,7 +521,7 @@ async function seedThreeMonthsProjectDemo(hashedPassword: string, now: string): 
           nextCallAt,
           directorReadAt: null,
           directorReadBy: null,
-          createdAt,
+          resultCapturedAt: createdAt,
           updatedAt: now,
         })
         if (batch.length >= 1000) {
@@ -568,7 +568,7 @@ async function seedAiScorecardDemo(now: string): Promise<void> {
       result: 'connected',
       memo: 'seed: ai-scorecard demo record',
       nextCallAt: null,
-      createdAt: callAt,
+      resultCapturedAt: callAt,
       updatedAt: now,
     },
     update: {
@@ -582,7 +582,7 @@ async function seedAiScorecardDemo(now: string): Promise<void> {
       result: 'connected',
       memo: 'seed: ai-scorecard demo record',
       nextCallAt: null,
-      createdAt: callAt,
+      resultCapturedAt: callAt,
       updatedAt: now,
     },
   });
@@ -698,7 +698,7 @@ async function seedDirectorUnreadRequests(now: string): Promise<void> {
         nextCallAt: null,
         directorReadAt: null,
         directorReadBy: null,
-        createdAt: baseCreatedAt,
+        resultCapturedAt: baseCreatedAt,
         updatedAt: now,
       },
       update: {
@@ -712,7 +712,7 @@ async function seedDirectorUnreadRequests(now: string): Promise<void> {
         nextCallAt: null,
         directorReadAt: null,
         directorReadBy: null,
-        createdAt: baseCreatedAt,
+        resultCapturedAt: baseCreatedAt,
         updatedAt: now,
       },
     })
@@ -934,7 +934,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
         result: item.result,
         memo: `seed: ${item.companyName}`,
         nextCallAt: null,
-        createdAt: item.callDate,
+        resultCapturedAt: item.callDate,
         updatedAt: now,
       },
       update: {
@@ -944,7 +944,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
         approvedAt: item.callDate,
         approvedBy: tarou.id,
         memo: `seed: ${item.companyName}`,
-        createdAt: item.callDate,
+        resultCapturedAt: item.callDate,
         updatedAt: now,
       },
     })
@@ -978,7 +978,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
  * KPIページ（/kpi）用: ReportByMember 集計に効く架電履歴サンプル。
  * - 太郎: 当日 100件超（実運用想定）+ 週内・月内に少数（期間切替の差分）
  * - PJAA IS01: 当日は中程度（ランキング差）
- * - createdAt を当日 0時〜現在までに均等分散
+ * - resultCapturedAt（架電結果の記録日時）を当日 0時〜現在までに均等分散
  * - 再接続予定は nextCallAt を未来日時に設定（再加電取得率）
  */
 async function seedKabushikiAaKpiDemo(now: string): Promise<void> {
@@ -1121,7 +1121,7 @@ async function seedKabushikiAaKpiDemo(now: string): Promise<void> {
         result: row.result,
         memo: 'seed: KPI page demo',
         nextCallAt: row.nextCallAt,
-        createdAt,
+        resultCapturedAt: createdAt,
         updatedAt: now,
       },
       update: {
@@ -1134,7 +1134,7 @@ async function seedKabushikiAaKpiDemo(now: string): Promise<void> {
         approvedBy: row.createdBy,
         memo: 'seed: KPI page demo',
         nextCallAt: row.nextCallAt,
-        createdAt,
+        resultCapturedAt: createdAt,
         updatedAt: now,
       },
     })

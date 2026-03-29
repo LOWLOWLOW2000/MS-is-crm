@@ -3,13 +3,13 @@
 import { useRef, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
+import { signOut, useSession } from 'next-auth/react'
 import { MockNav } from './MockNav'
 import { FooterChatRollup } from './FooterChatRollup'
 import { DailyKpiSection } from './DailyKpiSection'
 import { fetchMyProfile } from '@/lib/calling-api'
 
-/** 認証済みユーザーの PJ 配役状態（未アサイン時は /pj-switch のみ許可し左ナビを隠す） */
+/** 認証済みの PJ 配役（アサイン済みなら左メインナビ表示。未アサインは /pj-switch 中心・管理者のみ /admin 例外） */
 type PjAssignmentGate = 'idle' | 'loading' | 'assigned' | 'unassigned' | 'error'
 
 function pathAllowedWithoutPjAssignment(path: string, roles: string[]): boolean {
@@ -54,8 +54,17 @@ export function MockShell({
   const [profileRoles, setProfileRoles] = useState<string[]>([])
   const profileRef = useRef<HTMLDivElement>(null)
 
-  const hideLeftNavForNoPjAssignment =
-    status === 'authenticated' && pjGate === 'unassigned'
+  const isAdminRole =
+    profileRoles.includes('enterprise_admin') || profileRoles.includes('director')
+
+  const showMainLeftNav =
+    status === 'authenticated' &&
+    pjGate !== 'loading' &&
+    pjGate !== 'idle' &&
+    pjGate !== 'error' &&
+    (pjGate === 'assigned' || (isAdminRole && pathname.startsWith('/admin')))
+
+  const hideLeftNav = status === 'authenticated' && !showMainLeftNav
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -112,7 +121,9 @@ export function MockShell({
   }, [session?.accessToken, status])
 
   useEffect(() => {
-    if (status !== 'authenticated' || pjGate !== 'unassigned') return
+    if (status !== 'authenticated') return
+    if (pjGate === 'loading' || pjGate === 'idle') return
+    if (pjGate !== 'unassigned') return
     if (pathAllowedWithoutPjAssignment(pathname, profileRoles)) return
     router.replace('/pj-switch')
   }, [status, pjGate, pathname, profileRoles, router])
@@ -186,14 +197,17 @@ export function MockShell({
               >
                 プロフィール設定
               </Link>
-              <Link
-                href="/login"
-                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              <button
+                type="button"
+                className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
                 role="menuitem"
-                onClick={() => setProfilePopupOpen(false)}
+                onClick={() => {
+                  setProfilePopupOpen(false)
+                  void signOut({ callbackUrl: '/login' })
+                }}
               >
                 ログアウト（アカウント変更）
-              </Link>
+              </button>
             </div>
           )}
         </div>
@@ -206,7 +220,7 @@ export function MockShell({
             hideScrollbars ? 'min-h-0 overflow-hidden' : 'min-h-[calc(100dvh-3.5rem)]'
           }`}
         >
-          {hideLeftNavForNoPjAssignment ? null : (
+          {hideLeftNav ? null : (
             <div
               className={`flex min-h-0 shrink-0 flex-col border-r border-gray-200 bg-white ${leftColWidth} ${
                 hideScrollbars ? 'overflow-y-auto scrollbar-none' : ''

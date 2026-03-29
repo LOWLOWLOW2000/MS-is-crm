@@ -116,7 +116,7 @@ export class DirectorService {
     {
       id: string
       type: 'appointment' | 'material'
-      createdAt: string
+      resultCapturedAt: string
       companyName: string
       targetUrl: string
       memo: string
@@ -133,11 +133,11 @@ export class DirectorService {
         tenantId: user.tenantId,
         result: { in: ['アポ', '資料送付'] },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { resultCapturedAt: 'desc' },
       take: 200,
       select: {
         callingHistoryId: true,
-        createdAt: true,
+        resultCapturedAt: true,
         companyName: true,
         targetUrl: true,
         memo: true,
@@ -160,7 +160,7 @@ export class DirectorService {
     return rows.map((r) => ({
       id: r.callingHistoryId,
       type: r.result === 'アポ' ? 'appointment' : 'material',
-      createdAt: r.createdAt,
+      resultCapturedAt: r.resultCapturedAt,
       companyName: r.companyName,
       targetUrl: r.targetUrl,
       memo: r.memo,

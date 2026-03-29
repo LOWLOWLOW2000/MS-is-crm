@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -7,10 +8,13 @@ import {
   NotFoundException,
   Param,
   Post,
+  Put,
+  Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { hasAnyRole } from '../common/auth/role-utils';
 import { UserRole } from '../common/enums/user-role.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -25,6 +29,8 @@ import { CallingService } from './calling.service';
 import { CreateListReviewCompletionDto } from './dto/create-list-review-completion.dto'
 import { CreateHelpRequestDto } from './dto/create-help-request.dto';
 import { CreateCallingRecordDto } from './dto/create-calling-record.dto';
+import { UpsertListItemDirectorNoteDto } from './dto/upsert-list-item-director-note.dto';
+import { UpsertReportingFormatBodyDto } from './dto/upsert-reporting-format-body.dto';
 import { CreateTranscriptionDto } from './dto/create-transcription.dto';
 import { DialValidationResultDto } from './dto/dial-validation-result.dto';
 import { ValidateDialDto } from './dto/validate-dial.dto';
@@ -60,6 +66,33 @@ export class CallingController {
     }
   };
 
+  /** 自分のアポ・資料一覧（作成者スコープ）。ナビ上は IS 枠と重なるため director / enterprise_admin も許可 */
+  private assertCanViewOwnAppointmentMaterial = (user: JwtPayload): void => {
+    if (
+      !hasAnyRole(user, [
+        UserRole.IsMember,
+        UserRole.IsAdmin,
+        UserRole.Developer,
+        UserRole.Director,
+        UserRole.EnterpriseAdmin,
+      ])
+    ) {
+      throw new ForbiddenException('この操作はログインユーザーのみ可能です');
+    }
+  };
+
+  /** 架電記録エクスポート: self は IS 相当ロール、tenant はディレクター／管理者 */
+  private assertCanExportCallingRecords = (user: JwtPayload, scope: 'self' | 'tenant'): void => {
+    if (scope === 'self') {
+      this.assertCanViewOwnAppointmentMaterial(user);
+      return;
+    }
+    const allowed = [UserRole.Director, UserRole.IsAdmin, UserRole.EnterpriseAdmin, UserRole.Developer];
+    if (!hasAnyRole(user, allowed)) {
+      throw new ForbiddenException('テナント全体のエクスポートはディレクターまたは管理者のみ可能です');
+    }
+  };
+
   @Post('list-review-completions')
   async createListReviewCompletion(
     @Req() req: JwtRequest,
@@ -92,12 +125,158 @@ export class CallingController {
     }
   }
 
+  /** 架電記録の CSV / Excel エクスポート（`records/:id/...` より先に定義） */
+  @Get('records/export')
+  async exportCallingRecords(
+    @Req() req: JwtRequest,
+    @Res() res: Response,
+    @Query('format') formatRaw?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('scope') scopeRaw?: string,
+  ): Promise<void> {
+    const format =
+      formatRaw === 'xlsx' ? 'xlsx' : formatRaw === 'csv' ? 'csv' : formatRaw === 'pdf' ? 'pdf' : null;
+    if (!format) {
+      throw new BadRequestException('format は csv / xlsx / pdf のいずれかを指定してください');
+    }
+    const scope = scopeRaw === 'tenant' ? 'tenant' : 'self';
+    this.assertCanExportCallingRecords(req.user, scope);
+    try {
+      const { buffer, filename, mime } = await this.callingService.exportCallingRecords(req.user, {
+        format,
+        from,
+        to,
+        scope,
+      });
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.send(buffer);
+    } catch (error) {
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException('架電記録のエクスポートに失敗しました');
+    }
+  }
+
+  @Get('reporting-formats')
+  async getReportingFormats(
+    @Req() req: JwtRequest,
+  ): Promise<{ kind: string; schemaJson: Record<string, unknown> }[]> {
+    this.assertCanViewOwnAppointmentMaterial(req.user);
+    try {
+      return await this.callingService.getReportingFormats(req.user);
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error;
+      throw new InternalServerErrorException('報告フォーマットの取得に失敗しました');
+    }
+  }
+
+  @Put('reporting-formats/:kind')
+  async putReportingFormat(
+    @Req() req: JwtRequest,
+    @Param('kind') kind: string,
+    @Body() dto: UpsertReportingFormatBodyDto,
+  ): Promise<{ kind: string; schemaJson: Record<string, unknown> }> {
+    this.assertDirectorOrAdmin(req.user);
+    try {
+      return await this.callingService.upsertReportingFormat(req.user, kind, dto.schemaJson);
+    } catch (error) {
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException('報告フォーマットの保存に失敗しました');
+    }
+  }
+
+  @Get('list-items/:listItemId/director-note')
+  async getListItemDirectorNote(
+    @Req() req: JwtRequest,
+    @Param('listItemId') listItemId: string,
+  ): Promise<{ listItemId: string; bodyMarkdown: string; updatedAt: string }> {
+    this.assertCanViewOwnAppointmentMaterial(req.user);
+    try {
+      return await this.callingService.getListItemDirectorNote(req.user, listItemId);
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('ディレクターノートの取得に失敗しました');
+    }
+  }
+
+  @Put('list-items/:listItemId/director-note')
+  async putListItemDirectorNote(
+    @Req() req: JwtRequest,
+    @Param('listItemId') listItemId: string,
+    @Body() dto: UpsertListItemDirectorNoteDto,
+  ): Promise<{ listItemId: string; bodyMarkdown: string; updatedAt: string }> {
+    this.assertDirectorOrAdmin(req.user);
+    try {
+      return await this.callingService.upsertListItemDirectorNote(req.user, listItemId, dto.bodyMarkdown);
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('ディレクターノートの保存に失敗しました');
+    }
+  }
+
   @Get('summary')
   async getCallingSummary(@Req() req: JwtRequest): Promise<CallingSummaryDto> {
     try {
       return await this.callingService.getSummary(req.user);
     } catch (error) {
       throw new InternalServerErrorException('架電サマリーの取得に失敗しました');
+    }
+  }
+
+  /** IS 向け: 自分のアポ・資料送付の件数サマリ */
+  @Get('my-appointment-material/summary')
+  async getMyAppointmentMaterialSummary(
+    @Req() req: JwtRequest,
+  ): Promise<{ total: number; appointment: number; material: number }> {
+    this.assertCanViewOwnAppointmentMaterial(req.user);
+    try {
+      return await this.callingService.getMyAppointmentMaterialSummary(req.user);
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error;
+      throw new InternalServerErrorException('アポ・資料サマリの取得に失敗しました');
+    }
+  }
+
+  /** IS 向け: 自分のアポ・資料送付の一覧（任意 query type=appointment|material） */
+  @Get('my-appointment-material')
+  async getMyAppointmentMaterial(
+    @Req() req: JwtRequest,
+    @Query('type') typeRaw?: string,
+  ): Promise<
+    {
+      id: string;
+      type: 'appointment' | 'material';
+      resultCapturedAt: string;
+      companyName: string;
+      targetUrl: string;
+      memo: string;
+      createdByUserId: string;
+      createdByName?: string;
+      isRead: boolean;
+      directorReadAt: string | null;
+    }[]
+  > {
+    this.assertCanViewOwnAppointmentMaterial(req.user);
+    const type =
+      typeRaw === 'appointment' ? 'appointment' : typeRaw === 'material' ? 'material' : undefined;
+    try {
+      return await this.callingService.getMyAppointmentMaterialRecords(req.user, type);
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error;
+      throw new InternalServerErrorException('アポ・資料一覧の取得に失敗しました');
     }
   }
 

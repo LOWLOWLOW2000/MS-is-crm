@@ -13,6 +13,7 @@ import {
   restoreLatestCompanySnapshot,
   updateCompany,
 } from '@/lib/calling-api'
+import { SALES_ROOM_V2_BASE } from '@/lib/sales-room-paths'
 import type { CompanyDetailResponse, ListItem } from '@/lib/types'
 import { findDuplicateEstablishmentPhones } from '../_lib/company-contact-dedupe'
 
@@ -1155,7 +1156,14 @@ export const CompanyDetailTemplate: React.FC<CompanyDetailTemplateProps> = ({
           </section>
 
           {/* 行動結果・メモ（左メイン内） */}
-          <SalesRoomActionResultPanel />
+          <SalesRoomActionResultPanel
+            companyName={displayCompanyName}
+            pageLink={SALES_ROOM_V2_BASE}
+            listItemId={listItemId || undefined}
+            companyPhone={listItem?.phone}
+            companyAddress={displayAddress}
+            targetUrl={listItem?.targetUrl}
+          />
         </div>
 
         <CompanyDetailRightPanel

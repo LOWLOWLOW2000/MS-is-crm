@@ -20,7 +20,10 @@ export interface CallingRecord {
   /** 架電結果（正規名 11 種） */
   result: CallingResultType;
   memo: string;
+  /** フォーマット沿いのキー値（任意） */
+  structuredReport: Record<string, unknown> | null;
   nextCallAt: string | null;
-  createdAt: string;
+  /** 架電結果の記録日時（面談アポ日時とは別） */
+  resultCapturedAt: string;
   updatedAt: string;
 }

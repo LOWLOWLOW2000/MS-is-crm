@@ -1,0 +1,12 @@
+---
+description: IS_01 — rule index (precedence, scope)
+alwaysApply: true
+---
+
+# Rules
+
+1. `.cursor/rules/architecture.mdc` — stack, paths, workspaces
+2. `.cursor/rules/core.mdc` — TypeScript, React, Tailwind, tests
+3. `.cursor/rules/git.mdc` — commits, branches, ignore/cache
+
+Path-scoped rules (`sales-room`, `design-system-figma`, `twenty/*`) win on their globs. Token budget: be concise; no duplicate essays across files.

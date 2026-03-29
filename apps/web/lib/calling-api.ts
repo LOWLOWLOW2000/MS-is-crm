@@ -30,6 +30,8 @@ import {
   UpdateCompanyResult,
   DirectorRequestRow,
   DirectorRequestSummary,
+  MyAppointmentMaterialSummary,
+  ReportingFormatDefinitionRow,
   KpiGoal,
   KpiGoalMatrix,
   KpiGoalScope,
@@ -144,11 +146,126 @@ export const saveCallingRecord = async (
   });
 
   if (!response.ok) {
-    throw new Error('架電記録の保存に失敗しました');
+    const message = await readApiErrorMessage(response, '架電記録の保存に失敗しました')
+    throw new Error(message)
   }
 
-  return (await response.json()) as CallingRecord;
-};
+  return (await response.json()) as CallingRecord
+}
+
+/**
+ * テナントの報告フォーマット定義（未作成テナントは API 側で既定行を生成）
+ */
+export const fetchReportingFormats = async (
+  accessToken: string,
+): Promise<ReportingFormatDefinitionRow[]> => {
+  const response = await fetch(`${apiBaseUrl}/calling/reporting-formats`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, '報告フォーマットの取得に失敗しました')
+    throw new Error(message)
+  }
+  return (await response.json()) as ReportingFormatDefinitionRow[]
+}
+
+/**
+ * 報告フォーマット定義の更新（ディレクター／管理者）
+ */
+export const upsertReportingFormat = async (
+  accessToken: string,
+  kind: string,
+  schemaJson: Record<string, unknown>,
+): Promise<ReportingFormatDefinitionRow> => {
+  const response = await fetch(`${apiBaseUrl}/calling/reporting-formats/${encodeURIComponent(kind)}`, {
+    method: 'PUT',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify({ schemaJson }),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, '報告フォーマットの保存に失敗しました')
+    throw new Error(message)
+  }
+  return (await response.json()) as ReportingFormatDefinitionRow
+}
+
+export interface ListItemDirectorNoteResponse {
+  listItemId: string
+  bodyMarkdown: string
+  updatedAt: string
+}
+
+export const fetchListItemDirectorNote = async (
+  accessToken: string,
+  listItemId: string,
+): Promise<ListItemDirectorNoteResponse> => {
+  const response = await fetch(
+    `${apiBaseUrl}/calling/list-items/${encodeURIComponent(listItemId)}/director-note`,
+    {
+      method: 'GET',
+      headers: createAuthHeaders(accessToken),
+      cache: 'no-store',
+    },
+  )
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, 'ディレクターノートの取得に失敗しました')
+    throw new Error(message)
+  }
+  return (await response.json()) as ListItemDirectorNoteResponse
+}
+
+export interface CallingRecordsExportOptions {
+  format: 'csv' | 'xlsx'
+  scope?: 'self' | 'tenant'
+  from?: string
+  to?: string
+}
+
+/**
+ * 架電記録を CSV / Excel でダウンロード（ブラウザが Blob を保存）
+ */
+export const downloadCallingRecordsExport = async (
+  accessToken: string,
+  opts: CallingRecordsExportOptions,
+): Promise<void> => {
+  const params = new URLSearchParams()
+  params.set('format', opts.format)
+  params.set('scope', opts.scope ?? 'self')
+  const from = opts.from?.trim()
+  const to = opts.to?.trim()
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  const response = await fetch(`${apiBaseUrl}/calling/records/export?${params}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, 'エクスポートに失敗しました')
+    throw new Error(message)
+  }
+  const blob = await response.blob()
+  let filename = opts.format === 'xlsx' ? 'calling-records.xlsx' : 'calling-records.csv'
+  const cd = response.headers.get('Content-Disposition')
+  const m = cd?.match(/filename\*=UTF-8''([^;]+)|filename="([^"]+)"/i)
+  const rawName = m?.[1] ?? m?.[2]
+  if (rawName) {
+    try {
+      filename = decodeURIComponent(rawName.replace(/"/g, ''))
+    } catch {
+      filename = rawName.replace(/"/g, '')
+    }
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 export const fetchCallingSummary = async (accessToken: string): Promise<CallingSummary> => {
   const response = await fetch(`${apiBaseUrl}/calling/summary`, {
@@ -293,6 +410,42 @@ export const markDirectorRequestsAsRead = async (
   }
 
   return (await response.json()) as { updated: number }
+}
+
+export const fetchMyAppointmentMaterialSummary = async (
+  accessToken: string,
+): Promise<MyAppointmentMaterialSummary> => {
+  const response = await fetch(`${apiBaseUrl}/calling/my-appointment-material/summary`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, 'アポ・資料サマリの取得に失敗しました')
+    throw new Error(message)
+  }
+
+  return (await response.json()) as MyAppointmentMaterialSummary
+}
+
+export const fetchMyAppointmentMaterial = async (
+  accessToken: string,
+  type?: 'appointment' | 'material',
+): Promise<DirectorRequestRow[]> => {
+  const qs = type ? `?type=${encodeURIComponent(type)}` : ''
+  const response = await fetch(`${apiBaseUrl}/calling/my-appointment-material${qs}`, {
+    method: 'GET',
+    headers: createAuthHeaders(accessToken),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const message = await readApiErrorMessage(response, 'アポ・資料一覧の取得に失敗しました')
+    throw new Error(message)
+  }
+
+  return (await response.json()) as DirectorRequestRow[]
 }
 
 export const joinHelpRequest = async (

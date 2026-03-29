@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import ExcelJS from 'exceljs';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { CreateListReviewCompletionDto } from './dto/create-list-review-completion.dto'
 import { CreateHelpRequestDto } from './dto/create-help-request.dto';
@@ -12,9 +13,13 @@ import { CallingSummaryDto } from './dto/calling-summary.dto';
 import { normalizeCallingResult, type CallingResultType } from './calling-result-canonical';
 import { isConnectedResult } from './calling-result-helpers';
 import { CallingRecord } from './entities/calling-record.entity';
+import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 const HELP_STATUS_ORDER = { waiting: 0, joined: 1, closed: 2 } as const;
+
+const REPORTING_FORMAT_KINDS = ['common_header', 'appointment', 'material_request'] as const;
+type ReportingFormatKind = (typeof REPORTING_FORMAT_KINDS)[number];
 
 /** リスト明細の進捗を「除外」に寄せる架電結果（★架電ルーム正規名） */
 const LIST_ITEM_EXCLUDED_RESULTS: ReadonlySet<CallingResultType> = new Set([
@@ -116,8 +121,9 @@ export class CallingService {
     approvedBy: string | null;
     result: string;
     memo: string;
+    structuredReport: unknown;
     nextCallAt: string | null;
-    createdAt: string;
+    resultCapturedAt: string;
     updatedAt: string;
   }): CallingRecord => ({
     callingHistoryId: row.callingHistoryId,
@@ -132,8 +138,14 @@ export class CallingService {
     approvedBy: row.approvedBy,
     result: normalizeCallingResult(row.result),
     memo: row.memo,
+    structuredReport:
+      row.structuredReport !== null &&
+      typeof row.structuredReport === 'object' &&
+      !Array.isArray(row.structuredReport)
+        ? (row.structuredReport as Record<string, unknown>)
+        : null,
     nextCallAt: row.nextCallAt,
-    createdAt: row.createdAt,
+    resultCapturedAt: row.resultCapturedAt,
     updatedAt: row.updatedAt,
   });
 
@@ -278,8 +290,12 @@ export class CallingService {
         approvedBy: dto.approved ? user.sub : null,
         result: dto.result,
         memo: dto.memo ?? '',
+        structuredReport:
+          dto.structuredReport !== undefined
+            ? (dto.structuredReport as Prisma.InputJsonValue)
+            : undefined,
         nextCallAt: dto.nextCallAt ?? null,
-        createdAt: now,
+        resultCapturedAt: now,
         updatedAt: now,
       },
     });
@@ -307,7 +323,7 @@ export class CallingService {
     const todayStart = today.toISOString();
 
     const todayRecords = await this.prisma.callingRecord.findMany({
-      where: { tenantId: user.tenantId, createdAt: { gte: todayStart } },
+      where: { tenantId: user.tenantId, resultCapturedAt: { gte: todayStart } },
     });
 
     const connectedCount = todayRecords.filter((r) => isConnectedResult(r.result)).length;
@@ -327,7 +343,7 @@ export class CallingService {
   getTenantRecords = async (tenantId: string): Promise<CallingRecord[]> => {
     const rows = await this.prisma.callingRecord.findMany({
       where: { tenantId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { resultCapturedAt: 'desc' },
     });
     return rows.map((r) => this.toRecord(r));
   };
@@ -390,6 +406,288 @@ export class CallingService {
       transcriptionText: row.transcriptionText,
       transcribedAt: row.transcribedAt,
       durationSeconds: row.durationSeconds,
+    };
+  };
+
+  /**
+   * IS 向け: ログインユーザーが作成したアポ / 資料送付の架電記録のみ（テナント内）
+   */
+  getMyAppointmentMaterialRecords = async (
+    user: JwtPayload,
+    type?: 'appointment' | 'material',
+  ): Promise<
+    {
+      id: string
+      type: 'appointment' | 'material'
+      resultCapturedAt: string
+      companyName: string
+      targetUrl: string
+      memo: string
+      createdByUserId: string
+      createdByName?: string
+      isRead: boolean
+      directorReadAt: string | null
+    }[]
+  > => {
+    const results =
+      type === 'appointment' ? (['アポ'] as const) : type === 'material' ? (['資料送付'] as const) : (['アポ', '資料送付'] as const)
+
+    const rows = await this.prisma.callingRecord.findMany({
+      where: {
+        tenantId: user.tenantId,
+        createdBy: user.sub,
+        result: { in: [...results] },
+      },
+      orderBy: { resultCapturedAt: 'desc' },
+      take: 200,
+      select: {
+        callingHistoryId: true,
+        resultCapturedAt: true,
+        companyName: true,
+        targetUrl: true,
+        memo: true,
+        createdBy: true,
+        result: true,
+        directorReadAt: true,
+      },
+    })
+
+    const selfRow = await this.prisma.user.findFirst({
+      where: { id: user.sub, tenantId: user.tenantId },
+      select: { name: true },
+    })
+    const selfName = selfRow?.name
+
+    return rows.map((r) => ({
+      id: r.callingHistoryId,
+      type: r.result === 'アポ' ? ('appointment' as const) : ('material' as const),
+      resultCapturedAt: r.resultCapturedAt,
+      companyName: r.companyName,
+      targetUrl: r.targetUrl,
+      memo: r.memo,
+      createdByUserId: r.createdBy,
+      createdByName: selfName,
+      isRead: true,
+      directorReadAt: r.directorReadAt,
+    }))
+  }
+
+  /** IS 向け: 自分のアポ・資料送付件数（フィルタ用ステ表示） */
+  getMyAppointmentMaterialSummary = async (user: JwtPayload): Promise<{
+    total: number
+    appointment: number
+    material: number
+  }> => {
+    const base = { tenantId: user.tenantId, createdBy: user.sub }
+    const [appointment, material] = await Promise.all([
+      this.prisma.callingRecord.count({ where: { ...base, result: 'アポ' } }),
+      this.prisma.callingRecord.count({ where: { ...base, result: '資料送付' } }),
+    ])
+    return { total: appointment + material, appointment, material }
+  }
+
+  private defaultSchemaJsonForKind = (kind: ReportingFormatKind): Record<string, unknown> => {
+    if (kind === 'appointment') {
+      return {
+        fields: [
+          { id: 'meetingAt', label: '面談日時', type: 'text', required: false },
+          { id: 'meetingPlace', label: '場所', type: 'text', required: false },
+        ],
+      };
+    }
+    if (kind === 'material_request') {
+      return {
+        fields: [
+          { id: 'deliveryMethod', label: '送付方法', type: 'text', required: false },
+          { id: 'materialName', label: '資料名', type: 'text', required: false },
+        ],
+      };
+    }
+    return {
+      fields: [{ id: 'caseNote', label: '案件メモ（共通）', type: 'textarea', required: false }],
+    };
+  };
+
+  ensureReportingFormatsForTenant = async (tenantId: string, actorUserId: string): Promise<void> => {
+    const now = new Date().toISOString();
+    for (const kind of REPORTING_FORMAT_KINDS) {
+      const ex = await this.prisma.reportingFormatDefinition.findUnique({
+        where: { tenantId_kind: { tenantId, kind } },
+      });
+      if (ex) continue;
+      await this.prisma.reportingFormatDefinition.create({
+        data: {
+          tenantId,
+          kind,
+          schemaJson: this.defaultSchemaJsonForKind(kind) as Prisma.InputJsonValue,
+          updatedBy: actorUserId,
+          updatedAt: now,
+        },
+      });
+    }
+  };
+
+  getReportingFormats = async (
+    user: JwtPayload,
+  ): Promise<{ kind: string; schemaJson: Record<string, unknown> }[]> => {
+    await this.ensureReportingFormatsForTenant(user.tenantId, user.sub);
+    const rows = await this.prisma.reportingFormatDefinition.findMany({
+      where: { tenantId: user.tenantId },
+      orderBy: { kind: 'asc' },
+    });
+    return rows.map((r) => ({
+      kind: r.kind,
+      schemaJson:
+        r.schemaJson !== null && typeof r.schemaJson === 'object' && !Array.isArray(r.schemaJson)
+          ? (r.schemaJson as Record<string, unknown>)
+          : {},
+    }));
+  };
+
+  upsertReportingFormat = async (
+    user: JwtPayload,
+    kind: string,
+    schemaJson: Record<string, unknown>,
+  ): Promise<{ kind: string; schemaJson: Record<string, unknown> }> => {
+    if (!(REPORTING_FORMAT_KINDS as readonly string[]).includes(kind)) {
+      throw new BadRequestException('不明なフォーマット種別です');
+    }
+    const now = new Date().toISOString();
+    const row = await this.prisma.reportingFormatDefinition.upsert({
+      where: { tenantId_kind: { tenantId: user.tenantId, kind } },
+      create: {
+        tenantId: user.tenantId,
+        kind,
+        schemaJson: schemaJson as Prisma.InputJsonValue,
+        updatedBy: user.sub,
+        updatedAt: now,
+      },
+      update: { schemaJson: schemaJson as Prisma.InputJsonValue, updatedBy: user.sub, updatedAt: now },
+    });
+    return {
+      kind: row.kind,
+      schemaJson:
+        row.schemaJson !== null && typeof row.schemaJson === 'object' && !Array.isArray(row.schemaJson)
+          ? (row.schemaJson as Record<string, unknown>)
+          : {},
+    };
+  };
+
+  getListItemDirectorNote = async (
+    user: JwtPayload,
+    listItemId: string,
+  ): Promise<{ listItemId: string; bodyMarkdown: string; updatedAt: string }> => {
+    const item = await this.prisma.listItem.findFirst({
+      where: { id: listItemId, tenantId: user.tenantId },
+    });
+    if (!item) {
+      throw new NotFoundException('リスト明細が見つかりません');
+    }
+    const note = await this.prisma.listItemDirectorNote.findUnique({
+      where: { listItemId },
+    });
+    if (!note) {
+      return { listItemId, bodyMarkdown: '', updatedAt: '' };
+    }
+    return { listItemId, bodyMarkdown: note.bodyMarkdown, updatedAt: note.updatedAt };
+  };
+
+  upsertListItemDirectorNote = async (
+    user: JwtPayload,
+    listItemId: string,
+    bodyMarkdown: string,
+  ): Promise<{ listItemId: string; bodyMarkdown: string; updatedAt: string }> => {
+    const item = await this.prisma.listItem.findFirst({
+      where: { id: listItemId, tenantId: user.tenantId },
+    });
+    if (!item) {
+      throw new NotFoundException('リスト明細が見つかりません');
+    }
+    const now = new Date().toISOString();
+    const row = await this.prisma.listItemDirectorNote.upsert({
+      where: { listItemId },
+      create: {
+        tenantId: user.tenantId,
+        listItemId,
+        bodyMarkdown,
+        updatedBy: user.sub,
+        updatedAt: now,
+      },
+      update: { bodyMarkdown, updatedBy: user.sub, updatedAt: now },
+    });
+    return { listItemId: row.listItemId, bodyMarkdown: row.bodyMarkdown, updatedAt: row.updatedAt };
+  };
+
+  exportCallingRecords = async (
+    user: JwtPayload,
+    opts: { format: 'csv' | 'xlsx' | 'pdf'; from?: string; to?: string; scope: 'self' | 'tenant' },
+  ): Promise<{ buffer: Buffer; filename: string; mime: string }> => {
+    if (opts.format === 'pdf') {
+      throw new BadRequestException('PDF は未対応です。CSV または Excel をご利用ください');
+    }
+    const where: {
+      tenantId: string;
+      createdBy?: string;
+      resultCapturedAt?: { gte?: string; lte?: string };
+    } = { tenantId: user.tenantId };
+    if (opts.scope === 'self') {
+      where.createdBy = user.sub;
+    }
+    if (opts.from || opts.to) {
+      where.resultCapturedAt = {};
+      if (opts.from) where.resultCapturedAt.gte = opts.from;
+      if (opts.to) where.resultCapturedAt.lte = opts.to;
+    }
+    const rows = await this.prisma.callingRecord.findMany({
+      where,
+      orderBy: { resultCapturedAt: 'desc' },
+      take: 5000,
+    });
+    const flat = rows.map((r) => ({
+      id: r.callingHistoryId,
+      companyName: r.companyName,
+      result: r.result,
+      memo: r.memo,
+      resultCapturedAt: r.resultCapturedAt,
+      structuredReport:
+        r.structuredReport === null || r.structuredReport === undefined
+          ? ''
+          : JSON.stringify(r.structuredReport),
+      createdBy: r.createdBy,
+    }));
+    if (opts.format === 'csv') {
+      const headers = ['id', 'companyName', 'result', 'memo', 'resultCapturedAt', 'structuredReport', 'createdBy'];
+      const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+      const lines = [
+        headers.join(','),
+        ...flat.map((row) =>
+          headers.map((h) => escape(String((row as Record<string, string>)[h] ?? ''))).join(','),
+        ),
+      ];
+      const body = `\ufeff${lines.join('\n')}`;
+      return {
+        buffer: Buffer.from(body, 'utf8'),
+        filename: 'calling-records.csv',
+        mime: 'text/csv; charset=utf-8',
+      };
+    }
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('CallingRecords');
+    ws.columns = [
+      { header: 'id', key: 'id', width: 28 },
+      { header: 'companyName', key: 'companyName', width: 28 },
+      { header: 'result', key: 'result', width: 14 },
+      { header: 'memo', key: 'memo', width: 40 },
+      { header: 'resultCapturedAt', key: 'resultCapturedAt', width: 24 },
+      { header: 'structuredReport', key: 'structuredReport', width: 40 },
+      { header: 'createdBy', key: 'createdBy', width: 28 },
+    ];
+    flat.forEach((r) => ws.addRow(r));
+    const buf = await wb.xlsx.writeBuffer();
+    return {
+      buffer: Buffer.from(buf as ArrayBuffer),
+      filename: 'calling-records.xlsx',
+      mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     };
   };
 }

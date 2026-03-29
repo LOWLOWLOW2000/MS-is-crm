@@ -1,0 +1,14 @@
+---
+description: 営業ルーム（セールスルーム）と電話システムの対応。このページを参照・修正する際の正とする定義。
+alwaysApply: false
+---
+# 営業ルーム（セールスルーム）・電話システム
+
+- **呼称**: 営業ルーム。URL 上の名前は **セールスルーム**（sales-room）。
+- **URL**: `/dashboard/sales-room`
+- **役割**: **電話システムがあるページ**。架電（電話制御・リスト・ZOOM発信・承認・記録・再架電）のメインUI。
+- **実装**: `apps/web/app/(dashboard)/sales-room/page.tsx` がメイン。架電専用UIは `_components/SalesRoomCallingUI.tsx`。未調査リスト精査は `/dashboard/sales-room/refinement`。
+- **旧パス**: `/calling` は `/dashboard/sales-room` へリダイレクト。
+- **Figma**: 営業ルームのワイヤー・レイアウトは [`Website-mockup / wireframes / blueprint`](https://www.figma.com/board/2wTV0HfxQte6bcnqLSjVaU/Website-mockup----wireframes----blueprint--Community-?node-id=202-1532&t=ds3evsaUUyGsQ27M-4) を正とする。
+
+このページを「セールスルーム」「電話システムがあるページ」として扱うこと。

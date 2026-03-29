@@ -14,6 +14,25 @@ import {
   SALES_ROOM_RESULT_OPTIONS,
   matchSalesRoomActionValueFromLabel,
 } from '@/lib/sales-room-result-options'
+import {
+  fetchListItemDirectorNote,
+  fetchReportingFormats,
+  saveCallingRecord,
+} from '@/lib/calling-api'
+import type { ReportingFormatDefinitionRow } from '@/lib/types'
+import {
+  buildStructuredReportFromFieldValues,
+  formatStructuredLinesForMemo,
+  mergedFieldsForAction,
+} from '@/lib/reporting-format-schema'
+
+/** API の @IsUrl 向けにスキームを補う */
+function normalizeTargetUrlForApi(raw: string | undefined): string {
+  const t = raw?.trim() ?? ''
+  if (!t) return 'https://example.com'
+  if (/^https?:\/\//i.test(t)) return t
+  return `https://${t}`
+}
 
 /** 行動結果ラジオの表示順（「自動対応NG」は 受付NG と 不在 の間・value は 折り返し依頼 のまま） */
 const SALES_ROOM_ACTION_RADIO_ORDER: CallingResultType[] = [
@@ -64,6 +83,8 @@ type ThreadFormSnapshot = {
   materialSet: string
   appoDateTime: string
   appoPlace: string
+  /** 報告フォーマット動的フィールド（編集復元用・旧スレッドには無い場合あり） */
+  structuredFieldValues?: Record<string, string>
   pendingFiles: { type: ThreadItemType; name: string }[]
 }
 
@@ -139,6 +160,11 @@ export interface SalesRoomActionResultPanelProps {
   companyName?: string
   /** 架電リストからの直リンク先（未指定時はコックピット `/sales-room/v2`） */
   pageLink?: string
+  /** リスト明細 ID（指定時のみ POST /calling/records で永続化） */
+  listItemId?: string
+  companyPhone?: string
+  companyAddress?: string
+  targetUrl?: string
 }
 
 /**
@@ -147,6 +173,10 @@ export interface SalesRoomActionResultPanelProps {
 export function SalesRoomActionResultPanel({
   companyName = '（現在の企業）',
   pageLink = SALES_ROOM_V2_BASE,
+  listItemId,
+  companyPhone = '',
+  companyAddress = '',
+  targetUrl = '',
 }: SalesRoomActionResultPanelProps) {
   const { data: session } = useSession()
   const userName = session?.user?.name ?? '（担当者）'
@@ -173,6 +203,12 @@ export function SalesRoomActionResultPanel({
   const [recallDate, setRecallDate] = useState('')
   const [recallTime, setRecallTime] = useState('')
   const [recallPopupOpen, setRecallPopupOpen] = useState(false)
+  const [directorNoteBody, setDirectorNoteBody] = useState('')
+  const [directorNoteLoading, setDirectorNoteLoading] = useState(false)
+  const [persistError, setPersistError] = useState<string | null>(null)
+  const [persistLoading, setPersistLoading] = useState(false)
+  const [reportingFormats, setReportingFormats] = useState<ReportingFormatDefinitionRow[]>([])
+  const [structuredFieldValues, setStructuredFieldValues] = useState<Record<string, string>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const threadRef = useRef(thread)
@@ -180,6 +216,66 @@ export function SalesRoomActionResultPanel({
   useEffect(() => {
     threadRef.current = thread
   }, [thread])
+
+  useEffect(() => {
+    let cancelled = false
+    const id = listItemId?.trim()
+    const token = session?.accessToken?.trim()
+    if (!id || !token) {
+      setDirectorNoteBody('')
+      setDirectorNoteLoading(false)
+      return
+    }
+    setDirectorNoteLoading(true)
+    void fetchListItemDirectorNote(token, id)
+      .then((r) => {
+        if (!cancelled) setDirectorNoteBody(r.bodyMarkdown ?? '')
+      })
+      .catch(() => {
+        if (!cancelled) setDirectorNoteBody('')
+      })
+      .finally(() => {
+        if (!cancelled) setDirectorNoteLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [listItemId, session?.accessToken])
+
+  useEffect(() => {
+    let cancelled = false
+    const token = session?.accessToken?.trim()
+    if (!token) {
+      setReportingFormats([])
+      return
+    }
+    void fetchReportingFormats(token)
+      .then((list) => {
+        if (!cancelled) setReportingFormats(list)
+      })
+      .catch(() => {
+        if (!cancelled) setReportingFormats([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.accessToken])
+
+  const mergedFields = useMemo(
+    () => mergedFieldsForAction(reportingFormats, action),
+    [reportingFormats, action],
+  )
+
+  useEffect(() => {
+    const ids = new Set(mergedFields.map((f) => f.id))
+    setStructuredFieldValues((prev) => {
+      const next: Record<string, string> = {}
+      for (const id of ids) {
+        if (prev[id] !== undefined) next[id] = prev[id]
+      }
+      return next
+    })
+  }, [mergedFields])
 
   /** 送信直後の取り消しバー：残り秒表示と期限切れで消去 */
   useEffect(() => {
@@ -219,9 +315,19 @@ export function SalesRoomActionResultPanel({
       materialSet,
       appoDateTime,
       appoPlace,
+      structuredFieldValues,
       pendingFiles: pendingFiles.map((p) => ({ ...p })),
     }
-  }, [action, memoText, deliveryMethod, materialSet, appoDateTime, appoPlace, pendingFiles])
+  }, [
+    action,
+    memoText,
+    deliveryMethod,
+    materialSet,
+    appoDateTime,
+    appoPlace,
+    structuredFieldValues,
+    pendingFiles,
+  ])
 
   const applyFormSnapshot = useCallback((s: ThreadFormSnapshot) => {
     setAction(s.action)
@@ -230,6 +336,7 @@ export function SalesRoomActionResultPanel({
     setMaterialSet(s.materialSet)
     setAppoDateTime(s.appoDateTime)
     setAppoPlace(s.appoPlace)
+    setStructuredFieldValues({ ...(s.structuredFieldValues ?? {}) })
     setPendingFiles(s.pendingFiles.map((p) => ({ ...p })))
   }, [])
 
@@ -249,6 +356,7 @@ export function SalesRoomActionResultPanel({
       setMaterialSet('')
       setAppoDateTime('')
       setAppoPlace('')
+      setStructuredFieldValues({})
       setPendingFiles([])
     }
   }, [applyFormSnapshot])
@@ -262,6 +370,7 @@ export function SalesRoomActionResultPanel({
     setMaterialSet('')
     setAppoDateTime('')
     setAppoPlace('')
+    setStructuredFieldValues({})
   }, [])
 
   const handleUndoSend = useCallback(() => {
@@ -279,7 +388,31 @@ export function SalesRoomActionResultPanel({
     setEditingBatchIds([])
   }, [postSendUndo, applyFormSnapshot])
 
-  const handleSend = () => {
+  const buildStructuredPayload = (): Record<string, unknown> | undefined => {
+    if (mergedFields.length > 0) {
+      return buildStructuredReportFromFieldValues(mergedFields, structuredFieldValues)
+    }
+    const out: Record<string, unknown> = {}
+    if (action === 'アポ') {
+      if (appoDateTime.trim()) out.meetingAt = appoDateTime.trim()
+      if (appoPlace.trim()) out.meetingPlace = appoPlace.trim()
+    }
+    if (action === '資料送付') {
+      if (deliveryMethod.trim()) out.deliveryMethod = deliveryMethod.trim()
+      if (materialSet.trim()) out.materialName = materialSet.trim()
+    }
+    if (memoText.trim()) out.caseNote = memoText.trim()
+    return Object.keys(out).length > 0 ? out : undefined
+  }
+
+  const buildNextCallAtIso = (): string | undefined => {
+    if ((action === '再架電' || action === '折り返し依頼') && recallDate && recallTime) {
+      return `${recallDate}T${recallTime}:00`
+    }
+    return undefined
+  }
+
+  const handleSend = async () => {
     const beforeThread = [...threadRef.current]
     const sentFormSnapshot = buildCurrentFormSnapshot()
     const now = new Date().toLocaleString('ja-JP', {
@@ -293,11 +426,15 @@ export function SalesRoomActionResultPanel({
       SALES_ROOM_RESULT_OPTIONS.find((o) => o.value === action)?.label ?? action
 
     const parts: string[] = [templateBlock]
-    if (action === '資料送付' && (deliveryMethod || materialSet)) {
-      parts.push(`送付：${deliveryMethod || '―'}　資料セット：${materialSet || '―'}`)
-    }
-    if (action === 'アポ' && (appoDateTime || appoPlace)) {
-      parts.push(`日時：${appoDateTime || '―'}　場所：${appoPlace || '―'}`)
+    const dynamicMemoLines = formatStructuredLinesForMemo(mergedFields, structuredFieldValues)
+    if (dynamicMemoLines.length > 0) parts.push(...dynamicMemoLines)
+    if (mergedFields.length === 0) {
+      if (action === '資料送付' && (deliveryMethod || materialSet)) {
+        parts.push(`送付：${deliveryMethod || '―'}　資料セット：${materialSet || '―'}`)
+      }
+      if (action === 'アポ' && (appoDateTime || appoPlace)) {
+        parts.push(`日時：${appoDateTime || '―'}　場所：${appoPlace || '―'}`)
+      }
     }
     if ((action === '折り返し依頼' || action === '再架電') && recallDate && recallTime) {
       parts.push(`再架電リスト予定：${recallDate} ${recallTime}`)
@@ -306,19 +443,49 @@ export function SalesRoomActionResultPanel({
 
     const fullContent = parts.join('\n')
     const summary = (() => {
-      if (action === 'アポ' && (appoDateTime || appoPlace)) {
+      if (dynamicMemoLines.length > 0) return dynamicMemoLines[0].slice(0, 60)
+      if (mergedFields.length === 0 && action === 'アポ' && (appoDateTime || appoPlace)) {
         return `日時：${appoDateTime || '―'}　場所：${appoPlace || '―'}`.slice(0, 60)
       }
-      if (action === '資料送付' && (deliveryMethod || materialSet)) {
+      if (mergedFields.length === 0 && action === '資料送付' && (deliveryMethod || materialSet)) {
         return `送付：${deliveryMethod || '―'}　資料セット：${materialSet || '―'}`.slice(0, 60)
       }
       if ((action === '折り返し依頼' || action === '再架電') && recallDate && recallTime) {
         return `再架電：${recallDate} ${recallTime}`.slice(0, 60)
       }
-      // memo がある場合は memo の先頭行を要約にする（ヘッダ行ではなく“報告内容”を優先）
       if (memoText.trim()) return memoText.trim().split(/\n/)[0].slice(0, 60)
       return fullContent.split(/\n/)[0].slice(0, 60) || actionLabel
     })()
+
+    const token = session?.accessToken?.trim()
+    const itemId = listItemId?.trim()
+    const canPersist = Boolean(token && itemId && action)
+
+    if (canPersist) {
+      setPersistError(null)
+      setPersistLoading(true)
+      try {
+        const phoneForApi = companyPhone.trim() || '未登録'
+        const addrForApi = companyAddress.trim() || '未登録'
+        await saveCallingRecord(token!, {
+          companyName,
+          companyPhone: phoneForApi,
+          companyAddress: addrForApi,
+          targetUrl: normalizeTargetUrlForApi(targetUrl),
+          approved: true,
+          result: action as CallingResultType,
+          listItemId: itemId,
+          memo: fullContent,
+          structuredReport: buildStructuredPayload(),
+          nextCallAt: buildNextCallAtIso(),
+        })
+      } catch (e) {
+        setPersistLoading(false)
+        setPersistError(e instanceof Error ? e.message : '架電記録の保存に失敗しました')
+        return
+      }
+      setPersistLoading(false)
+    }
 
     const newItems: ThreadItem[] = [
       {
@@ -359,6 +526,13 @@ export function SalesRoomActionResultPanel({
     setEditingBatchIds([])
     setMemoText('')
     setPendingFiles([])
+    if (mergedFields.length > 0) {
+      setStructuredFieldValues((prev) => {
+        const next = { ...prev }
+        for (const f of mergedFields) delete next[f.id]
+        return next
+      })
+    }
     if (action === '資料送付') {
       setDeliveryMethod('')
       setMaterialSet('')
@@ -390,12 +564,19 @@ export function SalesRoomActionResultPanel({
     setRecallPopupOpen(false)
   }
 
+  const dynamicFieldHasValue = mergedFields.some(
+    (f) => (structuredFieldValues[f.id]?.trim() ?? '').length > 0,
+  )
   const hasContent =
     memoText.trim() !== '' ||
     pendingFiles.length > 0 ||
-    (action === '資料送付' && (deliveryMethod !== '' || materialSet !== '')) ||
-    (action === 'アポ' && (appoDateTime !== '' || appoPlace !== '')) ||
-    action === '折り返し依頼' || action === '再架電'
+    dynamicFieldHasValue ||
+    (mergedFields.length === 0 &&
+      action === '資料送付' &&
+      (deliveryMethod !== '' || materialSet !== '')) ||
+    (mergedFields.length === 0 && action === 'アポ' && (appoDateTime !== '' || appoPlace !== '')) ||
+    action === '折り返し依頼' ||
+    action === '再架電'
 
   return (
     <section
@@ -403,6 +584,30 @@ export function SalesRoomActionResultPanel({
       aria-label="行動結果・メモ"
     >
       <h3 className="mb-3 text-sm font-semibold text-gray-900">行動結果・メモ</h3>
+
+      {listItemId?.trim() ? (
+        <div
+          className="mb-3 rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-800"
+          aria-label="ディレクター基準メモ"
+        >
+          <p className="mb-1 text-xs font-semibold text-slate-600">ディレクター基準メモ</p>
+          {directorNoteLoading ? (
+            <p className="text-xs text-slate-500">読み込み中…</p>
+          ) : directorNoteBody.trim() ? (
+            <pre className="max-h-28 overflow-y-auto whitespace-pre-wrap font-sans text-xs leading-snug text-slate-900">
+              {directorNoteBody}
+            </pre>
+          ) : (
+            <p className="text-xs text-slate-500">未設定です</p>
+          )}
+        </div>
+      ) : null}
+
+      {persistError ? (
+        <p className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900" role="alert">
+          {persistError}
+        </p>
+      ) : null}
 
       <fieldset className="mb-4 flex flex-wrap gap-3" role="radiogroup" aria-label="行動結果">
         {SALES_ROOM_ACTION_RADIO_ORDER.map((value) => (
@@ -473,8 +678,61 @@ export function SalesRoomActionResultPanel({
             />
           </div>
 
-          {/* 資料送付：送付方法・資料セット */}
-          {action === '資料送付' && (
+          {mergedFields.length > 0 ? (
+            <div className="mt-3 rounded-md border border-gray-200 bg-gray-50/50 p-3">
+              <p className="mb-2 text-xs font-medium text-gray-600">報告フォーマット（テナント設定）</p>
+              <div className="space-y-3">
+                {mergedFields.map((f) => (
+                  <label key={f.id} className="block text-sm text-gray-700">
+                    <span className="font-medium text-gray-800">
+                      {f.label}
+                      {f.required ? <span className="text-red-600"> *</span> : null}
+                    </span>
+                    {f.type === 'textarea' ? (
+                      <textarea
+                        value={structuredFieldValues[f.id] ?? ''}
+                        onChange={(e) =>
+                          setStructuredFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
+                        }
+                        rows={3}
+                        className="mt-1 block w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        placeholder="入力"
+                      />
+                    ) : f.type === 'select' ? (
+                      <select
+                        value={structuredFieldValues[f.id] ?? ''}
+                        onChange={(e) =>
+                          setStructuredFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
+                        }
+                        aria-label={f.label}
+                        className="mt-1 block w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="">選択してください</option>
+                        {(f.options ?? []).map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={structuredFieldValues[f.id] ?? ''}
+                        onChange={(e) =>
+                          setStructuredFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
+                        }
+                        className="mt-1 block w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        placeholder="入力"
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* 資料送付：送付方法・資料セット（フォーマット未設定時の従来 UI） */}
+          {mergedFields.length === 0 && action === '資料送付' && (
             <div className="mt-3 rounded-md border border-gray-200 bg-gray-50/50 p-3">
               <p className="mb-2 text-xs text-gray-500">案件管理職パネルでメール・FAX・郵送の自動設定が可能です。</p>
               <label className="mb-3 block text-sm font-medium text-gray-700">
@@ -577,8 +835,8 @@ export function SalesRoomActionResultPanel({
             </div>
           )}
 
-          {/* アポ：日時・場所 */}
-          {action === 'アポ' && (
+          {/* アポ：日時・場所（フォーマット未設定時の従来 UI） */}
+          {mergedFields.length === 0 && action === 'アポ' && (
             <div className="mt-3 rounded-md border border-gray-200 bg-gray-50/50 p-3">
               <p className="mb-2 text-xs text-gray-500">Tier2レイヤーで管理</p>
               <div className="flex flex-wrap gap-4">
@@ -748,11 +1006,11 @@ export function SalesRoomActionResultPanel({
             )}
             <button
               type="button"
-              onClick={handleSend}
-              disabled={!hasContent}
+              onClick={() => void handleSend()}
+              disabled={!hasContent || persistLoading}
               className="ml-auto rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600"
             >
-              {editingBatchIds.length > 0 ? '更新' : '送信'}
+              {persistLoading ? '保存中…' : editingBatchIds.length > 0 ? '更新' : '送信'}
             </button>
           </div>
           {editingBatchIds.length > 0 && (

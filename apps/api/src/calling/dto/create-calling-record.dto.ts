@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsIn, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsObject, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 import { CALLING_RESULT_VALUES, type CallingResultType } from '../calling-result-canonical';
 
 /** POST 時は正規名 11 種のみ受け付ける */
@@ -40,6 +40,11 @@ export class CreateCallingRecordDto {
   @IsString()
   @MaxLength(2000)
   memo?: string;
+
+  /** アポ／資料など画面フォーマットのキー値 */
+  @IsOptional()
+  @IsObject()
+  structuredReport?: Record<string, unknown>;
 
   @IsOptional()
   @IsDateString()

@@ -80,18 +80,52 @@ model CallingRecord {
   approvedBy      String?
   result          String   // CallingResultType
   memo            String   @default("")
+  /** アポ／資料などフォーマットに沿ったキー値（JSON） */
+  structuredReport Json?   @map("structured_report")
   nextCallAt      String?
   /** ディレクター未読管理: null = 未読 */
   directorReadAt  String?
   /** 既読化したディレクターの userId */
   directorReadBy  String?
-  createdAt       String
+  /** 架電結果のシステム記録日時（面談アポ日時・メモ内の日程とは別） */
+  resultCapturedAt String @map("result_captured_at")
   updatedAt       String
 
   @@index([tenantId])
   @@index([tenantId, nextCallAt])
   @@index([tenantId, result, directorReadAt])
   @@map("calling_records")
+}
+
+/** テナント別の報告フォーマット定義（共通ヘッダ／アポ／資料請求） */
+model ReportingFormatDefinition {
+  id         String @id @default(cuid())
+  tenantId   String
+  /** common_header | appointment | material_request */
+  kind       String
+  /** { "fields": [ { "id", "label", "type", "required" } ] } */
+  schemaJson Json   @map("schema_json")
+  updatedBy  String @map("updated_by")
+  updatedAt  String @map("updated_at")
+
+  @@unique([tenantId, kind])
+  @@index([tenantId])
+  @@map("reporting_format_definitions")
+}
+
+/** リスト明細ごとのディレクター基準メモ（Markdown。IS は上書き不可） */
+model ListItemDirectorNote {
+  id           String @id @default(cuid())
+  tenantId     String @map("tenant_id")
+  listItemId   String @unique @map("list_item_id")
+  bodyMarkdown String @default("") @map("body_markdown")
+  updatedBy    String @map("updated_by")
+  updatedAt    String @map("updated_at")
+
+  listItem ListItem @relation(fields: [listItemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("list_item_director_notes")
 }
 
 /** リスト精査終了（リスト確認が承認終わった時点）。ID = リスト精査終了ID、日付 = リスト精査終了日 */
@@ -208,6 +242,7 @@ model ListItem {
 
   list        CallingList  @relation(fields: [listId], references: [id], onDelete: Cascade)
   legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  directorNote ListItemDirectorNote?
 
   @@index([tenantId])
   @@index([listId])
