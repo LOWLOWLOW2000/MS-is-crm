@@ -158,6 +158,7 @@ export function MockNav() {
             <li key={href}>
               <Link
                 href={href}
+                data-nav-href={hrefPath}
                 className={`${baseButton} ${activeStyle} ${layerStyle}`}
                 role="button"
               >

@@ -11,11 +11,15 @@
     "dev:clean": "rm -rf apps/web/.next apps/web/.next-dev apps/web/.next-build apps/api/dist packages/is-domain/dist",
     "lint": "npm run lint --prefix apps/web && npm run lint --prefix apps/api",
     "lint:fix": "cd apps/web && npx next lint --fix && cd ../api && npx eslint \"src/**/*.ts\" --fix --max-warnings=0",
+    "ngrok:tunnel": "bash scripts/ngrok/NGROKﾄﾝﾈﾙ起動.sh",
+    "ngrok:two": "bash scripts/ngrok/start-two-tunnels.sh",
     "mock": "serve docs/html-mock -l 5123",
     "start:dev": "npm run preflight && node -e \"require(require('path').join(process.env.npm_config_local_prefix||process.cwd(),'run-start-dev.js'))\"",
     "restart:dev": "bash scripts/restart-dev.sh",
     "db:push": "cd apps/api && npm run db:push",
     "db:migrate": "cd apps/api && npm run db:migrate",
+    "db:migrate:deploy": "cd apps/api && npm run db:migrate:deploy",
+    "db:migrate:resolve:director-read": "cd apps/api && npm run db:migrate:resolve:director-read",
     "db:seed": "cd apps/api && npm run db:seed"
   },
   "devDependencies": {

@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AuthResponseDto } from '../auth/dto/auth-response.dto';
 import { AcceptInvitationDto } from '../auth/dto/accept-invitation.dto';
+import { AcceptMockInvitationDto } from '../auth/dto/accept-mock-invitation.dto';
 import { InvitationsService } from './invitations.service';
 
 /** 招待 URL 用の公開エンドポイント（JWT 不要） */
@@ -17,6 +18,21 @@ export class AuthInvitationsPublicController {
   async acceptInvitation(@Body() dto: AcceptInvitationDto): Promise<AuthResponseDto> {
     return this.invitationsService.acceptInvitation({
       plainToken: dto.token,
+      password: dto.password,
+      name: dto.name,
+    });
+  }
+
+  @Get('invitations/mock-validate')
+  async validateMockInvitation(@Query('token') token: string) {
+    return this.invitationsService.validateMockToken(token ?? '');
+  }
+
+  @Post('invitations/mock-accept')
+  async acceptMockInvitation(@Body() dto: AcceptMockInvitationDto): Promise<AuthResponseDto> {
+    return this.invitationsService.acceptMockInvitation({
+      plainToken: dto.token,
+      email: dto.email,
       password: dto.password,
       name: dto.name,
     });

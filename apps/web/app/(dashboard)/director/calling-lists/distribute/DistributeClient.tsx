@@ -136,6 +136,19 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
     return selectedUserIds.reduce((acc, id) => acc + (targetCountsByUserId[id] ?? 0), 0)
   }, [selectedUserIds, targetCountsByUserId])
 
+  const isDistributeDisabled =
+    actionLoading ||
+    selectedListIds.length === 0 ||
+    (distributeMode === 'target' &&
+      (selectedUserIds.length === 0 || totalTargetAllocationCount <= 0))
+
+  const distributeButtonLabel = useMemo(() => {
+    if (distributeMode === 'even') {
+      return hasFilters ? '条件付き均等配布' : '均等配布（条件なし）'
+    }
+    return hasFilters ? '条件付き目標件数で割り振り' : '目標件数で割り振り（条件なし）'
+  }, [distributeMode, hasFilters])
+
   const kpiMatrixRows = useMemo(() => {
     const byAssignee = new Map<string | null, Record<string, number>>()
     for (const row of kpiRows) {
@@ -801,30 +814,14 @@ export function DistributeClient({ initialListId }: { initialListId?: string }) 
               </div>
             </fieldset>
 
-            {distributeMode === 'even' ? (
-              <button
-                type="button"
-                onClick={handleDistributeEven}
-                disabled={actionLoading || selectedListIds.length === 0}
-                className="w-full rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-              >
-                {hasFilters ? '条件付き均等配布' : '均等配布（条件なし）'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleDistributeTargetCounts}
-                disabled={
-                  actionLoading ||
-                  selectedListIds.length === 0 ||
-                  selectedUserIds.length === 0 ||
-                  totalTargetAllocationCount <= 0
-                }
-                className="w-full rounded bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-              >
-                {hasFilters ? '条件付き目標件数で割り振り' : '目標件数で割り振り（条件なし）'}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={distributeMode === 'even' ? handleDistributeEven : handleDistributeTargetCounts}
+              disabled={isDistributeDisabled}
+              className="w-full rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {distributeButtonLabel}
+            </button>
 
             <div className="pt-1 text-xs font-semibold text-gray-800">回収方法</div>
             <div className="grid grid-cols-3 gap-2">

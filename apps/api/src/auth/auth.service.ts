@@ -245,20 +245,36 @@ export class AuthService {
     return this.toResponse(this.toAuthUser(user));
   }
 
+  /**
+   * メールはテナント単位で一意のため、同一アドレスが複数テナントに存在し得る。
+   * `findFirst` だと照合対象が不定になるため、パスワードが一致する行を列挙して確定する。
+   */
   async loginWithPassword(loginDto: LoginDto): Promise<Awaited<ReturnType<AuthService['toResponse']>>> {
-    const row = await this.prisma.user.findFirst({
-      where: { email: loginDto.email.trim().toLowerCase() },
+    const emailNorm = loginDto.email.trim().toLowerCase();
+    const rows = await this.prisma.user.findMany({
+      where: { email: emailNorm },
+      orderBy: { tenantId: 'asc' },
     });
 
-    if (!row?.passwordHash) {
+    const matched: typeof rows = [];
+    for (const row of rows) {
+      if (!row.passwordHash) {
+        continue;
+      }
+      const ok = await bcrypt.compare(loginDto.password, row.passwordHash);
+      if (ok) {
+        matched.push(row);
+      }
+    }
+
+    if (matched.length === 0) {
       throw new UnauthorizedException('メールまたはパスワードが正しくありません');
     }
 
-    const isMatched = await bcrypt.compare(loginDto.password, row.passwordHash);
-    if (!isMatched) {
-      throw new UnauthorizedException('メールまたはパスワードが正しくありません');
-    }
-
+    const row =
+      matched.length === 1
+        ? matched[0]!
+        : [...matched].sort((a, b) => a.tenantId.localeCompare(b.tenantId))[0]!;
     const user = this.toAuthUser(row);
     return this.toResponse(user);
   }

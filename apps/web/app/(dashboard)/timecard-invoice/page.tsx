@@ -49,15 +49,23 @@ export default function TimecardInvoicePage({
         </UnderConstructionOverlay>
       ) : null}
       {tab !== 'timecard' ? (
-        <section className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm" aria-label="請求書・領収書">
-          <h2 className="text-base font-semibold text-gray-900">請求書・領収書</h2>
-          <p className="mt-2 text-sm text-gray-500">
-            請求書・領収書の一覧・発行・ダウンロード。（モック）
-          </p>
-          <div className="mt-4 min-h-[120px] rounded-lg border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
-            請求書・領収書エリア
-          </div>
-        </section>
+        <UnderConstructionOverlay
+          ariaLabel="請求書・領収書は準備中です"
+          markSize="compact"
+        >
+          <section
+            className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
+            aria-label="請求書・領収書"
+          >
+            <h2 className="text-base font-semibold text-gray-900">請求書・領収書</h2>
+            <p className="mt-2 text-sm text-gray-500">
+              請求書・領収書の一覧・発行・ダウンロード。（モック）
+            </p>
+            <div className="mt-4 min-h-[120px] rounded-lg border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-400">
+              請求書・領収書エリア
+            </div>
+          </section>
+        </UnderConstructionOverlay>
       ) : null}
     </div>
   )

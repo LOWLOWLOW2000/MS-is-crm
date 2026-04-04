@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { signIn } from 'next-auth/react'
+import { signIn, useSession } from 'next-auth/react'
+import { UnderConstructionOverlay } from '@/components/UnderConstructionOverlay'
+import { useRouter } from 'next/navigation'
 
 /**
  * ログイン画面。認証で一般的な要素を網羅。データ取り扱い同意・アカウント作成はストレージ接続必須。
@@ -31,6 +33,11 @@ const oauthCallbackUrlFromWindow = (): string => {
 }
 
 export default function LoginPage() {
+  const router = useRouter()
+  const { status } = useSession()
+
+  const [inviteContinueHref, setInviteContinueHref] = useState<string | null>(null)
+  const [registeredNotice, setRegisteredNotice] = useState(false)
   const [dataUsageAgreed, setDataUsageAgreed] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -48,6 +55,42 @@ export default function LoginPage() {
   const [storageApiEndpoint, setStorageApiEndpoint] = useState('')
   const [storageApiKey, setStorageApiKey] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
+
+  // #region agent log
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const q = new URLSearchParams(window.location.search)
+    const cb = safeCallbackPath(q.get('callbackUrl'))
+    const inviteHref =
+      cb?.includes('/invite/accept') && cb.length > 0
+        ? `${cb}${cb.includes('?') ? '&' : '?'}continueInvite=1`
+        : null
+    setInviteContinueHref(inviteHref)
+    setRegisteredNotice(q.get('registered') === '1')
+    fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '93865a' },
+      body: JSON.stringify({
+        sessionId: '93865a',
+        runId: 'post-fix',
+        hypothesisId: 'H2',
+        location: 'login/page.tsx:useEffect',
+        message: 'login page query',
+        data: {
+          hasCallbackUrl: q.has('callbackUrl'),
+          hasInviteContinueHref: inviteHref != null,
+          registered: q.get('registered'),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+  }, [])
+  // #endregion
+
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    router.replace('/pj-switch')
+  }, [router, status])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -80,6 +123,34 @@ export default function LoginPage() {
         <p className="mb-6 text-sm text-gray-500">
           PMV は Google OAuth を主軸にします。メール・パスワードは開発・検証用です。
         </p>
+
+        {registeredNotice ? (
+          <div
+            className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+            role="status"
+          >
+            企業登録が完了しました。パスワードを設定した場合は下からログインするか、未設定の場合は OAuth
+            でログインしてください。
+          </div>
+        ) : null}
+
+        {inviteContinueHref ? (
+          <div
+            className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
+            role="region"
+            aria-label="招待の参加登録"
+          >
+            <p className="mb-2">
+              メールの招待リンクから初めて参加する場合は、パスワード設定のため参加登録画面へ進んでください。
+            </p>
+            <Link
+              href={inviteContinueHref}
+              className="font-semibold text-blue-700 underline hover:text-blue-800"
+            >
+              招待の参加登録（パスワード設定）へ
+            </Link>
+          </div>
+        ) : null}
 
         {/* ログインフォーム：メール・パスワード・ログイン状態を保持・パスワードを忘れた・送信 */}
         <form onSubmit={handleLogin} className="mb-6 space-y-4">
@@ -214,7 +285,7 @@ export default function LoginPage() {
             企業登録（管理者＋ディレクター）
           </Link>
         </p>
-        <div className="mb-8 flex gap-4">
+        <div className="relative mb-8 flex gap-4">
           <Link
             href="/office"
             className="rounded bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
@@ -227,9 +298,24 @@ export default function LoginPage() {
           >
             トップへ
           </Link>
+          <div
+            className="pointer-events-auto absolute inset-0 z-10 flex items-center justify-center bg-white/50"
+            aria-hidden
+            role="presentation"
+          >
+            <img
+              src="/images/koujichu-mark.png"
+              alt=""
+              width={160}
+              height={160}
+              className="pointer-events-none h-14 w-auto max-w-[min(32vw,7rem)] object-contain drop-shadow-sm md:h-16 md:max-w-[min(28vw,8rem)]"
+            />
+          </div>
+          <p className="sr-only">この導線は準備中です</p>
         </div>
 
         {/* アカウント作成：データ取り扱い同意（必須）→ ストレージ接続 → その他ならAPI認証＋ID・メール・パスワード */}
+        <UnderConstructionOverlay ariaLabel="アカウント作成エリアは準備中です" markSize="compact">
         <section className="border-t border-gray-200 pt-6" aria-labelledby="account-create-heading">
           <h2 id="account-create-heading" className="mb-4 text-base font-semibold text-gray-900">
             アカウント作成
@@ -471,6 +557,7 @@ export default function LoginPage() {
             </p>
           </div>
         </section>
+        </UnderConstructionOverlay>
       </div>
     </div>
   )

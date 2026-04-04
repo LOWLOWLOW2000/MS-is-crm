@@ -4,7 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 import { UserRole as UR } from '../src/common/enums/user-role.enum';
 import { CALLING_RESULT_VALUES } from '@is-crm/domain';
-import { upsertProjectMembershipInTx } from '../src/users/project-membership.helper';
+import { ensureDefaultProjectInTx, upsertProjectMembershipInTx } from '../src/users/project-membership.helper';
 import * as bcrypt from 'bcrypt';
 
 /** ts-node 実行時も cwd に依存せず apps/api/.env */
@@ -22,10 +22,14 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 const DEMO_TENANT = 'tenant-demo-01';
 const DEV_PASSWORD = 'ChangeMe123!';
 
-/** 手動登録相当：株式会社AA テナント＋企業管理者＋PJAA用ダミー director2 / IS5（メール全局一致のため太郎は1テナントのみ） */
+/** 手動登録相当：株式会社SWW テナント＋企業管理者＋共有用 SWW ダミー director3 / IS3（メール全局一致のため太郎は1テナントのみ） */
 const TENANT_KABUSHIKI_AA_ID = 'tenant-kabushiki-aa';
+/** 画面上の企業名（旧: 株式会社AA） */
+const TENANT_SWW_DISPLAY_NAME = '株式会社SWW';
 const TAROU_WORK_EMAIL = 'tarou.work363@gmail.com';
 const TAROU_WORK_PASSWORD = '1234';
+/** 社内共有用（sww-director-* / sww-is-* @example.com）。太郎アカウントとは別 */
+const SWW_SHARE_PASSWORD = '123';
 
 /** 再実行しても置き換わる架電リスト（配布UI・条件フィルタの動作確認用） */
 const SEED_CALLING_LIST_ID = 'seed-calling-list-distribute-demo';
@@ -41,6 +45,11 @@ const SEED_CALLING_LIST_BULK_ID = 'seed-calling-list-bulk-220-items';
 /** 3ヶ月PJデモ（ディレクター2名・IS20名・10リスト×300件・目標あり） */
 const TENANT_PJ_THREE_MONTHS_ID = 'tenant-pj-3m-demo'
 const PJ_THREE_MONTHS_LIST_PREFIX = 'seed-pj3m-list'
+
+/** 株式会社SWW: リスト3種×100件（2名割当・消化100%・アポ率約1.2%） */
+const SEED_AA_LIST_TOKYO_INDUSTRY_ID = 'seed-aa-calling-list-tokyo-industry'
+const SEED_AA_LIST_NATIONWIDE_RETAIL_ID = 'seed-aa-calling-list-nationwide-retail'
+const SEED_AA_LIST_MIXED_ID = 'seed-aa-calling-list-mixed'
 
 /** リスト明細と企業詳細APIを紐づけるデモ用法人（固定ID） */
 const SEED_LEGAL_ENTITY_IDS = {
@@ -103,6 +112,7 @@ async function main(): Promise<void> {
 
   await seedKabushikiAaTarou(now);
   await seedKabushikiAaPjaaDummyMembers(hashedPassword, now);
+  await seedKabushikiAaThreeListsHundredEach(now);
   await seedKabushikiAaAiScorecardDemo(now);
   await seedKabushikiAaKpiDemo(now);
   await seedDemoTenant(now);
@@ -742,7 +752,7 @@ async function syncAllProjectsAndMemberships(): Promise<void> {
 }
 
 /**
- * 株式会社AA テナントと tarou.work363@gmail.com（開発用短パスワード）。
+ * 株式会社SWW テナントと tarou.work363@gmail.com（開発用短パスワード）。
  * 同一メールが別テナントに残るとログインが不定になるため、当該メールのユーザーは全削除してから再作成する。
  */
 /** デモユーザー用テナント（所属企業・PJ名のヘッダー表示用） */
@@ -782,8 +792,8 @@ async function seedKabushikiAaTarou(now: string): Promise<void> {
     where: { id: TENANT_KABUSHIKI_AA_ID },
     create: {
       id: TENANT_KABUSHIKI_AA_ID,
-      name: '株式会社AA',
-      companyName: '株式会社AA',
+      name: TENANT_SWW_DISPLAY_NAME,
+      companyName: TENANT_SWW_DISPLAY_NAME,
       projectDisplayName: 'PJAA架電PJ',
       headOfficeAddress: '東京都港区港南1-1-1',
       headOfficePhone: '03-0000-0000',
@@ -794,8 +804,8 @@ async function seedKabushikiAaTarou(now: string): Promise<void> {
       updatedAt: now,
     },
     update: {
-      name: '株式会社AA',
-      companyName: '株式会社AA',
+      name: TENANT_SWW_DISPLAY_NAME,
+      companyName: TENANT_SWW_DISPLAY_NAME,
       projectDisplayName: 'PJAA架電PJ',
       accountStatus: 'active',
       isActive: true,
@@ -805,7 +815,7 @@ async function seedKabushikiAaTarou(now: string): Promise<void> {
 
   const deleted = await prisma.user.deleteMany({ where: { email: emailNorm } });
   if (deleted.count > 0) {
-    console.log(`Seed: removed ${deleted.count} user row(s) with email ${emailNorm} (re-bind to 株式会社AA).`);
+    console.log(`Seed: removed ${deleted.count} user row(s) with email ${emailNorm} (re-bind to ${TENANT_SWW_DISPLAY_NAME}).`);
   }
 
   await prisma.user.create({
@@ -825,12 +835,12 @@ async function seedKabushikiAaTarou(now: string): Promise<void> {
   });
 
   console.log(
-    'Seed: 株式会社AA tenant + tarou.work363@gmail.com (director + enterprise_admin, dev password per TAROU_WORK_PASSWORD in seed.ts). PJAAダミーは seedKabushikiAaPjaaDummyMembers を参照。',
+    `Seed: ${TENANT_SWW_DISPLAY_NAME} tenant + tarou.work363@gmail.com (director + enterprise_admin, dev password per TAROU_WORK_PASSWORD in seed.ts). 共有6名は seedKabushikiAaPjaaDummyMembers を参照。`,
   );
 }
 
 /**
- * 株式会社AA / 太郎アカウントで AIスコアカード画面の主要分岐を確認できる手製データ。
+ * 株式会社SWW / 太郎アカウントで AIスコアカード画面の主要分岐を確認できる手製データ。
  * - 通常ケース
  * - summary / improvementPoints なし
  * - tags なし・tagCount補正
@@ -843,7 +853,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
     select: { id: true, tenantId: true },
   })
   if (!tarou) {
-    console.log('Seed: skip 株式会社AA AI scorecard demo (太郎ユーザー未作成).')
+    console.log(`Seed: skip ${TENANT_SWW_DISPLAY_NAME} AI scorecard demo (太郎ユーザー未作成).`)
     return
   }
 
@@ -854,7 +864,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
     {
       recordId: 'seed-aa-ai-record-01',
       evalId: 'seed-aa-ai-eval-01',
-      companyName: '株式会社AA 検証A（通常）',
+      companyName: '株式会社SWW 検証A（通常）',
       result: '再架電',
       callDate: baseCallAt,
       evaluatedAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
@@ -881,7 +891,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
     {
       recordId: 'seed-aa-ai-record-02',
       evalId: 'seed-aa-ai-eval-02',
-      companyName: '株式会社AA 検証B（summary/improvementなし）',
+      companyName: '株式会社SWW 検証B（summary/improvementなし）',
       result: '資料送付',
       callDate: new Date(Date.now() - 46 * 24 * 60 * 60 * 1000).toISOString(),
       evaluatedAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
@@ -892,7 +902,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
     {
       recordId: 'seed-aa-ai-record-03',
       evalId: 'seed-aa-ai-eval-03',
-      companyName: '株式会社AA 検証C（タグ空・tagCount補正）',
+      companyName: '株式会社SWW 検証C（タグ空・tagCount補正）',
       result: 'アポ',
       callDate: new Date(Date.now() - 47 * 24 * 60 * 60 * 1000).toISOString(),
       evaluatedAt: tieEvaluatedAt,
@@ -905,7 +915,7 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
     {
       recordId: 'seed-aa-ai-record-04',
       evalId: 'seed-aa-ai-eval-04',
-      companyName: '株式会社AA 検証D（不正カテゴリ補正）',
+      companyName: '株式会社SWW 検証D（不正カテゴリ補正）',
       result: '担当NG',
       callDate: new Date(Date.now() - 48 * 24 * 60 * 60 * 1000).toISOString(),
       evaluatedAt: tieEvaluatedAt,
@@ -971,13 +981,13 @@ async function seedKabushikiAaAiScorecardDemo(now: string): Promise<void> {
     })
   }
 
-  console.log(`Seed: 株式会社AA AI scorecard demo upserted (${items.length} records/evaluations).`)
+  console.log(`Seed: ${TENANT_SWW_DISPLAY_NAME} AI scorecard demo upserted (${items.length} records/evaluations).`)
 }
 
 /**
  * KPIページ（/kpi）用: ReportByMember 集計に効く架電履歴サンプル。
  * - 太郎: 当日 100件超（実運用想定）+ 週内・月内に少数（期間切替の差分）
- * - PJAA IS01: 当日は中程度（ランキング差）
+ * - SWW IS01〜03: 当日は中程度（ランキング差）
  * - resultCapturedAt（架電結果の記録日時）を当日 0時〜現在までに均等分散
  * - 再接続予定は nextCallAt を未来日時に設定（再加電取得率）
  */
@@ -989,20 +999,20 @@ async function seedKabushikiAaKpiDemo(now: string): Promise<void> {
     select: { id: true, tenantId: true },
   })
   if (!tarou) {
-    console.log('Seed: skip 株式会社AA KPI demo (太郎ユーザー未作成).')
+    console.log(`Seed: skip ${TENANT_SWW_DISPLAY_NAME} KPI demo (太郎ユーザー未作成).`)
     return
   }
 
   const isMembers = await prisma.user.findMany({
     where: {
       tenantId: TENANT_KABUSHIKI_AA_ID,
-      email: { startsWith: 'pjaa-is-' },
+      email: { startsWith: 'sww-is-' },
     },
     select: { id: true, email: true, name: true },
     orderBy: { email: 'asc' },
   })
-  if (isMembers.length < 5) {
-    console.log('Seed: skip 株式会社AA KPI demo (PJAA ISメンバーが不足).')
+  if (isMembers.length < 3) {
+    console.log(`Seed: skip ${TENANT_SWW_DISPLAY_NAME} KPI demo (SWW ISメンバーが不足).`)
     return
   }
 
@@ -1087,7 +1097,7 @@ async function seedKabushikiAaKpiDemo(now: string): Promise<void> {
 
   const members = [
     { key: 'tarou', userId: tarou.id, displayName: '太郎' },
-    ...isMembers.slice(0, 5).map((m, idx) => ({
+    ...isMembers.slice(0, 3).map((m, idx) => ({
       key: `is${String(idx + 1).padStart(2, '0')}`,
       userId: m.id,
       displayName: m.name,
@@ -1140,27 +1150,33 @@ async function seedKabushikiAaKpiDemo(now: string): Promise<void> {
     })
   }
 
-  console.log(`Seed: 株式会社AA KPI demo upserted (${allRows.length} calling records).`)
+  console.log(`Seed: ${TENANT_SWW_DISPLAY_NAME} KPI demo upserted (${allRows.length} calling records).`)
 }
 
-/** 株式会社AA / PJAA架電PJ 用: ディレクター2名・IS5名（ログインは DEV_PASSWORD） */
+/** 株式会社SWW / PJAA架電PJ 用: ディレクター3名・IS3名（ログインは SWW_SHARE_PASSWORD）。メールは example.com（API の IsEmail・ブラウザ検証と整合） */
 async function seedKabushikiAaPjaaDummyMembers(
-  hashedPassword: string,
+  _hashedPassword: string,
   now: string,
 ): Promise<void> {
   const prefRot = ['東京都', '大阪府', '神奈川県', '愛知県', '福岡県', '北海道'];
+  const hashSww = await bcrypt.hash(SWW_SHARE_PASSWORD, 10);
 
-  /** 旧シードの1名用メール（2名構成に統一するため削除） */
   await prisma.user.deleteMany({
     where: {
       tenantId: TENANT_KABUSHIKI_AA_ID,
-      email: 'pjaa-director@example.com',
+      OR: [
+        { email: 'pjaa-director@example.com' },
+        { email: { startsWith: 'pjaa-director-' } },
+        { email: { startsWith: 'pjaa-is-' } },
+        /** 旧シード（@test.com はログイン検証で弾かれることがある） */
+        { email: { endsWith: '@test.com' } },
+      ],
     },
   });
 
-  for (let d = 1; d <= 2; d += 1) {
+  for (let d = 1; d <= 3; d += 1) {
     const dnum = String(d).padStart(2, '0');
-    const directorEmail = `pjaa-director-${dnum}@example.com`;
+    const directorEmail = `sww-director-${dnum}@example.com`;
     const prefecture = prefRot[(d - 1) % prefRot.length];
     await prisma.user.upsert({
       where: {
@@ -1169,10 +1185,10 @@ async function seedKabushikiAaPjaaDummyMembers(
       create: {
         tenantId: TENANT_KABUSHIKI_AA_ID,
         email: directorEmail,
-        name: `PJAA ディレクター${dnum}（ダミー）`,
+        name: `SWW ディレクター${dnum}`,
         role: 'director',
         roles: ['director'],
-        passwordHash: hashedPassword,
+        passwordHash: hashSww,
         countryCode: 'JP',
         prefecture,
         mobilePhone: `090-710${d}-000${d}`,
@@ -1180,10 +1196,10 @@ async function seedKabushikiAaPjaaDummyMembers(
         updatedAt: now,
       },
       update: {
-        name: `PJAA ディレクター${dnum}（ダミー）`,
+        name: `SWW ディレクター${dnum}`,
         role: 'director',
         roles: ['director'],
-        passwordHash: hashedPassword,
+        passwordHash: hashSww,
         countryCode: 'JP',
         prefecture,
         mobilePhone: `090-710${d}-000${d}`,
@@ -1192,9 +1208,9 @@ async function seedKabushikiAaPjaaDummyMembers(
     });
   }
 
-  for (let i = 1; i <= 5; i += 1) {
+  for (let i = 1; i <= 3; i += 1) {
     const num = String(i).padStart(2, '0');
-    const email = `pjaa-is-${num}@example.com`;
+    const email = `sww-is-${num}@example.com`;
     const prefecture = prefRot[(i - 1) % prefRot.length];
     await prisma.user.upsert({
       where: {
@@ -1203,10 +1219,10 @@ async function seedKabushikiAaPjaaDummyMembers(
       create: {
         tenantId: TENANT_KABUSHIKI_AA_ID,
         email,
-        name: `PJAA ISメンバー${num}（ダミー）`,
+        name: `SWW メンバー${num}`,
         role: 'is_member',
         roles: ['is_member'],
-        passwordHash: hashedPassword,
+        passwordHash: hashSww,
         countryCode: 'JP',
         prefecture,
         mobilePhone: `080-72${num}-1000`,
@@ -1214,10 +1230,10 @@ async function seedKabushikiAaPjaaDummyMembers(
         updatedAt: now,
       },
       update: {
-        name: `PJAA ISメンバー${num}（ダミー）`,
+        name: `SWW メンバー${num}`,
         role: 'is_member',
         roles: ['is_member'],
-        passwordHash: hashedPassword,
+        passwordHash: hashSww,
         countryCode: 'JP',
         prefecture,
         mobilePhone: `080-72${num}-1000`,
@@ -1227,8 +1243,167 @@ async function seedKabushikiAaPjaaDummyMembers(
   }
 
   console.log(
-    `Seed: 株式会社AA / PJAA架電PJ ダミー director2+IS5 upserted. pjaa-director-01,02@example.com / pjaa-is-01..05@example.com パスワード: ${DEV_PASSWORD}`,
+    `Seed: ${TENANT_SWW_DISPLAY_NAME} 共有アカウント director3+IS3 upserted. sww-director-01..03@example.com / sww-is-01..03@example.com パスワード: ${SWW_SHARE_PASSWORD}`,
   );
+}
+
+/**
+ * 株式会社SWW: 「東京〇〇業界」「全国路面店」「いろんなリスト」を各100件。
+ * SWW IS01・02 に明細を分割割当し、全件 done（リスト消化100%）。架電結果は全体300件中アポ4件（約1.33%≒1.2%）。
+ * KPI目標にアポ率1.2%・架電12件/h などを upsert。
+ */
+async function seedKabushikiAaThreeListsHundredEach(now: string): Promise<void> {
+  const director = await prisma.user.findFirst({
+    where: { tenantId: TENANT_KABUSHIKI_AA_ID, email: 'sww-director-01@example.com' },
+    select: { id: true, email: true },
+  })
+  const isOne = await prisma.user.findFirst({
+    where: { tenantId: TENANT_KABUSHIKI_AA_ID, email: 'sww-is-01@example.com' },
+    select: { id: true, email: true },
+  })
+  const isTwo = await prisma.user.findFirst({
+    where: { tenantId: TENANT_KABUSHIKI_AA_ID, email: 'sww-is-02@example.com' },
+    select: { id: true, email: true },
+  })
+  if (!director || !isOne || !isTwo) {
+    console.log(`Seed: skip ${TENANT_SWW_DISPLAY_NAME} 3×100 lists (sww-director-01 / sww-is-01 / sww-is-02 @example.com missing).`)
+    return
+  }
+
+  const listCfgs = [
+    {
+      id: SEED_AA_LIST_TOKYO_INDUSTRY_ID,
+      name: '【SWW】東京〇〇業界',
+      industryBase: '〇〇業界（東京）',
+      addressForRow: (idx: number) => {
+        const wards = ['港区', '渋谷区', '中央区', '新宿区', '品川区', '千代田区']
+        return `東京都${wards[idx % wards.length]!}サンプル${String((idx % 9) + 1)}-${(idx % 7) + 1}`
+      },
+    },
+    {
+      id: SEED_AA_LIST_NATIONWIDE_RETAIL_ID,
+      name: '【SWW】全国路面店',
+      industryBase: '小売（路面店）',
+      addressForRow: (idx: number) => {
+        const prefs = ['北海道', '宮城県', '東京都', '愛知県', '大阪府', '福岡県', '沖縄県']
+        return `${prefs[idx % prefs.length]!}サンプル市町${(idx % 5) + 1}-${(idx % 3) + 1}`
+      },
+    },
+    {
+      id: SEED_AA_LIST_MIXED_ID,
+      name: '【SWW】いろんなリスト',
+      industryBase: '混在',
+      addressForRow: (idx: number) => {
+        if (idx % 3 === 0) return `東京都港区混在${idx + 1}-1-1`
+        if (idx % 3 === 1) return `大阪府大阪市北区混在${idx + 1}-2-2`
+        return `福岡県福岡市中央区混在${idx + 1}-3-3`
+      },
+    },
+  ] as const
+
+  const nonApo = CALLING_RESULT_VALUES.filter((x) => x !== 'アポ')
+  /** 300件中アポ4件（list0:1, list1:2, list2:1）→ 約1.33%（目標1.2%に近い） */
+  const apoIndexByList: number[][] = [[44], [17, 82], [55]]
+
+  const listAssignedAt = jitterIso(now, 90)
+
+  await prisma.listItem.deleteMany({
+    where: { tenantId: TENANT_KABUSHIKI_AA_ID, listId: { in: listCfgs.map((c) => c.id) } },
+  })
+  await prisma.callingList.deleteMany({
+    where: { tenantId: TENANT_KABUSHIKI_AA_ID, id: { in: listCfgs.map((c) => c.id) } },
+  })
+
+  for (let li = 0; li < listCfgs.length; li += 1) {
+    const cfg = listCfgs[li]!
+    const apoSet = new Set(apoIndexByList[li] ?? [])
+    const items = Array.from({ length: 100 }, (_, idx) => {
+      const n = idx + 1
+      const num = String(n).padStart(3, '0')
+      const assigned = idx % 2 === 0 ? isOne : isTwo
+      const callingResult = apoSet.has(idx)
+        ? 'アポ'
+        : nonApo[(idx * 5 + li * 11) % nonApo.length]!
+      const industryTag =
+        cfg.industryBase === '混在'
+          ? ['IT・ソフトウェア', '飲食', '卸売', 'サービス', '製造業'][idx % 5]!
+          : cfg.industryBase
+      return {
+        tenantId: TENANT_KABUSHIKI_AA_ID,
+        companyName: `SWW ${cfg.name.replace(/【SWW】/g, '').trim()} 先${num}`,
+        phone: `0${(idx % 7) + 2}-${String(3000 + li).padStart(4, '0')}-${String(5000 + n).padStart(4, '0')}`,
+        address: cfg.addressForRow(idx),
+        targetUrl: `https://aa-seed.local/${cfg.id}/${num}`,
+        industryTag,
+        aiListTier: (['A', 'B', 'C'] as const)[idx % 3]!,
+        status: 'done' as const,
+        assignedToUserId: assigned.id,
+        assignedAt: listAssignedAt,
+        assignedByUserId: director.id,
+        statusUpdatedAt: listAssignedAt,
+        completedAt: listAssignedAt,
+        callingResult,
+        createdAt: now,
+      }
+    })
+
+    await prisma.callingList.create({
+      data: {
+        id: cfg.id,
+        tenantId: TENANT_KABUSHIKI_AA_ID,
+        name: cfg.name,
+        sourceType: 'csv',
+        createdBy: director.id,
+        createdAt: now,
+        itemCount: 100,
+        assigneeEmail: isOne.email,
+        assignedBy: director.email,
+        assignedAt: listAssignedAt,
+        items: { create: items },
+      },
+    })
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const project = await ensureDefaultProjectInTx(tx, TENANT_KABUSHIKI_AA_ID)
+    const goals = {
+      callPerHour: 12,
+      appointmentRate: 1.2,
+      materialSendRate: 6.5,
+      redialAcquisitionRate: 9,
+      cutContactRate: 4,
+      keyPersonContactRate: 11,
+    }
+    const rows = [
+      { scope: 'project', targetUserId: null },
+      { scope: 'is_all', targetUserId: null },
+    ] as const
+    for (const row of rows) {
+      const goalKey = `${row.scope}:${row.targetUserId ?? 'all'}`
+      await tx.kpiGoal.upsert({
+        where: { tenantId_goalKey: { tenantId: TENANT_KABUSHIKI_AA_ID, goalKey } },
+        create: {
+          tenantId: TENANT_KABUSHIKI_AA_ID,
+          projectId: project.id,
+          goalKey,
+          scope: row.scope,
+          targetUserId: row.targetUserId,
+          ...goals,
+          updatedBy: director.id,
+          updatedAt: now,
+        },
+        update: {
+          ...goals,
+          updatedBy: director.id,
+          updatedAt: now,
+        },
+      })
+    }
+  })
+
+  console.log(
+    `Seed: ${TENANT_SWW_DISPLAY_NAME} 3 lists × 100 items (done, 2 IS members, ~1.2% apo). ids=${listCfgs.map((c) => c.id).join(', ')}`,
+  )
 }
 
 /**

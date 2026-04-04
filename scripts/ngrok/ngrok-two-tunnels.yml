@@ -1,0 +1,13 @@
+# ngrok 3.x: Web(3000) + API(3001) を同時に公開する（各 URL は空でランダム割当）
+# 使い方: bash scripts/ngrok/start-two-tunnels.sh
+# authtoken は ~/.config/ngrok/ngrok.yml の agent を利用（このファイルには書かない）
+version: "3"
+endpoints:
+  - name: is01-web
+    url: ""
+    upstream:
+      url: 3000
+  - name: is01-api
+    url: ""
+    upstream:
+      url: 3001

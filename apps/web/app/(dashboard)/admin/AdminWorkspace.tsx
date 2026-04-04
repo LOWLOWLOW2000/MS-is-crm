@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react
 import { useSession } from 'next-auth/react'
 import {
   createTenantInvitation,
+  issueMockInvitationUrl,
   fetchTenantInvitations,
   revokeTenantInvitations,
   type TenantInvitationRow,
@@ -159,6 +160,12 @@ export const AdminWorkspace = () => {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteMessage, setInviteMessage] = useState('')
 
+  /** メール招待が実装されるまでの仮：同一URLを何人でも使える招待URL */
+  const [mockInviteUrl, setMockInviteUrl] = useState('')
+  const [mockInviteLoading, setMockInviteLoading] = useState(false)
+  const [mockInviteError, setMockInviteError] = useState('')
+  const [mockInviteCopied, setMockInviteCopied] = useState(false)
+
   /** 所属メンバー一括: 付与区分 → 配役決定で全行反映・直前 members を undo に保持 */
   const [bulkJoinChoice, setBulkJoinChoice] = useState<Record<string, BulkPjChoice>>({})
   const [bulkJoinLoading, setBulkJoinLoading] = useState(false)
@@ -223,9 +230,42 @@ export const AdminWorkspace = () => {
     }
   }, [accessToken, tenantId, canManageInvites])
 
+  const issueMockInvite = useCallback(async () => {
+    if (!accessToken || !tenantId || !canManageInvites) return
+    setMockInviteLoading(true)
+    setMockInviteError('')
+    setMockInviteCopied(false)
+    try {
+      const issued = await issueMockInvitationUrl(accessToken, tenantId)
+      setMockInviteUrl(issued.inviteUrl)
+    } catch (e) {
+      setMockInviteError((e as Error).message)
+    } finally {
+      setMockInviteLoading(false)
+    }
+  }, [accessToken, tenantId, canManageInvites])
+
+  const copyMockInviteUrl = useCallback(async () => {
+    if (!mockInviteUrl) return
+    try {
+      await navigator.clipboard.writeText(mockInviteUrl)
+      setMockInviteCopied(true)
+      window.setTimeout(() => setMockInviteCopied(false), 1500)
+    } catch {
+      setMockInviteError('クリップボードへコピーできませんでした')
+    }
+  }, [mockInviteUrl])
+
   useEffect(() => {
     void refreshInvitations()
   }, [refreshInvitations])
+
+  useEffect(() => {
+    if (!canManageInvites) return
+    if (!accessToken || !tenantId) return
+    if (mockInviteUrl) return
+    void issueMockInvite()
+  }, [accessToken, tenantId, canManageInvites, mockInviteUrl, issueMockInvite])
 
   useEffect(() => {
     setInviteRevokeSelected((prev) => {
@@ -682,7 +722,8 @@ export const AdminWorkspace = () => {
               招待の送信・一覧は<strong>企業アカウント管理者</strong>のみです。ディレクター・IS権限では閲覧のみ（一覧は取得できません）。
             </p>
           ) : (
-            <form className="mt-4 space-y-3" onSubmit={handleSendInvite}>
+            <>
+              <form className="mt-4 space-y-3" onSubmit={handleSendInvite}>
               <div>
                 <h3 className="text-xs font-semibold text-gray-900">招待メール</h3>
                 <textarea
@@ -730,6 +771,49 @@ export const AdminWorkspace = () => {
                   : `招待メールを送る（IS・${parsedInviteEmails.length}件）`}
               </button>
             </form>
+
+            <div className="mt-5 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-bold text-gray-900">#招待URL発行パネル 作成</h3>
+              <p className="mt-1 text-xs text-gray-500">
+                （メール招待が実装されるまでの仮フローです）
+              </p>
+              <p className="mt-1 text-[11px] text-gray-500">
+                当日に PJ 入したメンバーに関する判定は、メール招待が実装されるまで仮とします。
+              </p>
+
+              <div className="mt-3">
+                <p className="text-xs font-semibold text-gray-700">招待URL：</p>
+                <div className="mt-1 break-all rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800">
+                  {mockInviteUrl || '未発行'}
+                </div>
+              </div>
+
+              {mockInviteError ? (
+                <p className="mt-2 text-xs text-red-600" role="alert">
+                  {mockInviteError}
+                </p>
+              ) : null}
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void copyMockInviteUrl()}
+                  disabled={!mockInviteUrl}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {mockInviteCopied ? 'コピー完了' : 'コピペ'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void issueMockInvite()}
+                  disabled={mockInviteLoading}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {mockInviteLoading ? 'URL発行中…' : 'URLを再発行（前のは無効）'}
+                </button>
+              </div>
+            </div>
+              </>
           )}
 
           {canReassignTier ? (

@@ -31,9 +31,8 @@ export const validateInvitation = async (token: string): Promise<{
   roles: UserRole[]
   expiresAt: string
 }> => {
-  const url = new URL(`${apiBaseUrl}/auth/invitations/validate`)
-  url.searchParams.set('token', token)
-  const res = await fetch(url.toString(), { cache: 'no-store' })
+  const url = `${apiBaseUrl}/auth/invitations/validate?token=${encodeURIComponent(token)}`
+  const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) {
     throw new Error('招待の確認に失敗しました')
   }
@@ -54,6 +53,58 @@ export const acceptInvitation = async (body: {
   if (!res.ok) {
     const err = await res.text()
     throw new Error(err || '招待の承諾に失敗しました')
+  }
+  return res.json() as Promise<AuthResponse>
+}
+
+export const issueMockInvitationUrl = async (
+  accessToken: string,
+  tenantId: string,
+): Promise<{ inviteUrl: string; expiresAt: string }> => {
+  const res = await fetch(`${apiBaseUrl}/tenants/${encodeURIComponent(tenantId)}/mock-invitations/issue`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err || '招待URLの発行に失敗しました')
+  }
+  return res.json()
+}
+
+export const validateMockInvitation = async (token: string): Promise<{
+  tenantId: string
+  tenantName: string
+  roles: UserRole[]
+  expiresAt: string
+}> => {
+  const url = `${apiBaseUrl}/auth/invitations/mock-validate?token=${encodeURIComponent(token)}`
+  const res = await fetch(url, { cache: 'no-store' })
+  if (!res.ok) {
+    throw new Error('仮招待が無効か期限切れです')
+  }
+  return res.json()
+}
+
+export const acceptMockInvitation = async (body: {
+  token: string
+  email: string
+  password?: string
+  name?: string
+}): Promise<AuthResponse> => {
+  const res = await fetch(`${apiBaseUrl}/auth/invitations/mock-accept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err || '仮招待の参加に失敗しました')
   }
   return res.json() as Promise<AuthResponse>
 }

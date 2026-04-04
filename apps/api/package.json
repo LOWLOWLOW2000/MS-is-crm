@@ -12,6 +12,9 @@
     "postinstall": "prisma generate",
     "db:push": "prisma generate && prisma db push",
     "db:migrate": "prisma generate && prisma migrate dev",
+    "db:migrate:deploy": "prisma generate && prisma migrate deploy",
+    "db:migrate:resolve:director-read": "prisma migrate resolve --applied 20260327002000_add_director_read_fields_to_calling_records",
+    "db:sync-project-memberships": "prisma generate && ts-node prisma/scripts/sync-project-memberships.ts",
     "db:seed": "prisma generate && prisma db seed"
   },
   "dependencies": {

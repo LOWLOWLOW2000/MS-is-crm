@@ -5,6 +5,7 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
 import { RevokeInvitationsDto } from './dto/revoke-invitations.dto';
 import { InvitationsService } from './invitations.service';
+import { UserRole as UR } from '../common/enums/user-role.enum';
 
 interface JwtRequest extends Request {
   user: JwtPayload;
@@ -42,5 +43,14 @@ export class InvitationsController {
     @Body() dto: RevokeInvitationsDto,
   ): Promise<{ revoked: number }> {
     return this.invitationsService.revokeInvitations(req.user, tenantId, dto.invitationIds);
+  }
+
+  /** 招待メール実装までの仮：招待URLを発行し、複数人が同一URLで参加登録できる */
+  @Post('mock-invitations/issue')
+  async issueMockInvitation(
+    @Req() req: JwtRequest,
+    @Param('tenantId') tenantId: string,
+  ): Promise<{ inviteUrl: string; expiresAt: string }> {
+    return this.invitationsService.issueMockInvitation(req.user, tenantId, [UR.IsMember]);
   }
 }

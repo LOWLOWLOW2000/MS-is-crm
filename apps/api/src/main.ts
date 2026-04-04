@@ -14,15 +14,23 @@ const bootstrap = async () => {
 
   const app = await NestFactory.create(AppModule);
 
-  /** Next の dev が 3002/3003 に逃げる場合や 127.0.0.1 利用に対応 */
+  const corsExtraOrigins = (process.env.CORS_EXTRA_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  /** Next の dev が 3002/3003 に逃げる場合や 127.0.0.1 利用に対応。ngrok 等は CORS_EXTRA_ORIGINS */
   app.enableCors({
     origin: (origin, cb) => {
       if (!origin) {
         cb(null, true);
         return;
       }
-      const ok = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-      cb(null, ok);
+      const localhostOk = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(
+        origin,
+      );
+      const extraOk = corsExtraOrigins.includes(origin);
+      cb(null, localhostOk || extraOk);
     },
     credentials: true,
   });

@@ -36,9 +36,11 @@ export const MOCK_NAV_ITEMS: MockNavItem[] = [
 /** 左メニューで「工事中」表示し、対応ページは UnderConstructionOverlay 済みの href */
 export const MOCK_NAV_UNDER_CONSTRUCTION_HREFS = new Set<string>([
   '/dashboard',
+  '/sales-room/v2',
   '/ai-score',
   '/ai-daily',
   '/timecard-invoice?tab=timecard',
+  '/timecard-invoice?tab=invoice',
   '/director/kpi',
   '/director/ai-report',
   '/director/daily-box',
