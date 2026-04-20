@@ -1,0 +1,14 @@
+**/node_modules
+**/.next
+**/.next-dev
+**/.next-build
+**/dist
+**/.turbo
+**/.cache
+**/.git
+**/.env
+**/.env.local
+**/coverage
+
+# Avoid sending huge unrelated trees to the Docker daemon context.
+twenty

@@ -1,0 +1,38 @@
+{
+  "name": "@is-crm/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "concurrently -k -n WEB,API,DESKTOP \"cd ../web && npm run dev\" \"cd ../api && npm run start:dev\" \"npm run dev:desktop\"",
+    "dev:desktop": "npm run build && concurrently -k -n TSC,ELECTRON \"tsc -p tsconfig.json --watch --preserveWatchOutput\" \"wait-on http://localhost:3000 && electron .\"",
+    "start": "electron .",
+    "build": "tsc -p tsconfig.json",
+    "dist:win": "npm run build && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "electron": "^37.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "concurrently": "^9.1.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.5.4",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "com.is-crm.desktop",
+    "productName": "IS-CRM",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
+  }
+}

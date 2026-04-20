@@ -38,6 +38,7 @@ import { ListReviewCompletion } from './entities/list-review-completion.entity'
 import { CallingHelpRequest } from './entities/calling-help-request.entity';
 import { CallingSummaryDto } from './dto/calling-summary.dto';
 import { CallingRecord } from './entities/calling-record.entity';
+import { CreateExternalCallLogDto } from './dto/create-external-call-log.dto'
 
 interface JwtRequest extends Request {
   user: JwtPayload;
@@ -93,6 +94,13 @@ export class CallingController {
     }
   };
 
+  /** 外部リストの紐付け管理は developer / is_admin のみ */
+  private assertCanManageExternalMappings = (user: JwtPayload): void => {
+    if (!hasAnyRole(user, [UserRole.Developer, UserRole.IsAdmin])) {
+      throw new ForbiddenException('外部リスト紐付けの操作は管理者のみ可能です')
+    }
+  }
+
   @Post('list-review-completions')
   async createListReviewCompletion(
     @Req() req: JwtRequest,
@@ -122,6 +130,37 @@ export class CallingController {
       return record;
     } catch (error) {
       throw new InternalServerErrorException('架電記録の保存に失敗しました');
+    }
+  }
+
+  @Post('external-mappings/compute-client-row-id')
+  computeClientRowId(
+    @Req() req: JwtRequest,
+    @Body() body: { companyName: string; companyPhone: string },
+  ): { companyNameNorm: string; phoneNorm: string; clientRowId: string } {
+    this.assertCanManageExternalMappings(req.user)
+    return this.callingService.computeClientRowId(body.companyName ?? '', body.companyPhone ?? '')
+  }
+
+  @Post('external-call-logs')
+  async createExternalCallLog(
+    @Req() req: JwtRequest,
+    @Body() dto: CreateExternalCallLogDto,
+  ): Promise<{ callingRecord: CallingRecord; listItemId: string }> {
+    this.assertCanManageExternalMappings(req.user)
+    try {
+      const { callingRecord, listItemId } = await this.callingService.createExternalCallLog(req.user, dto)
+      this.notificationsGateway.scheduleRecallReminders(callingRecord)
+      return { callingRecord, listItemId }
+    } catch (error) {
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error
+      }
+      throw new InternalServerErrorException('外部架電ログの保存に失敗しました')
     }
   }
 

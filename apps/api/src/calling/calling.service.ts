@@ -13,8 +13,10 @@ import { CallingSummaryDto } from './dto/calling-summary.dto';
 import { normalizeCallingResult, type CallingResultType } from './calling-result-canonical';
 import { isConnectedResult } from './calling-result-helpers';
 import { CallingRecord } from './entities/calling-record.entity';
+import { externalMapping } from './external-mapping-utils'
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateExternalCallLogDto } from './dto/create-external-call-log.dto'
 
 const HELP_STATUS_ORDER = { waiting: 0, joined: 1, closed: 2 } as const;
 
@@ -32,6 +34,63 @@ const LIST_ITEM_EXCLUDED_RESULTS: ReadonlySet<CallingResultType> = new Set([
 @Injectable()
 export class CallingService {
   constructor(private readonly prisma: PrismaService) {}
+
+  computeClientRowId = (companyNameRaw: string, phoneRaw: string): {
+    companyNameNorm: string
+    phoneNorm: string
+    clientRowId: string
+  } => {
+    const companyNameNorm = externalMapping.normalizeCompanyName(companyNameRaw)
+    const phoneNorm = externalMapping.normalizePhone(phoneRaw)
+    const clientRowId = externalMapping.createClientRowId(companyNameNorm, phoneNorm)
+    return { companyNameNorm, phoneNorm, clientRowId }
+  }
+
+  createExternalCallLog = async (
+    user: JwtPayload,
+    dto: CreateExternalCallLogDto,
+  ): Promise<{ callingRecord: CallingRecord; listItemId: string }> => {
+    const listItemId = dto.listItemId.trim()
+    if (!listItemId) throw new BadRequestException('listItemId is required')
+
+    const structuredReport: Record<string, unknown> = {
+      ...(dto.structuredReport ?? {}),
+      externalSync: {
+        clientRowId: dto.clientRowId,
+        clientRowNo: dto.clientRowNo ?? null,
+        clientSourceName: dto.clientSourceName ?? null,
+        recordingUrl: dto.recordingUrl ?? null,
+        recordingLocalPath: dto.recordingLocalPath ?? null,
+        transcriptUrl: dto.transcriptUrl ?? null,
+        transcriptLocalPath: dto.transcriptLocalPath ?? null,
+        containsPII: dto.containsPII ?? null,
+        trainingEligible: dto.trainingEligible ?? null,
+      },
+    }
+
+    const callingRecord = await this.saveRecord(user, {
+      companyName: dto.companyName,
+      companyPhone: dto.companyPhone,
+      companyAddress: dto.companyAddress,
+      targetUrl: dto.targetUrl,
+      approved: true,
+      result: dto.result,
+      listItemId,
+      memo: dto.memo ?? '',
+      structuredReport,
+      nextCallAt: dto.nextCallAt,
+    })
+
+    if (dto.transcriptionText?.trim()) {
+      await this.createTranscription(user, {
+        callRecordId: callingRecord.callingHistoryId,
+        transcriptionText: dto.transcriptionText,
+        transcribedAt: dto.transcribedAt,
+      })
+    }
+
+    return { callingRecord, listItemId }
+  }
 
   /** 完了から24時間経過した呼出を削除（tenant_id 必須） */
   private cleanupOldClosedRequests = async (tenantId: string): Promise<void> => {

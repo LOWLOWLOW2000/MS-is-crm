@@ -12,7 +12,7 @@ import {
   Close,
 } from '@carbon/icons-react'
 import type { CallingResultType } from '@/lib/types'
-import { acknowledgeSalesRoomContent, fetchCallingSettings } from '@/lib/calling-api'
+import { acknowledgeSalesRoomContent, createZoomDialSession, fetchCallingSettings } from '@/lib/calling-api'
 import { SALES_ROOM_RESULT_OPTIONS } from '@/lib/sales-room-result-options'
 import { useCallingSessionStore } from '@/lib/stores/calling-session-store'
 
@@ -51,6 +51,8 @@ export function SalesRoomCallingUI({
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [ackSubmitting, setAckSubmitting] = useState(false)
   const [ackError, setAckError] = useState<string | null>(null)
+  const [dialSubmitting, setDialSubmitting] = useState(false)
+  const [dialError, setDialError] = useState<string | null>(null)
   const [scriptTab, setScriptTab] = useState(SCRIPT_TABS[0])
   const [bgmVolume, setBgmVolume] = useState(30)
 
@@ -98,6 +100,28 @@ export function SalesRoomCallingUI({
       setAckSubmitting(false)
     }
   }, [accessToken, ackSubmitting, isAuthed, tenantAcked])
+
+  const handleZoomDial = useCallback(async () => {
+    if (!effectiveApproved) return
+    if (!accessToken || dialSubmitting) return
+    setDialSubmitting(true)
+    setDialError(null)
+    try {
+      const s = await createZoomDialSession(accessToken, { companyName, targetUrl })
+      const url = s.startUrl || s.joinUrl
+      const desktop = (globalThis as unknown as { isCrmDesktop?: { openExternal?: (u: string) => Promise<void> } })
+        .isCrmDesktop
+      if (desktop?.openExternal) {
+        await desktop.openExternal(url)
+      } else {
+        window.open(url, '_blank', 'noreferrer')
+      }
+    } catch (e) {
+      setDialError(e instanceof Error ? e.message : 'ZOOM発信に失敗しました。再度お試しください。')
+    } finally {
+      setDialSubmitting(false)
+    }
+  }, [accessToken, companyName, dialSubmitting, effectiveApproved, targetUrl])
 
   const {
     selectedResult,
@@ -161,11 +185,13 @@ export function SalesRoomCallingUI({
             <button
               type="button"
               disabled={!effectiveApproved}
+              onClick={() => void handleZoomDial()}
               className="flex items-center justify-center gap-2 rounded border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PhoneFilled size={18} />
-              ZOOM発信
+              {dialSubmitting ? '発信中…' : 'ZOOM発信'}
             </button>
+            {dialError ? <p className="text-xs text-red-600">{dialError}</p> : null}
             {onClose ? (
               <button
                 type="button"

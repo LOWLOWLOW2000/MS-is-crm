@@ -7,6 +7,7 @@
     "monitor:agents": "node scripts/monitor-agent-transcripts.js --count 3",
     "dev:api": "cd apps/api && npm run start:dev",
     "dev:web": "cd apps/web && npm run dev",
+    "dev:desktop": "cd apps/desktop && npm run dev",
     "dev:web:clean": "cd apps/web && rm -rf .next && npm run dev",
     "dev:clean": "rm -rf apps/web/.next apps/web/.next-dev apps/web/.next-build apps/api/dist packages/is-domain/dist",
     "lint": "npm run lint --prefix apps/web && npm run lint --prefix apps/api",
