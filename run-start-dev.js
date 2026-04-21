@@ -12,6 +12,10 @@ const rootPath = path.isAbsolute(root) ? root : path.resolve(process.cwd(), root
 
 process.chdir(rootPath);
 
+// #region agent log
+fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H2',location:'run-start-dev.js:cwd',message:'start:dev launcher cwd',data:{root,rootPath,cwd:process.cwd()},timestamp:Date.now()})}).catch(()=>{});
+// #endregion
+
 // dev 起動のたびに dev 側 distDir をクリーンにする（build との衝突防止・チャンク欠落で CSS が404になる再発防止）
 try {
   const webNextDevDir = path.join(rootPath, 'apps/web/.next-dev')

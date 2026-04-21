@@ -8,6 +8,8 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -519,6 +521,12 @@ model Tenant {
   accountStatus      String   @default("active")
   /** ヘッダー等に出すPJ名（任意・未設定時は UI で「未設定」） */
   projectDisplayName String?
+  /** 半自動架電: 公開中の台本スナップショット */
+  callingScriptSnapshotId String?
+  /** 半自動架電: 公開中の辞書スナップショット */
+  callingDictionarySnapshotId String?
+  /** 半自動架電: 公開中の音声スナップショット */
+  callingVoiceSnapshotId String?
   /** 企業管理者が指定する AM（同一テナントの User.id） */
   accountManagerUserIds String[] @default([])
   createdAt          String
@@ -526,9 +534,54 @@ model Tenant {
 
   invitations TenantInvitation[]
   project     Project?
+  callingPackSnapshots CallingPackSnapshot[]
+  callingSessions CallingSession[]
 
   @@index([planId])
   @@map("tenants")
+}
+
+/**
+ * 半自動架電の pack スナップショット（編集・公開・ロールバック用）。
+ * - kind ごとに JSON を丸ごと保存する（最初は正規化しない）
+ */
+model CallingPackSnapshot {
+  id        String @id @default(cuid())
+  tenantId  String
+  /** script | dictionary | voice */
+  kind      String
+  bodyJson  Json   @map("body_json")
+  createdAt String
+  createdBy String
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, kind])
+  @@index([tenantId, createdAt])
+  @@map("calling_pack_snapshots")
+}
+
+/**
+ * 半自動架電: セッション（当時の公開 pack を埋め込んで再現性を担保する）。
+ */
+model CallingSession {
+  id                  String @id @default(cuid())
+  tenantId             String
+  createdBy            String
+  status               String
+  startedAt            String
+  endedAt              String?
+  scriptSnapshotJson    Json   @map("script_snapshot_json")
+  dictionarySnapshotJson Json  @map("dictionary_snapshot_json")
+  voiceSnapshotJson     Json   @map("voice_snapshot_json")
+  createdAt            String
+  updatedAt            String
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@map("calling_sessions")
 }
 
 /** テナントあたり1件の既定PJ（ヘッダー projectDisplayName と連動した表示名） */

@@ -6,15 +6,20 @@ import {
   InternalServerErrorException,
   Patch,
   Post,
+  Put,
+  Param,
   Req,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { CreateCallingPackSnapshotDto } from './dto/create-calling-pack-snapshot.dto'
+import { PublishCallingPackSnapshotDto } from './dto/publish-calling-pack-snapshot.dto'
 import { UpdateCallingSettingsDto } from './dto/update-calling-settings.dto';
 import { CallingSettings } from './entities/calling-settings.entity';
-import { SettingsService } from './settings.service';
+import { PublishedCallingPacks, SettingsService } from './settings.service'
 
 interface JwtRequest extends Request {
   user: JwtPayload;
@@ -59,6 +64,46 @@ export class SettingsController {
       return await this.settingsService.acknowledgeSalesRoomContent(req.user);
     } catch {
       throw new InternalServerErrorException('承認の記録に失敗しました');
+    }
+  }
+
+  @Get('calling/packs')
+  async getPublishedCallingPacks(
+    @Req() req: JwtRequest,
+  ): Promise<PublishedCallingPacks> {
+    try {
+      return await this.settingsService.getPublishedCallingPacks(req.user)
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof BadRequestException) throw error
+      throw new InternalServerErrorException('pack の取得に失敗しました')
+    }
+  }
+
+  @Post('calling/packs/:kind/snapshots')
+  async createCallingPackSnapshot(
+    @Req() req: JwtRequest,
+    @Param('kind') kind: string,
+    @Body() dto: CreateCallingPackSnapshotDto,
+  ): Promise<{ id: string; kind: string; createdAt: string }> {
+    try {
+      return await this.settingsService.createCallingPackSnapshot(req.user, kind, dto.bodyJson)
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof BadRequestException) throw error
+      throw new InternalServerErrorException('pack の保存に失敗しました')
+    }
+  }
+
+  @Put('calling/packs/:kind/published')
+  async publishCallingPackSnapshot(
+    @Req() req: JwtRequest,
+    @Param('kind') kind: string,
+    @Body() dto: PublishCallingPackSnapshotDto,
+  ): Promise<{ tenantId: string; kind: string; publishedSnapshotId: string }> {
+    try {
+      return await this.settingsService.publishCallingPackSnapshot(req.user, kind, dto.snapshotId)
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof BadRequestException) throw error
+      throw new InternalServerErrorException('pack の公開切替に失敗しました')
     }
   }
 }

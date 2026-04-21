@@ -17,6 +17,8 @@ import { externalMapping } from './external-mapping-utils'
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateExternalCallLogDto } from './dto/create-external-call-log.dto'
+import { CreateCallingSessionDto } from './dto/create-calling-session.dto'
+import crypto from 'node:crypto'
 
 const HELP_STATUS_ORDER = { waiting: 0, joined: 1, closed: 2 } as const;
 
@@ -34,6 +36,124 @@ const LIST_ITEM_EXCLUDED_RESULTS: ReadonlySet<CallingResultType> = new Set([
 @Injectable()
 export class CallingService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private safeJsonObject = (v: unknown): Record<string, unknown> | null =>
+    v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+
+  /**
+   * 半自動架電: セッション開始（当時の公開 pack を埋め込む）。
+   */
+  createSession = async (
+    user: JwtPayload,
+    dto: CreateCallingSessionDto,
+  ): Promise<{
+    id: string
+    tenantId: string
+    status: string
+    startedAt: string
+    endedAt: string | null
+    scriptSnapshotJson: Record<string, unknown> | null
+    dictionarySnapshotJson: Record<string, unknown> | null
+    voiceSnapshotJson: Record<string, unknown> | null
+    createdAt: string
+    updatedAt: string
+  }> => {
+    const [tenant] = await this.prisma.$queryRaw<
+      Array<{
+        id: string
+        callingScriptSnapshotId: string | null
+        callingDictionarySnapshotId: string | null
+        callingVoiceSnapshotId: string | null
+      }>
+    >(Prisma.sql`
+      SELECT
+        "id",
+        "callingScriptSnapshotId",
+        "callingDictionarySnapshotId",
+        "callingVoiceSnapshotId"
+      FROM "tenants"
+      WHERE "id" = ${user.tenantId}
+      LIMIT 1
+    `)
+    if (!tenant) throw new BadRequestException('テナントが見つかりません')
+
+    const ids = [
+      tenant.callingScriptSnapshotId,
+      tenant.callingDictionarySnapshotId,
+      tenant.callingVoiceSnapshotId,
+    ].filter((x): x is string => Boolean(x))
+
+    const snapshots =
+      ids.length === 0
+        ? []
+        : await this.prisma.$queryRaw<
+            Array<{
+              id: string
+              kind: string
+              bodyJson: unknown
+            }>
+          >(Prisma.sql`
+            SELECT
+              "id",
+              "kind",
+              "body_json" AS "bodyJson"
+            FROM "calling_pack_snapshots"
+            WHERE "tenantId" = ${user.tenantId}
+              AND "id" IN (${Prisma.join(ids)})
+          `)
+
+    const byId = new Map(snapshots.map((s) => [s.id, s]))
+    const script = tenant.callingScriptSnapshotId ? byId.get(tenant.callingScriptSnapshotId)?.bodyJson : null
+    const dictionary = tenant.callingDictionarySnapshotId
+      ? byId.get(tenant.callingDictionarySnapshotId)?.bodyJson
+      : null
+    const voice = tenant.callingVoiceSnapshotId ? byId.get(tenant.callingVoiceSnapshotId)?.bodyJson : null
+
+    const now = new Date().toISOString()
+    const startedAt = dto.startedAt?.trim() ? dto.startedAt : now
+    const id = crypto.randomUUID()
+
+    await this.prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "calling_sessions" (
+        "id",
+        "tenantId",
+        "createdBy",
+        "status",
+        "startedAt",
+        "endedAt",
+        "script_snapshot_json",
+        "dictionary_snapshot_json",
+        "voice_snapshot_json",
+        "createdAt",
+        "updatedAt"
+      ) VALUES (
+        ${id},
+        ${user.tenantId},
+        ${user.sub},
+        ${'active'},
+        ${startedAt},
+        ${null},
+        ${(script ?? {}) as Prisma.InputJsonValue}::jsonb,
+        ${(dictionary ?? {}) as Prisma.InputJsonValue}::jsonb,
+        ${(voice ?? {}) as Prisma.InputJsonValue}::jsonb,
+        ${now},
+        ${now}
+      )
+    `)
+
+    return {
+      id,
+      tenantId: user.tenantId,
+      status: 'active',
+      startedAt,
+      endedAt: null,
+      scriptSnapshotJson: this.safeJsonObject(script),
+      dictionarySnapshotJson: this.safeJsonObject(dictionary),
+      voiceSnapshotJson: this.safeJsonObject(voice),
+      createdAt: now,
+      updatedAt: now,
+    }
+  }
 
   computeClientRowId = (companyNameRaw: string, phoneRaw: string): {
     companyNameNorm: string

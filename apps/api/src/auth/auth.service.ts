@@ -281,37 +281,140 @@ export class AuthService {
 
   async loginWithGoogle(profile: GoogleAuthProfile): Promise<Awaited<ReturnType<AuthService['toResponse']>>> {
     const emailNorm = profile.email.trim().toLowerCase();
-    const existing = await this.prisma.user.findFirst({
-      where: { email: emailNorm },
-    });
+    // #region agent log
+    fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H10',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:entry',message:'loginWithGoogle entry',data:{emailLength:emailNorm.length,hasName:typeof profile.name==='string'&&profile.name.length>0},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
 
-    if (existing) {
-      return this.toResponse(this.toAuthUser(existing));
+    let existing: {
+      id: string
+      tenantId: string
+      email: string
+      name: string
+      role: string
+      roles: string[]
+    } | null = null
+    try {
+      existing = await this.prisma.user.findFirst({
+        where: { email: emailNorm },
+        select: { id: true, tenantId: true, email: true, name: true, role: true, roles: true },
+      });
+      // #region agent log
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H10',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:afterFindExisting',message:'after findFirst user by email',data:{found:existing!=null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    } catch (e) {
+      // #region agent log
+      const code =
+        e && typeof e === 'object' && e !== null && 'code' in e
+          ? String((e as { code?: unknown }).code)
+          : null
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H10',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:findExistingError',message:'findFirst user by email failed',data:{errorName:e instanceof Error?e.name:'<non-error>',errorMessage:e instanceof Error?e.message:'<non-error>',code},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      throw e
     }
 
-    const tenantId = this.resolveTenantId(profile.email);
+    if (existing) {
+      // #region agent log
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H4',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:existing',message:'loginWithGoogle existing user',data:{tenantId:existing.tenantId,userIdPresent:typeof existing.id==='string'&&existing.id.length>0},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return this.toResponse(this.toAuthUser(existing))
+    }
+
+    const computedTenantId = this.resolveTenantId(profile.email)
+    let tenantExists: { id: string } | null = null
+    try {
+      tenantExists = await this.prisma.tenant.findUnique({
+        where: { id: computedTenantId },
+        select: { id: true },
+      })
+      // #region agent log
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H10',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:afterFindTenant',message:'after findUnique tenant',data:{computedTenantId,tenantFound:tenantExists!=null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    } catch (e) {
+      // #region agent log
+      const code =
+        e && typeof e === 'object' && e !== null && 'code' in e
+          ? String((e as { code?: unknown }).code)
+          : null
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H10',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:findTenantError',message:'findUnique tenant failed',data:{computedTenantId,errorName:e instanceof Error?e.name:'<non-error>',errorMessage:e instanceof Error?e.message:'<non-error>',code},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      throw e
+    }
+    const tenantId = computedTenantId
+    // #region agent log
+    fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H4',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:tenantResolution',message:'loginWithGoogle tenant resolution',data:{computedTenantId,tenantExists:tenantExists!=null,chosenTenantId:tenantId},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     const now = new Date().toISOString();
     const roles: UserRole[] = [UserRole.IsMember];
-    const newRow = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.user.create({
-        data: {
+    let newRow: {
+      id: string
+      tenantId: string
+      email: string
+      name: string
+      role: string
+      roles: string[]
+    }
+    try {
+      newRow = await this.prisma.$transaction(async (tx) => {
+        if (!tenantExists) {
+          // #region agent log
+          fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H9',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:createTenant',message:'creating tenant for oauth user',data:{tenantId},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+          const domain = (emailNorm.split('@')[1] ?? '').trim()
+          const name = domain.length > 0 ? domain : 'Demo Tenant'
+          await tx.tenant.upsert({
+            where: { id: tenantId },
+            create: {
+              id: tenantId,
+              name,
+              companyName: name,
+              accountStatus: 'active',
+              createdAt: now,
+              updatedAt: now,
+            },
+            update: {
+              updatedAt: now,
+            },
+          })
+        }
+        // #region agent log
+        fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H9',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:createUser',message:'creating oauth user',data:{tenantId},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        const row = await tx.user.create({
+          data: {
+            tenantId,
+            email: emailNorm,
+            name: profile.name ?? profile.email,
+            role: UserRole.IsMember,
+            roles: roles as unknown as string[],
+            createdAt: now,
+            updatedAt: now,
+          },
+          select: { id: true, tenantId: true, email: true, name: true, role: true, roles: true },
+        })
+        // #region agent log
+        fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H9',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:membership',message:'upserting project membership',data:{tenantId,userIdPresent:row.id.length>0},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        await upsertProjectMembershipInTx(tx, {
           tenantId,
-          email: emailNorm,
-          name: profile.name ?? profile.email,
-          role: UserRole.IsMember,
-          roles: roles as unknown as string[],
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
-      await upsertProjectMembershipInTx(tx, {
-        tenantId,
-        userId: row.id,
-        roles,
-      });
-      return row;
-    });
+          userId: row.id,
+          roles,
+        })
+        return row
+      })
+    } catch (e) {
+      // #region agent log
+      const code =
+        e && typeof e === 'object' && e !== null && 'code' in e
+          ? String((e as { code?: unknown }).code)
+          : null
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H9',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:txError',message:'oauth user transaction failed',data:{errorName:e instanceof Error?e.name:'<non-error>',errorMessage:e instanceof Error?e.message:'<non-error>',code},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      throw e
+    }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H4',location:'apps/api/src/auth/auth.service.ts:loginWithGoogle:created',message:'loginWithGoogle created user',data:{tenantId:newRow.tenantId,userIdPresent:typeof newRow.id==='string'&&newRow.id.length>0},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return this.toResponse(this.toAuthUser(newRow));
   }
 

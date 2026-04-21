@@ -138,6 +138,9 @@ export const authOptions: NextAuthOptions = {
         '';
 
       if (!email && account.provider !== 'apple') {
+        // #region agent log
+        fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H1',location:'apps/web/lib/auth.ts:signIn:noEmail',message:'OAuth signIn rejected: missing email',data:{provider:account.provider,hasProfileEmail:typeof (profile as { email?: string })?.email === 'string',hasUserEmail:typeof (user as { email?: string }).email === 'string'},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         return false;
       }
 
@@ -145,23 +148,37 @@ export const authOptions: NextAuthOptions = {
         account.provider === 'azure-ad'
           ? 'microsoft'
           : account.provider;
-      const response = await fetch(
-        `${apiBaseUrl}/auth/${exchangePath}/exchange`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email,
-            name,
-            provider: account.provider,
-          }),
-          cache: 'no-store',
-        }
-      );
+      let response: Response
+      try {
+        response = await fetch(
+          `${apiBaseUrl}/auth/${exchangePath}/exchange`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              email,
+              name,
+            }),
+            cache: 'no-store',
+          }
+        );
+      } catch (e) {
+        // #region agent log
+        fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H2',location:'apps/web/lib/auth.ts:signIn:exchangeFetchError',message:'OAuth exchange fetch failed',data:{provider:account.provider,exchangePath,apiBaseUrl,errorName:e instanceof Error ? e.name : '<non-error>',errorMessage:e instanceof Error ? e.message : '<non-error>'},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        return false
+      }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H3',location:'apps/web/lib/auth.ts:signIn:exchangeResponse',message:'OAuth exchange response',data:{provider:account.provider,exchangePath,ok:response.ok,status:response.status},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
 
       if (!response.ok) {
+        // #region agent log
+        fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H3',location:'apps/web/lib/auth.ts:signIn:exchangeNotOk',message:'OAuth exchange not ok -> AccessDenied',data:{provider:account.provider,exchangePath,status:response.status},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         return false;
       }
 

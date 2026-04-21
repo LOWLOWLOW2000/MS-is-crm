@@ -12,6 +12,7 @@
 
 #### API（NestJS）
 - `.env`（または運用の環境変数）で `DATABASE_URL` 等を設定する
+  - Supabase を使う場合は `DATABASE_URL`（pooler）と `DIRECT_URL`（direct）を用途で分けるのを推奨（migrate/seed は direct）
 
 ### 2) 依存関係
 リポジトリ直下（`IS_01/`）で実行。

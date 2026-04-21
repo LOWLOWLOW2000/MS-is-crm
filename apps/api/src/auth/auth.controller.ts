@@ -61,10 +61,24 @@ export class AuthController {
   async loginWithGoogleExchange(
     @Body() googleLoginDto: GoogleLoginDto,
   ): Promise<AuthResponseDto> {
-    return this.authService.loginWithGoogle({
-      email: googleLoginDto.email,
-      name: googleLoginDto.name ?? googleLoginDto.email,
-    });
+    // #region agent log
+    fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H3',location:'apps/api/src/auth/auth.controller.ts:googleExchange:entry',message:'google exchange entry',data:{hasEmail:typeof googleLoginDto.email === 'string' && googleLoginDto.email.length>0,hasName:typeof googleLoginDto.name === 'string' && googleLoginDto.name.length>0},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    try {
+      const result = await this.authService.loginWithGoogle({
+        email: googleLoginDto.email,
+        name: googleLoginDto.name ?? googleLoginDto.email,
+      });
+      // #region agent log
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H3',location:'apps/api/src/auth/auth.controller.ts:googleExchange:success',message:'google exchange success',data:{tenantId:result.user.tenantId,userIdPresent:typeof result.user.id === 'string' && result.user.id.length>0},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return result
+    } catch (e) {
+      // #region agent log
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H3',location:'apps/api/src/auth/auth.controller.ts:googleExchange:error',message:'google exchange error',data:{errorName:e instanceof Error ? e.name : '<non-error>',errorMessage:e instanceof Error ? e.message : '<non-error>'},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      throw e
+    }
   }
 
   /** NextAuth（Microsoft / Azure AD）用：Google と同じペイロード */

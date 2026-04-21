@@ -650,11 +650,30 @@ export const updateTenantProfile = async (
 
 /** 自分自身のプロフィール取得（プロフ写真など） */
 export const fetchMyProfile = async (accessToken: string): Promise<MyProfile> => {
+  // #region agent log
+  fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H6',location:'apps/web/lib/calling-api.ts:fetchMyProfile:entry',message:'fetchMyProfile entry',data:{tokenLength:accessToken.trim().length,apiBaseUrl},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+
+  // #region agent log
+  try {
+    const payloadPart = accessToken.split('.')[1] ?? ''
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = `${normalized}${'='.repeat((4 - (normalized.length % 4)) % 4)}`
+    const json = typeof window !== 'undefined' ? window.atob(padded) : ''
+    const parsed = JSON.parse(json) as { exp?: number; iat?: number }
+    fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H8',location:'apps/web/lib/calling-api.ts:fetchMyProfile:jwtMeta',message:'access token exp/iat metadata',data:{nowMs:Date.now(),expSec:typeof parsed.exp==='number'?parsed.exp:null,iatSec:typeof parsed.iat==='number'?parsed.iat:null},timestamp:Date.now()})}).catch(()=>{})
+  } catch (e) {
+    fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H8',location:'apps/web/lib/calling-api.ts:fetchMyProfile:jwtMetaError',message:'failed to decode access token metadata',data:{errorName:e instanceof Error?e.name:'<non-error>',errorMessage:e instanceof Error?e.message:'<non-error>'},timestamp:Date.now()})}).catch(()=>{})
+  }
+  // #endregion
   const response = await fetch(`${apiBaseUrl}/users/me`, {
     method: 'GET',
     headers: createAuthHeaders(accessToken),
     cache: 'no-store',
   })
+  // #region agent log
+  fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H6',location:'apps/web/lib/calling-api.ts:fetchMyProfile:response',message:'fetchMyProfile response',data:{ok:response.ok,status:response.status},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   if (!response.ok) {
     const text = await response.text()
     throw new Error(text || 'プロフィール取得に失敗しました')

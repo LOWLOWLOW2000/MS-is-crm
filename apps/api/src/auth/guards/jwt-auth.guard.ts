@@ -45,6 +45,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
           runId: 'pre-fix',
         }),
       }).catch(() => {})
+      // #region agent log
+      fetch('http://127.0.0.1:7788/ingest/76c3a999-78a8-4303-8f64-4e64935f7100',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c49aa'},body:JSON.stringify({sessionId:'3c49aa',runId:'pre-fix',hypothesisId:'H7',location:'apps/api/src/auth/guards/jwt-auth.guard.ts:handleRequest',message:'jwt auth failed',data:{method:req.method??'',url:req.url??'',hasBearer:bearerPresent,tokenLength:tokenLen,errName:err?.name??null,infoMessage:infoMsg},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
     }
     return super.handleRequest(err, user, info, context, status) as TUser
   }

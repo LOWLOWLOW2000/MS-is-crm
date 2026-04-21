@@ -39,6 +39,7 @@ import { CallingHelpRequest } from './entities/calling-help-request.entity';
 import { CallingSummaryDto } from './dto/calling-summary.dto';
 import { CallingRecord } from './entities/calling-record.entity';
 import { CreateExternalCallLogDto } from './dto/create-external-call-log.dto'
+import { CreateCallingSessionDto } from './dto/create-calling-session.dto'
 
 interface JwtRequest extends Request {
   user: JwtPayload;
@@ -130,6 +131,29 @@ export class CallingController {
       return record;
     } catch (error) {
       throw new InternalServerErrorException('架電記録の保存に失敗しました');
+    }
+  }
+
+  @Post('sessions')
+  async createCallingSession(
+    @Req() req: JwtRequest,
+    @Body() dto: CreateCallingSessionDto,
+  ): Promise<{
+    id: string
+    tenantId: string
+    status: string
+    startedAt: string
+    endedAt: string | null
+    scriptSnapshotJson: Record<string, unknown> | null
+    dictionarySnapshotJson: Record<string, unknown> | null
+    voiceSnapshotJson: Record<string, unknown> | null
+    createdAt: string
+    updatedAt: string
+  }> {
+    try {
+      return await this.callingService.createSession(req.user, dto)
+    } catch (error) {
+      throw new InternalServerErrorException('セッションの作成に失敗しました')
     }
   }
 

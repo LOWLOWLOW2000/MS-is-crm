@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { signIn, useSession } from 'next-auth/react'
+import { getProviders, signIn, useSession } from 'next-auth/react'
 import { UnderConstructionOverlay } from '@/components/UnderConstructionOverlay'
 import { useRouter } from 'next/navigation'
 
@@ -38,6 +38,7 @@ export default function LoginPage() {
 
   const [inviteContinueHref, setInviteContinueHref] = useState<string | null>(null)
   const [registeredNotice, setRegisteredNotice] = useState(false)
+  const [providers, setProviders] = useState<Awaited<ReturnType<typeof getProviders>>>(null)
   const [dataUsageAgreed, setDataUsageAgreed] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -56,7 +57,6 @@ export default function LoginPage() {
   const [storageApiKey, setStorageApiKey] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
 
-  // #region agent log
   useEffect(() => {
     if (typeof window === 'undefined') return
     const q = new URLSearchParams(window.location.search)
@@ -67,25 +67,11 @@ export default function LoginPage() {
         : null
     setInviteContinueHref(inviteHref)
     setRegisteredNotice(q.get('registered') === '1')
-    fetch('http://127.0.0.1:7314/ingest/76c3a999-78a8-4303-8f64-4e64935f7100', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '93865a' },
-      body: JSON.stringify({
-        sessionId: '93865a',
-        runId: 'post-fix',
-        hypothesisId: 'H2',
-        location: 'login/page.tsx:useEffect',
-        message: 'login page query',
-        data: {
-          hasCallbackUrl: q.has('callbackUrl'),
-          hasInviteContinueHref: inviteHref != null,
-          registered: q.get('registered'),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
   }, [])
-  // #endregion
+
+  useEffect(() => {
+    void getProviders().then(setProviders).catch(() => setProviders(null))
+  }, [])
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -116,125 +102,129 @@ export default function LoginPage() {
     setIsSubmitting(false)
   }
 
+  const hasGoogleOAuth = providers?.google != null
+  const hasMicrosoftOAuth = providers?.['azure-ad'] != null
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-8">
-      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h1 className="mb-2 text-xl font-bold text-gray-900">ログイン</h1>
-        <p className="mb-6 text-sm text-gray-500">
-          PMV は Google OAuth を主軸にします。メール・パスワードは開発・検証用です。
-        </p>
+    <div className="min-h-screen bg-gray-50 text-gray-900 antialiased">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-8">
+        <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <h1 className="mb-2 text-xl font-bold text-gray-900">ログイン</h1>
+          <p className="mb-6 text-sm text-gray-500">
+            PMV は Google OAuth を主軸にします。メール・パスワードは開発・検証用です。
+          </p>
 
-        {registeredNotice ? (
-          <div
-            className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
-            role="status"
-          >
-            企業登録が完了しました。パスワードを設定した場合は下からログインするか、未設定の場合は OAuth
-            でログインしてください。
-          </div>
-        ) : null}
-
-        {inviteContinueHref ? (
-          <div
-            className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
-            role="region"
-            aria-label="招待の参加登録"
-          >
-            <p className="mb-2">
-              メールの招待リンクから初めて参加する場合は、パスワード設定のため参加登録画面へ進んでください。
-            </p>
-            <Link
-              href={inviteContinueHref}
-              className="font-semibold text-blue-700 underline hover:text-blue-800"
+          {registeredNotice ? (
+            <div
+              className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+              role="status"
             >
-              招待の参加登録（パスワード設定）へ
-            </Link>
-          </div>
-        ) : null}
-
-        {/* ログインフォーム：メール・パスワード・ログイン状態を保持・パスワードを忘れた・送信 */}
-        <form onSubmit={handleLogin} className="mb-6 space-y-4">
-          <div>
-            <label htmlFor="login-email" className="mb-1 block text-xs font-medium text-gray-700">
-              メールアドレス <span className="text-red-600">必須</span>
-            </label>
-            <input
-              id="login-email"
-              name="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-              placeholder="example@company.com"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              aria-invalid={!!loginError}
-              aria-describedby={loginError ? 'login-error' : undefined}
-            />
-          </div>
-          <div>
-            <label htmlFor="login-password" className="mb-1 block text-xs font-medium text-gray-700">
-              パスワード <span className="text-red-600">必須</span>
-            </label>
-            <div className="relative">
-              <input
-                id="login-password"
-                name="password"
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-                placeholder="••••••••"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                aria-invalid={!!loginError}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-600"
-                aria-label={showPassword ? 'パスワードを隠す' : 'パスワードを表示'}
-                tabIndex={-1}
-              >
-                {showPassword ? (
-                  <span className="text-xs">非表示</span>
-                ) : (
-                  <span className="text-xs">表示</span>
-                )}
-              </button>
+              企業登録が完了しました。パスワードを設定した場合は下からログインするか、未設定の場合は OAuth
+              でログインしてください。
             </div>
-          </div>
-          <div className="flex items-center justify-between">
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                autoComplete="off"
-              />
-              <span className="text-xs text-gray-700">ログイン状態を保持する</span>
-            </label>
-            <Link
-              href="/forgot-password"
-              className="text-xs text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          ) : null}
+
+          {inviteContinueHref ? (
+            <div
+              className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
+              role="region"
+              aria-label="招待の参加登録"
             >
-              パスワードをお忘れの方
-            </Link>
-          </div>
-          {loginError && (
-            <p id="login-error" className="text-xs text-red-600" role="alert">
-              {loginError}
-            </p>
-          )}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSubmitting ? 'ログイン中…' : 'ログイン'}
-          </button>
-        </form>
+              <p className="mb-2">
+                メールの招待リンクから初めて参加する場合は、パスワード設定のため参加登録画面へ進んでください。
+              </p>
+              <Link
+                href={inviteContinueHref}
+                className="font-semibold text-blue-700 underline hover:text-blue-800"
+              >
+                招待の参加登録（パスワード設定）へ
+              </Link>
+            </div>
+          ) : null}
+
+          {/* ログインフォーム：メール・パスワード・ログイン状態を保持・パスワードを忘れた・送信 */}
+          <form onSubmit={handleLogin} className="mb-6 space-y-4">
+            <div>
+              <label htmlFor="login-email" className="mb-1 block text-xs font-medium text-gray-700">
+                メールアドレス <span className="text-red-600">必須</span>
+              </label>
+              <input
+                id="login-email"
+                name="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+                placeholder="example@company.com"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                aria-invalid={!!loginError}
+                aria-describedby={loginError ? 'login-error' : undefined}
+              />
+            </div>
+            <div>
+              <label htmlFor="login-password" className="mb-1 block text-xs font-medium text-gray-700">
+                パスワード <span className="text-red-600">必須</span>
+              </label>
+              <div className="relative">
+                <input
+                  id="login-password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  placeholder="••••••••"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  aria-invalid={!!loginError}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? 'パスワードを隠す' : 'パスワードを表示'}
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <span className="text-xs">非表示</span>
+                  ) : (
+                    <span className="text-xs">表示</span>
+                  )}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  autoComplete="off"
+                />
+                <span className="text-xs text-gray-700">ログイン状態を保持する</span>
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-xs text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                パスワードをお忘れの方
+              </Link>
+            </div>
+            {loginError && (
+              <p id="login-error" className="text-xs text-red-600" role="alert">
+                {loginError}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? 'ログイン中…' : 'ログイン'}
+            </button>
+          </form>
 
         {/* OAuth認証：代表的なソーシャル（Google / Microsoft）アイコン付き */}
         <div className="mb-6">
@@ -251,7 +241,8 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => signIn('google', { callbackUrl: oauthCallbackUrlFromWindow() })}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              disabled={!hasGoogleOAuth}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -261,7 +252,12 @@ export default function LoginPage() {
               </svg>
               Google でログイン
             </button>
-            {showMicrosoftOAuth ? (
+            {!hasGoogleOAuth ? (
+              <p className="text-center text-[10px] text-amber-700">
+                Google OAuth が未設定です（`apps/web/.env.local` の `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` を設定してください）
+              </p>
+            ) : null}
+            {showMicrosoftOAuth && hasMicrosoftOAuth ? (
               <button
                 type="button"
                 onClick={() => signIn('azure-ad', { callbackUrl: oauthCallbackUrlFromWindow() })}
@@ -315,11 +311,11 @@ export default function LoginPage() {
         </div>
 
         {/* アカウント作成：データ取り扱い同意（必須）→ ストレージ接続 → その他ならAPI認証＋ID・メール・パスワード */}
-        <UnderConstructionOverlay ariaLabel="アカウント作成エリアは準備中です" markSize="compact">
-        <section className="border-t border-gray-200 pt-6" aria-labelledby="account-create-heading">
-          <h2 id="account-create-heading" className="mb-4 text-base font-semibold text-gray-900">
-            アカウント作成
-          </h2>
+          <UnderConstructionOverlay ariaLabel="アカウント作成エリアは準備中です" markSize="compact">
+          <section className="border-t border-gray-200 pt-6" aria-labelledby="account-create-heading">
+            <h2 id="account-create-heading" className="mb-4 text-base font-semibold text-gray-900">
+              アカウント作成
+            </h2>
 
           {/* データの取り扱いについて ＋ 同意チェック（必須） */}
           <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
@@ -556,8 +552,9 @@ export default function LoginPage() {
               エンドポイント（任意）とAPIキー（必須）でストレージと接続し、上記を入力してアカウントを作成します。（準備中）
             </p>
           </div>
-        </section>
-        </UnderConstructionOverlay>
+          </section>
+          </UnderConstructionOverlay>
+        </div>
       </div>
     </div>
   )

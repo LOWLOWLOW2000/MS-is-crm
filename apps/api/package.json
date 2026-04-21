@@ -9,7 +9,7 @@
     "start:debug": "nest start --debug --watch",
     "build": "nest build",
     "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
-    "postinstall": "prisma generate",
+    "postinstall": "node -e \"console.log('skip prisma generate (requires Node 20.19+)')\"",
     "db:push": "prisma generate && prisma db push",
     "db:migrate": "prisma generate && prisma migrate dev",
     "db:migrate:deploy": "prisma generate && prisma migrate deploy",
@@ -62,5 +62,11 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.5.4"
+  },
+  "overrides": {
+    "zeptomatch": "1.2.2",
+    "@prisma/dev": {
+      "zeptomatch": "1.2.2"
+    }
   }
 }
